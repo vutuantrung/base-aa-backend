@@ -15,6 +15,7 @@
       messages: [],
       tasks: Object.create(null),
       taskOrder: [],
+      taskSnapshotError: null,
       totalStatus: 0,
       totalVmInfo: 0,
       httpHealth: null
@@ -119,6 +120,42 @@
     if (event === 'Socket CONNECT AAB') state.connection = 'connected';
     if (event === 'Socket DISCONNECT' || event === 'Socket CONNECT ERROR') state.connection = 'disconnected';
     if (event === 'HTTP AAB /health') state.httpHealth = record.value;
+    if (event === 'RECEIVE task:lifecycle:snapshot') {
+      const snapshot = record.value;
+      if (snapshot && Array.isArray(snapshot.tasks)) {
+        state.taskSnapshotError = snapshot.error || null;
+        for (const entry of snapshot.tasks) {
+          const task = entry?.task;
+          if (!task || typeof task.id !== 'string') continue;
+          const existing = state.tasks[task.id];
+          // Live task updates may arrive while AAB is reading disk. Never regress.
+          if (existing) {
+            if (entry.status === 'finished' && existing.status !== 'finished') {
+              state.tasks[task.id] = {
+                ...existing, ...task, status: 'finished',
+                snapshot: true
+              };
+            }
+            continue;
+          }
+          state.taskOrder.push(task.id);
+          state.tasks[task.id] = {
+            ...task,
+            status: entry.status === 'finished' ? 'finished' : 'received',
+            instanceId: entry.instanceId || null,
+            forwardStatus: 'unknown',
+            delivery: 'received',
+            snapshot: true,
+            receivedAt: now
+          };
+        }
+        if (state.taskOrder.length > MAX_TASKS) {
+          const expired = state.taskOrder.splice(MAX_TASKS);
+          for (const id of expired) delete state.tasks[id];
+        }
+      }
+    }
+
     if (event === 'RECEIVE task:lifecycle' || event === 'TASK IN PROGRESS' || event === 'TASK FINISHED' ||
         event === 'TASK RESULT DELIVERED' || event === 'TASK RESULT ERROR') {
       const task = event === 'RECEIVE task:lifecycle' ? record.value?.task : record.value;
