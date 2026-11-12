@@ -305,7 +305,9 @@ function renderTasks() {
       chip('Updated · ' + (task.updatedTime ? new Date(task.updatedTime).toLocaleString() : '—')));
     add(card, heading, element('div', 'task-label', 'CONFIG'),
       element('div', 'task-config', task.config || '—'), meta,
-      element('div', 'task-delivery', '✓ Received by AAB, persisted and forwarded to EServer'));
+      element('div', 'task-delivery', task.status === 'finished'
+        ? '✓ EServer finished; result delivered to PServer'
+        : '✓ Received by AAB, persisted and forwarded to EServer'));
     root.append(card);
   }
 }
