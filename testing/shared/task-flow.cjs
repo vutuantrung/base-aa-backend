@@ -2,7 +2,6 @@ const { randomUUID } = require('node:crypto');
 
 const TASK_REQUEST_TYPE = 'demo.task.request';
 const TASK_RESULT_TYPE = 'demo.task.result';
-const PROCESSING_TIME_MS = 5_000;
 const MAX_TASKS = 100;
 const TASK_STATUS = Object.freeze({ inProgress: 'inProgress', finished: 'finished' });
 
@@ -32,47 +31,12 @@ function finishTask(task) {
   return { ...task, status: TASK_STATUS.finished, updatedTime: Math.max(Date.now(), task.updatedTime + 1) };
 }
 
-/** Shared mock task lifecycle; scheduling and delivery are handled by the caller. */
-function createTaskProcessor({ delayMs = PROCESSING_TIME_MS, onStart, onFinish, onError = console.error }) {
-  const pending = new Map();
-  let closed = false;
-
-  function receive(task) {
-    if (closed || !isTask(task, TASK_STATUS.inProgress) || pending.has(task.id)) return false;
-    const timer = setTimeout(() => {
-      pending.delete(task.id);
-      if (closed) return;
-      const finished = finishTask(task);
-      try {
-        Promise.resolve(onFinish(finished)).catch(onError);
-      } catch (error) {
-        onError(error);
-      }
-    }, delayMs);
-    pending.set(task.id, timer);
-    onStart?.(task);
-    return true;
-  }
-
-  return {
-    receive,
-    stop() {
-      closed = true;
-      for (const timer of pending.values()) clearTimeout(timer);
-      pending.clear();
-    },
-    get size() { return pending.size; }
-  };
-}
-
 module.exports = {
   TASK_REQUEST_TYPE,
   TASK_RESULT_TYPE,
-  PROCESSING_TIME_MS,
   MAX_TASKS,
   TASK_STATUS,
   isTask,
   createTask,
-  finishTask,
-  createTaskProcessor
+  finishTask
 };
