@@ -9,7 +9,7 @@
   function createState() {
     return {
       connection: 'connecting',
-      instances: {},
+      instances: Object.create(null),
       messages: [],
       totalStatus: 0,
       totalVmInfo: 0,
