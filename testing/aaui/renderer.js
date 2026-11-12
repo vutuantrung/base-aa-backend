@@ -68,10 +68,12 @@ function streamInfo(kind) {
 }
 function renderStream(kind) {
   const info = streamInfo(kind);
-  const health = streamState(info.lastAt, info.expected);
+  const instances = currentInstances();
+  const allOffline = instances.length > 0 && instances.every(item => effectivePresence(state, item) === 'offline');
+  const health = state.connection !== 'connected' ? 'unknown' : allOffline ? 'offline' : streamState(info.lastAt, info.expected);
   const indicator = $(kind + '-stream-pill');
-  indicator.className = 'pill' + (health === 'waiting' ? '' : ' ' + health);
-  indicator.textContent = health === 'healthy' ? 'Receiving' : health === 'stale' ? 'Stale' : 'Waiting';
+  indicator.className = 'pill' + (health === 'waiting' || health === 'unknown' ? '' : ' ' + health);
+  indicator.textContent = health === 'healthy' ? 'Receiving' : health === 'stale' ? 'Stale' : health === 'offline' ? 'Stopped' : health === 'unknown' ? 'Unknown' : 'Waiting';
   $(kind + '-last').textContent = ageLabel(info.lastAt);
   const count = currentInstances().reduce((sum, instance) => sum + (kind === 'status' ? instance.statusCount : instance.vmCount), 0);
   $(kind + '-stream-count').textContent = count + ' received';
@@ -126,7 +128,14 @@ function instanceCard(instance) {
   const metrics = element('div', 'instance-metrics');
   add(metrics, detail('Status events', instance.statusCount), detail('VM info', instance.vmCount), detail('VMs', instance.vms.length));
   const extra = element('div', 'instance-detail');
-  add(extra, chip('Status · ' + ageLabel(instance.lastStatusAt)), chip('VM Info · ' + ageLabel(instance.lastVmAt)));
+  const streamLabel = (lastAt, interval) => presence === 'offline' ? 'Stopped'
+    : presence === 'unknown' ? 'Unknown'
+    : streamState(lastAt, interval) === 'healthy' ? 'Receiving'
+    : streamState(lastAt, interval) === 'stale' ? 'Stale' : 'Waiting';
+  add(extra, chip('Status stream · ' + streamLabel(instance.lastStatusAt, 10000)),
+    chip('VM stream · ' + streamLabel(instance.lastVmAt, 20000)));
+  extra.append(chip('Status last · ' + ageLabel(instance.lastStatusAt)));
+  extra.append(chip('VM last · ' + ageLabel(instance.lastVmAt)));
   if (instance.disconnectReason && presence === 'offline') extra.append(chip('Disconnect · ' + instance.disconnectReason));
   extra.append(chip('Logs · ' + instance.logs.length));
   if (instance.lastSequence !== null) extra.append(chip('Seq #' + instance.lastSequence));
