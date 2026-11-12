@@ -103,3 +103,77 @@ npm --prefix testing run test:scheduler
 ## Multiple EServer instances
 
 AAB now supports multiple concurrent EServer connections identified by `auth.instanceId`. Each sends a 10-second scheduled update to AAUI. EServer options: `ESERVER_INSTANCE_ID` and `ESERVER_PORT`. To address one EServer, specify `toInstanceId` in the message. See [multiple EServer guide](../docs/MULTIPLE_ESERVERS.md).
+
+
+## EServer VM information -> AAB -> AAUI (every 20 seconds)
+
+Each connected EServer instance starts **two independent schedules**:
+
+| Schedule | Interval | Payload type |
+|---|---:|---|
+| Existing status event | `SCHEDULE_CALL_TIME = 10_000` ms | `eserver.scheduled-update` |
+| New VM information | `SEND_VM_INFO_TIME = 20_000` ms | `eserver.vm-info` |
+
+The timers start when the EServer Socket.IO client connects to AAB, are cancelled on disconnect, and restart on reconnection. The first VM info event is sent 20 seconds after connection. Both use the existing `peer:message` event and receive AAB acknowledgment. Disconnected ticks are not queued or retried.
+
+The VM info message uses the existing peer envelope with **`payload.data` as an array**:
+
+```json
+{
+  "kind": "event",
+  "from": "eserver",
+  "to": "aaui",
+  "payload": {
+    "type": "eserver.vm-info",
+    "version": "1.0",
+    "data": [
+      {
+        "id": "e-1-vm-1",
+        "browserId": "e-1-browser-1",
+        "version": "1.0.0",
+        "supportingPlatforms": [
+          {
+            "platform": "facebook",
+            "supportingFeatures": ["Automation 1", "Parser"],
+            "parserInfo": {
+              "version": "1.0.0",
+              "type": ["Post", "Comment"]
+            }
+          },
+          {
+            "platform": "youtube",
+            "supportingFeatures": ["Login Cookie"],
+            "parserInfo": {
+              "version": "1.0.0",
+              "type": ["Profile"]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The above is an illustrative example. At runtime, EServer mocks **two VM objects** per send, each with **two or three distinct platforms**. Supported values are limited to:
+
+- `platform`: `facebook`, `tiktok`, `threads`, `youtube`.
+- `supportingFeatures`: `Automation 1`, `Automation 2`, `Automation 3`, `Parser`, `Login Cookie`, `Other`.
+- `parserInfo.type`: `Post`, `Comment`, `Follower`, `Following`, `Profile`.
+
+The VM IDs, browser IDs, and versions are mock strings, not real browser or VM data. EServer instances have separate mock IDs derived from their `instanceId`. AAB forwards `payload.data` unchanged and stamps `sourceInstanceId` on the envelope, allowing AAUI to identify which EServer sent each VM list. No queue, persistence, or business transform is added.
+
+Start two instances for demonstration:
+
+```sh
+ESERVER_INSTANCE_ID=e-1 ESERVER_PORT=3002 npm --prefix testing run eserver
+ESERVER_INSTANCE_ID=e-2 ESERVER_PORT=3012 npm --prefix testing run eserver
+```
+
+Run tests:
+
+```sh
+npm --prefix testing run test:vm-info
+npm --prefix testing run test:playground
+npm test
+```
