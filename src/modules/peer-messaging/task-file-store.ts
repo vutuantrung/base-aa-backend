@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { z } from 'zod';
 
@@ -16,6 +16,7 @@ export interface TaskFileStore {
   save(task: StoredTask): Promise<void>;
   read(taskId: string): Promise<StoredTask | undefined>;
   saveResult(task: StoredTask): Promise<void>;
+  listRecent(limit?: number): Promise<StoredTask[]>;
 }
 
 /** One JSON file per task, with exclusive creation to avoid silent overwrites. */
@@ -47,6 +48,41 @@ export class JsonTaskFileStore implements TaskFileStore {
     }
     await writeFile(join(this.directory, parsed.id + '.result.json'),
       JSON.stringify(parsed, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  }
+
+  async listRecent(limit = 50): Promise<StoredTask[]> {
+    let filenames: string[];
+    try {
+      filenames = (await readdir(this.directory))
+        .filter(name => /^task-[a-zA-Z0-9-]{1,100}\\.json$/.test(name));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    const candidates = await Promise.all(filenames.map(async name => ({
+      name,
+      mtime: (await stat(join(this.directory, name))).mtimeMs
+    })));
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    const results: StoredTask[] = [];
+    for (const candidate of candidates.slice(0, Math.max(0, limit))) {
+      const id = candidate.name.slice(0, -'.json'.length);
+      const result = await this.read(id);
+      if (!result) continue;
+      // A finished-result file indicates that a later lifecycle event occurred.
+      try {
+        const finished = taskSchema.parse(JSON.parse(
+          await readFile(join(this.directory, id + '.result.json'), 'utf8')));
+        results.push(finished.status === 'finished' ? finished : result);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          results.push(result);
+        } else {
+          throw error;
+        }
+      }
+    }
+    return results;
   }
 
   async read(taskId: string): Promise<StoredTask | undefined> {
