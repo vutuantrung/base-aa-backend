@@ -63,10 +63,13 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
       config: 'mock automation',
       createdTime: Date.now(), updatedTime: Date.now()
     };
-    const received: unknown[] = [];
-    e.client.on('peer:message', (message, ack) => {
-      received.push(message);
-      ack({ ok: true, status: 'received' });
+    const delivered = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('EServer delivery missing')), 3000);
+      e.client.once('peer:message', (message, ack) => {
+        clearTimeout(timer);
+        ack({ ok: true, status: 'received' });
+        resolve(message);
+      });
     });
     const lifecycle = new Promise<any>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('AAUI lifecycle event missing')), 3000);
@@ -78,8 +81,7 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'received');
-    assert.equal(received.length, 1);
-    assert.deepEqual((received[0] as any).payload.data, task);
+    assert.deepEqual((await delivered).payload.data, task);
     const stored = JSON.parse(await readFile(join(directory, task.id + '.json'), 'utf8'));
     assert.deepEqual(stored, task);
     const event = await lifecycle;
@@ -112,16 +114,35 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
   } finally { ui.client.disconnect(); e.client.disconnect(); }
 });
 
-test('offline EServer does not produce success ACK or task file', async () => {
+test('offline EServer still gets persisted/received ACK; forwarding failure is separately observed', async () => {
   const task = {
     id: 'task-' + randomUUID(), status: 'inProgress', config: 'offline',
     createdTime: Date.now(), updatedTime: Date.now()
   };
-  const result: any = await pserver.connected!.timeout(3000).emitWithAck('peer:message', {
-    kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'not-online',
-    payload: { type: 'demo.task.request', data: task }
-  });
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'DESTINATION_OFFLINE');
-  assert.equal(await new JsonTaskFileStore(directory).read(task.id), undefined);
+  const ui = connection('aaui');
+  await ui.ready;
+  try {
+    const events: any[] = [];
+    const failureEvent = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('No forwarding failure event')), 3000);
+      ui.client.on('task:lifecycle', value => {
+        events.push(value);
+        if (value.event === 'task.forwardFailed') {
+          clearTimeout(timer);
+          resolve(value);
+        }
+      });
+    });
+    const result: any = await pserver.connected!.timeout(3000).emitWithAck('peer:message', {
+      kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'not-online',
+      payload: { type: 'demo.task.request', data: task }
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'received');
+    assert.deepEqual(await new JsonTaskFileStore(directory).read(task.id), task);
+    const failure = await failureEvent;
+    assert.equal(failure.status, 'forwardFailed');
+    assert.equal(failure.instanceId, 'not-online');
+    assert.equal(events[0].status, 'received');
+  } finally { ui.client.disconnect(); }
 });
