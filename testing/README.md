@@ -357,3 +357,27 @@ npm --prefix testing run test:aaui
 ```
 
 The EServer 10s/20s scheduled streams and the 10-log-per-instance AAUI limit are unchanged.
+
+
+### Task Monitoring recovery on AAUI reconnect
+
+AAB persists accepted tasks as JSON files. When AAUI connects or reconnects, AAB sends a `task:lifecycle:snapshot` event containing up to 50 most-recent persisted tasks, including finished result snapshots when present. This is independent of the live `task:lifecycle` stream. AAUI merges the snapshot without overwriting newer live events. Task Monitoring no longer depends on AAUI already being online at the moment PServer sends the request.
+
+To verify the complete flow:
+
+```sh
+# Check PServer's actual HTTP response (should be 202 and status received)
+curl -i -X POST "http://127.0.0.1:3001/demo/tasks?toInstanceId=e-1" \
+  -H "Content-Type: application/json" \
+  -d '{"config":"test aab receipt snapshot"}'
+
+# Confirm PServer -> AAB Socket.IO session:
+curl http://127.0.0.1:3001/health
+
+# Confirm AAUI -> AAB Socket.IO connection:
+curl http://127.0.0.1:3004/health
+```
+
+Open AAUI **Task Monitoring**. If it was already open but was disconnected, restart AAUI to force a fresh snapshot. The AAB task data is stored in `./data/tasks/` relative to AAB's working directory unless `AAB_TASK_STORE_DIR` is configured. Each task ID must be unique because files are created exclusively. If `curl` returns 400, verify the task JSON; if 422, check the PServer response and AAB file persistence logs; if 503, check the PServer↔AAB connection.
+
+The previous implementation delivered `task:lifecycle` events only when AAUI happened to be connected and therefore could leave Task Monitoring empty after late connection or reconnect. This recovery behavior fixes that limitation. The snapshot is a recent-history view, not a durable delivery queue or replay of every monitoring event.
