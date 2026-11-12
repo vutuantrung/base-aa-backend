@@ -54,7 +54,7 @@ export class JsonTaskFileStore implements TaskFileStore {
     let filenames: string[];
     try {
       filenames = (await readdir(this.directory))
-        .filter(name => /^task-[a-zA-Z0-9-]{1,100}\\.json$/.test(name));
+        .filter(name => /^task-[a-zA-Z0-9-]{1,100}\.json$/.test(name));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
