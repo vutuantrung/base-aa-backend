@@ -5,7 +5,7 @@
   const VM_TYPE = 'eserver.vm-info';
   const MAX_LOGS = 200;
   const MAX_HISTORY = 32;
-  const MAX_INSTANCE_LOGS = 100;
+  const MAX_INSTANCE_LOGS = 10;
 
   function createState() {
     return {
