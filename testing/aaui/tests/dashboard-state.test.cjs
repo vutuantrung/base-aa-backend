@@ -219,3 +219,24 @@ test('received lifecycle from AAB appears on AAUI without altering EServer logs'
   assert.equal(state.taskOrder.length, 1);
   assert.equal(Object.keys(state.instances).length, 0);
 });
+
+test('AAB receipt is distinct from EServer forwarding success/failure', () => {
+  const state = createState();
+  const task = { id: 'task-receipt', status: 'inProgress', config: 'demo',
+    createdTime: 19126349235123, updatedTime: 19126349235123 };
+  const event = (status, reason) => ({
+    timestamp: at, event: 'RECEIVE task:lifecycle',
+    value: { task, status, instanceId: 'e-1', reason }
+  });
+  ingest(state, event('received'));
+  assert.equal(state.tasks[task.id].status, 'received');
+  assert.equal(state.tasks[task.id].forwardStatus, 'pending');
+  ingest(state, event('forwardFailed', 'EServer is offline'));
+  assert.equal(state.tasks[task.id].status, 'received');
+  assert.equal(state.tasks[task.id].forwardStatus, 'failed');
+  assert.equal(state.tasks[task.id].forwardError, 'EServer is offline');
+  ingest(state, event('forwarded'));
+  assert.equal(state.tasks[task.id].status, 'received');
+  assert.equal(state.tasks[task.id].forwardStatus, 'forwarded');
+  assert.equal(state.tasks[task.id].forwardError, null);
+});
