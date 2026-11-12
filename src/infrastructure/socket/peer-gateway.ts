@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { JsonTaskFileStore, taskSchema } from '../../modules/peer-messaging/task-file-store.js';
 import type { Server, Socket } from 'socket.io';
-import { type PeerId, type ClientPeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage } from '../../modules/peer-messaging/contracts.js';
+import { type PeerId, type ClientPeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
 import { PeerMessageService, PeerMessageError } from '../../modules/peer-messaging/peer-message-service.js';
 import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
 
@@ -71,14 +72,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
         console.log('[AAB] TASK RESULT STORED', (message.payload.data as { id: string }).id);
         return;
       }
-      if (message.from !== 'pserver' || message.to !== 'eserver' ||
-          message.payload.type !== 'demo.task.request') return;
-      const task = taskSchema.parse(message.payload.data);
-      if (task.status !== 'inProgress') throw new Error('Task must start inProgress');
-      // Pin the selected EServer before delivery so lifecycle events reference the exact recipient.
-      if (!message.toInstanceId && eservers.size === 1) message.toInstanceId = [...eservers.keys()][0];
-      await taskStore.save(task);
-      console.log('[AAB] TASK STORED', task.id);
+
     },
     isConnected(peer: PeerId, toInstanceId?: string) {
       if (peer === 'aab') return true;
@@ -104,18 +98,82 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     }
   });
 
+  function publishTaskEvent(
+    task: z.infer<typeof taskSchema>, status: 'received' | 'forwarded' | 'forwardFailed',
+    targetId?: string, reason?: string
+  ): void {
+    singlePeers.get('aaui')?.emit('task:lifecycle', {
+      task, status, instanceId: targetId ?? null,
+      event: `task.${status}`, timestamp: Date.now(),
+      ...(reason ? { reason } : {})
+    });
+  }
+
+  /**
+   * Receipt ACK is strictly an AAB acceptance/persistence acknowledgment.
+   * EServer delivery is attempted asynchronously and reported independently.
+   */
+  async function receiveTask(value: unknown): Promise<PeerMessageAck> {
+    const parsed = incomingPeerMessageSchema.safeParse(value);
+    if (!parsed.success || parsed.data.from !== 'pserver' || parsed.data.to !== 'eserver' ||
+        parsed.data.payload.type !== 'demo.task.request') {
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid PServer task envelope' };
+    }
+    const validated = taskSchema.safeParse(parsed.data.payload.data);
+    if (!validated.success || validated.data.status !== 'inProgress') {
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid inProgress task payload' };
+    }
+    const task = validated.data;
+    const targetId = parsed.data.toInstanceId ?? (eservers.size === 1 ? [...eservers.keys()][0] : undefined);
+    try {
+      // File persistence is the durability boundary for the receipt ACK.
+      await taskStore.save(task);
+    } catch (error) {
+      console.error('[AAB] TASK PERSIST FAILED', task.id, error);
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB' };
+    }
+
+    publishTaskEvent(task, 'received', targetId);
+    console.log('[AAB] TASK RECEIVED', task.id, 'target=', targetId ?? 'unresolved');
+
+    // Do not await the EServer here: PServer already has an accepted task.
+    setImmediate(() => {
+      void (async () => {
+        try {
+          if (!targetId) throw new Error('No unique EServer destination; specify toInstanceId');
+          const target = eservers.get(targetId);
+          if (!target?.connected) throw new Error('EServer is offline');
+          const outbound: IncomingPeerMessage = {
+            ...parsed.data, toInstanceId: targetId,
+          };
+          // Use existing validation/transformation/ACK forwarding logic.
+          await service.process(outbound, 'pserver');
+          publishTaskEvent(task, 'forwarded', targetId);
+          console.log('[AAB] TASK FORWARDED', task.id, 'to', targetId);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          publishTaskEvent(task, 'forwardFailed', targetId, reason);
+          console.error('[AAB] TASK FORWARD FAILED', task.id, reason);
+        }
+      })();
+    });
+
+    const envelope: PeerMessage = {
+      ...parsed.data, ...(targetId ? { toInstanceId: targetId } : {}),
+      id: parsed.data.id ?? randomUUID(),
+      timestamp: Date.now(),
+      payload: structuredClone(parsed.data.payload)
+    };
+    return { ok: true, status: 'received', data: envelope };
+  }
+
   async function handleMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
+    if (authenticatedFrom === 'pserver' && value && typeof value === 'object' &&
+        (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.request') {
+      return receiveTask(value);
+    }
     try {
       const message = await service.process(value, authenticatedFrom, instanceId);
-      if (authenticatedFrom === 'pserver' && message.to === 'eserver' &&
-          message.payload.type === 'demo.task.request') {
-        const task = taskSchema.parse(message.payload.data);
-        const target = singlePeers.get('aaui');
-        target?.emit('task:lifecycle', {
-          task, status: 'received', instanceId: message.toInstanceId, event: 'task.received', timestamp: Date.now()
-        });
-        return { ok: true, status: 'received', data: message };
-      }
       if (authenticatedFrom === 'eserver' && message.to === 'pserver' &&
           message.payload.type === 'demo.task.result') {
         const task = taskSchema.parse(message.payload.data);
