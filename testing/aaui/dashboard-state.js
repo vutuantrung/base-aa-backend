@@ -133,7 +133,16 @@
         const previous = state.tasks[task.id] || {};
         state.tasks[task.id] = {
           ...previous, ...(event === 'TASK IN PROGRESS' || event === 'TASK FINISHED' ? task : {}),
-          ...(event === 'RECEIVE task:lifecycle' ? { ...task, status: record.value.status, instanceId: record.value.instanceId } : {}),
+          ...(event === 'RECEIVE task:lifecycle' ? {
+            ...task,
+            // Business lifecycle remains "received" while forwarding is pending/failed.
+            status: record.value.status === 'forwarded' || record.value.status === 'forwardFailed'
+              ? (previous.status || 'received') : record.value.status,
+            instanceId: record.value.instanceId,
+            forwardStatus: record.value.status === 'forwarded' ? 'forwarded' :
+              record.value.status === 'forwardFailed' ? 'failed' : previous.forwardStatus || 'pending',
+            forwardError: record.value.status === 'forwardFailed' ? record.value.reason : null
+          } : {}),
           id: task.id,
           delivery: event === 'RECEIVE task:lifecycle' ? 'received' :
             event === 'TASK RESULT DELIVERED' ? 'delivered' :
