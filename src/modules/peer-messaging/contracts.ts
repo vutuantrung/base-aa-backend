@@ -38,5 +38,5 @@ export type PeerMessage = IncomingPeerMessage & {
 };
 
 export type PeerMessageAck =
-  | { ok: true; data: PeerMessage }
+  | { ok: true; data: PeerMessage; status?: 'received' }
   | { ok: false; error: string; code: 'INVALID_MESSAGE' | 'SENDER_MISMATCH' | 'DESTINATION_OFFLINE' | 'TRANSFORMATION_FAILED' | 'DELIVERY_FAILED' | 'UNSUPPORTED_DESTINATION' | 'AMBIGUOUS_DESTINATION' };
