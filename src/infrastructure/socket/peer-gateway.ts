@@ -124,6 +124,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid inProgress task payload' };
     }
     const task = validated.data;
+    const messageId = parsed.data.id ?? randomUUID();
     const targetId = parsed.data.toInstanceId ?? (eservers.size === 1 ? [...eservers.keys()][0] : undefined);
     try {
       // File persistence is the durability boundary for the receipt ACK.
@@ -144,7 +145,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
           const target = eservers.get(targetId);
           if (!target?.connected) throw new Error('EServer is offline');
           const outbound: IncomingPeerMessage = {
-            ...parsed.data, toInstanceId: targetId,
+            ...parsed.data, id: messageId, toInstanceId: targetId,
           };
           // Use existing validation/transformation/ACK forwarding logic.
           await service.process(outbound, 'pserver');
@@ -160,7 +161,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
 
     const envelope: PeerMessage = {
       ...parsed.data, ...(targetId ? { toInstanceId: targetId } : {}),
-      id: parsed.data.id ?? randomUUID(),
+      id: messageId,
       timestamp: Date.now(),
       payload: structuredClone(parsed.data.payload)
     };
