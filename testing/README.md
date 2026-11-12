@@ -292,3 +292,46 @@ npm test
 ```
 
 The task flow uses the existing message router, without changing the PServer `/ws` session protocol, the EServer 10s/20s streams, or the AAUI connection-presence implementation.
+
+
+## Updated task receipt flow — PServer → AAB → EServer (AAUI observes)
+
+**This flow supersedes the earlier PServer → AAB → AAUI task processing example** for the `POST /demo/tasks` endpoint. AAUI no longer runs the 5-second processing timer or sends mock task results itself.
+
+When PServer sends `demo.task.request` to AAB, AAB performs the following operations:
+
+1. Validates destination EServer and task shape (`id`, `status: "inProgress"`, `config`, `createdTime`, `updatedTime`).
+2. Persists the task as `data/tasks/<task-id>.json` under the AAB working directory, or `AAB_TASK_STORE_DIR` if set. File creation is exclusive, so an existing task ID cannot silently overwrite another task.
+3. Forwards the task via `peer:message` to the selected EServer instance and waits for its acknowledgment.
+4. Sends `task:lifecycle` to AAUI with `status: "received"`, task data and EServer `instanceId`, and returns Socket.IO ACK `{ok: true, status: "received", data: ...}` to PServer.
+
+An offline EServer, ambiguous destination, failed persistence or negative EServer receipt ACK prevents the success ACK. The disk write occurs *before* forwarding; if forwarding fails afterward, the task file remains for diagnosis. No queue, retry or exactly-once processing guarantee has been added.
+
+The EServer playground continues mock processing for 5 seconds and returns `demo.task.result` with `status: "finished"` to PServer via AAB. PServer logs the finished result. The `received` acknowledgment does **not** mean business processing has completed.
+
+To exercise with two EServer instances, run PServer, AAB, AAUI and EServer e-1/e-2:
+
+```sh
+npm --prefix testing run pserver
+ENABLE_TEST_PEERS=1 npm run dev
+npm --prefix testing run aaui
+ESERVER_INSTANCE_ID=e-1 ESERVER_PORT=3002 npm --prefix testing run eserver
+ESERVER_INSTANCE_ID=e-2 ESERVER_PORT=3012 npm --prefix testing run eserver
+```
+
+Send a task to a known EServer instance:
+
+```sh
+curl -X POST http://127.0.0.1:3001/demo/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"config":"test-config","toInstanceId":"e-1"}'
+```
+
+The HTTP response has `status: "received"` (202 Accepted) only after AAB has saved the file and EServer has confirmed receipt. The task's business status in that response remains `inProgress`. Inspect the file in `./data/tasks/`, view the **Task Monitoring** page on AAUI, and inspect PServer logs for the later `finished` result. With one connected EServer, `toInstanceId` may be omitted; with more than one, it is required.
+
+```sh
+npm test
+npm --prefix testing run test:aaui
+```
+
+The EServer 10s/20s scheduled streams and their 10-log-per-instance limit on AAUI remain unchanged.
