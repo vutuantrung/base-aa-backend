@@ -233,3 +233,62 @@ npm --prefix testing run test:aaui
 ```
 
 To observe an offline event, launch AAB, AAUI and at least two EServers, then stop one EServer process with Ctrl+C. Only that instance should switch to Offline and receive a disconnect log. Restart it with the same `ESERVER_INSTANCE_ID` to see Online again.
+
+
+## PServer task roundtrip — curl → AAB → AAUI → AAB → PServer
+
+Start PServer, AAB and AAUI (the EServers are not required for this demo):
+
+```sh
+npm --prefix testing run pserver
+ENABLE_TEST_PEERS=1 npm run dev
+npm --prefix testing run aaui
+```
+
+Trigger a new mock task using curl:
+
+```sh
+curl -X POST http://127.0.0.1:3001/demo/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"config":"mock automation configuration"}'
+```
+
+PServer responds HTTP **202 Accepted** with the task in `inProgress` state. This indicates **delivery to AAUI**, not completion of processing. To inspect completion:
+
+```sh
+curl http://127.0.0.1:3001/demo/tasks
+curl http://127.0.0.1:3001/demo/tasks/task-<uuid>
+```
+
+Each task follows this exact data shape (embedded in `peer:message.payload.data`):
+
+```json
+{
+  "id": "task-681bac01-6e86-47d8-b4eb-b6cd0e3c3d11",
+  "status": "inProgress",
+  "config": "mock automation configuration",
+  "createdTime": 1794500000000,
+  "updatedTime": 1794500000000
+}
+```
+
+Events and lifecycle:
+
+1. `POST /demo/tasks` creates a unique task with `status: "inProgress"`. PServer logs and stores it in memory.
+2. PServer sends a `peer:message` with `payload.type: "demo.task.request"`, `from: "pserver"`, `to: "aaui"` through its existing Socket.IO connection initiated by AAB.
+3. AAUI acknowledges receipt immediately; the **Task Processing** screen displays the task and a 5-second progress bar.
+4. After `PROCESSING_TIME_MS = 5000`, AAUI changes `status` to `finished`, updates `updatedTime`, and sends a new `peer:message` with `payload.type: "demo.task.result"`, `from: "aaui"`, `to: "pserver"` through AAB.
+5. PServer validates the returned task against the original (ID, config, createdTime, and status transition), logs `TASK FINISHED RECEIVED FROM AAUI`, and updates its in-memory task record. AAUI shows `Result delivered to PServer` after receiving the delivery acknowledgment.
+
+AAUI's **Task Processing** page stores the most recent 50 tasks. This is independent of the 10-log-per-EServer limit and existing scheduled streams. PServer keeps the most recent 100 tasks, in memory only.
+
+If the AAUI process quits while a task is running, its timer is cancelled. If a connection goes offline during result delivery, AAUI shows a delivery error; **no automatic retry or persistence** is added in the playground.
+
+Tests:
+
+```sh
+npm --prefix testing run test:aaui
+npm test
+```
+
+The task flow uses the existing message router, without changing the PServer `/ws` session protocol, the EServer 10s/20s streams, or the AAUI connection-presence implementation.
