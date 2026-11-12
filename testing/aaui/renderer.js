@@ -383,5 +383,5 @@ window.aaui.getLogs().then(records => {
 }).catch(error => {
   console.error('Cannot load AAUI log history:', error);
 });
-setInterval(() => { renderSummary(); if (page === 'tasks') renderTasks(); }, 1000);
+setInterval(renderSummary, 1000);
 render();
