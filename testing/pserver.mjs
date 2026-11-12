@@ -101,8 +101,21 @@ app.post('/demo/tasks', async (req, res) => {
     res.status(400).json({ ok: false, error: 'config must be a string' });
     return;
   }
-  const task = createTask(req.body?.config ?? 'mock task configuration');
-  const toInstanceId = req.body?.toInstanceId;
+  // Accept the exact task body, or retain the config-only demo shorthand.
+  const taskFields = ['id', 'status', 'createdTime', 'updatedTime'];
+  const explicitTask = taskFields.some(field => req.body?.[field] !== undefined);
+  const task = explicitTask ? {
+    id: req.body?.id,
+    status: req.body?.status,
+    config: req.body?.config,
+    createdTime: req.body?.createdTime,
+    updatedTime: req.body?.updatedTime
+  } : createTask(req.body?.config ?? 'mock task configuration');
+  if (!isTask(task, TASK_STATUS.inProgress)) {
+    res.status(400).json({ ok: false, error: 'Task requires task-<id>, inProgress status, string config, and valid ordered timestamps' });
+    return;
+  }
+  const toInstanceId = req.query.toInstanceId ?? req.body?.toInstanceId;
   if (toInstanceId !== undefined && (typeof toInstanceId !== 'string' || !toInstanceId.trim())) {
     res.status(400).json({ ok: false, error: 'toInstanceId must be a non-empty string' });
     return;
