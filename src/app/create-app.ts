@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { TransformationRegistry } from '../modules/peer-messaging/transformation-registry.js';
 import { SqliteAaCatalogRepository } from '../modules/aa-catalog/sqlite-catalog.js';
 import { openDatabase } from '../infrastructure/database/sqlite.js';
 import { SqliteSessionRepository } from '../modules/session/session.js';
@@ -23,6 +24,7 @@ export type ApplicationConfig = {
 export function createApplication(config: ApplicationConfig) {
   const db = openDatabase(config.dbPath);
   const routes = new RouteRegistry(config.routes ?? defaultRoutes());
+  const transformations = new TransformationRegistry();
   // HTTP server needs sender, and sender needs outbound socket hub: a narrow late-binding closure
   // resolves the composition cycle without leaking transport details to application use cases.
   let router: MessageRouter;
@@ -31,13 +33,13 @@ export function createApplication(config: ApplicationConfig) {
   const usage = new SqliteProcessUsageRepository(db);
   const catalog = new SqliteAaCatalogRepository(db);
   const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sender, apiKey: config.apiKey }));
-  const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers });
+  const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers, transformations });
   router = new MessageRouter(routes, [
     new SocketOutboundAdapter(sockets),
     new HttpOutboundAdapter(config.webhooks ?? {})
   ]);
   return {
-    httpServer, router, routes, sender, sessions, usage, catalog,
+    httpServer, router, routes, transformations, sender, sessions, usage, catalog,
     listen: (port: number) => new Promise<number>((resolve, reject) => {
       httpServer.once('error', reject);
       httpServer.listen(port, () => { httpServer.off('error', reject); const address = httpServer.address(); resolve(typeof address === 'object' && address ? address.port : port); });

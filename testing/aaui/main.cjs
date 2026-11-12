@@ -38,8 +38,19 @@ async function checkHttp() {
 
 async function launch() {
   const httpApp = express();
+  httpApp.use(express.json({ limit: '1mb' }));
   httpApp.disable('x-powered-by');
   httpApp.get('/health', (_req, res) => res.json({ server: peerId, port, aabConnected: Boolean(socket?.connected) }));
+  httpApp.post('/messages', async (req, res) => {
+    if (!socket?.connected) { res.status(503).json({ ok: false, error: 'AAB is offline' }); return; }
+    try {
+      const response = await socket.timeout(8000).emitWithAck('peer:message', req.body);
+      log('SEND peer:message ACK', response);
+      res.status(response.ok ? 200 : 422).json(response);
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'Send failed' });
+    }
+  });
   httpApp.get('/', (_req, res) => res.sendFile(join(__dirname, 'index.html')));
   httpApp.get('/renderer.js', (_req, res) => res.sendFile(join(__dirname, 'renderer.js')));
   httpServer = createServer(httpApp);
@@ -67,6 +78,10 @@ async function launch() {
       if (error) log('PING FAILED', error.message);
       else log('RECEIVE peer:ping ACK', response);
     });
+  });
+  socket.on('peer:message', (message, ack) => {
+    log('RECEIVE peer:message', message);
+    ack?.({ ok: true });
   });
   socket.on('aab:welcome', value => log('RECEIVE aab:welcome', value));
   socket.on('connect_error', error => log('Socket CONNECT ERROR', error.message));

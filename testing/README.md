@@ -63,3 +63,17 @@ No business message routing or peer-to-peer broadcasting has been implemented. A
 - This is a development playground. Keep it on localhost, do not expose unprotected test listeners to external networks, and do not store credentials in source.
 - Existing HTTP APIs, `/session`, `/worker` and Phase 2 routing are unchanged.
 - SQLite remains an existing AAB implementation dependency; this playground adds no database feature.
+
+
+## Message forwarding and transformation
+
+The playground now supports optional FROM -> AAB -> TO messages, with transforms registered at AAB by authenticated FROM + TO + payload.type. Each test server has a localhost-only POST /messages endpoint that sends to AAB over Socket.IO, and receives/logs forwarded peer:message with an ACK. Detailed contract: [docs/PEER_MESSAGE_TRANSFORMATION.md](../docs/PEER_MESSAGE_TRANSFORMATION.md).
+
+Example (start all five peers before sending):
+
+```sh
+curl -X POST http://127.0.0.1:3001/messages -H 'content-type: application/json' \\
+ -d '{"kind":"request","from":"pserver","to":"eserver","payload":{"type":"demo.enrich","data":{"value":1}}}'
+```
+
+No application-specific forwarding flows or transformers are preconfigured. AAB can register business-specific transformers through `app.transformations.register(...)`; unhandled types are forwarded unchanged. This new workflow does not use SQLite.

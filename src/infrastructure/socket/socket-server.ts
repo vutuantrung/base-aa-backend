@@ -1,5 +1,6 @@
 import { Server, type Socket } from 'socket.io';
 import { attachPeerGateway } from './peer-gateway.js';
+import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
 import type { Server as HttpServer } from 'node:http';
 import { z } from 'zod';
 import { CHANNELS, type Channel, type MessageEnvelope } from '../../shared/contracts/message.js';
@@ -13,9 +14,12 @@ export interface SocketMessageHub {
 }
 
 /** Socket is an inbound adapter and broadcast-only outbound gateway. Never republish outbound events. */
-export function attachSocketServer(http: HttpServer, deps: { sender: SendMessage; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean }) {
+export function attachSocketServer(http: HttpServer, deps: { sender: SendMessage; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean; transformations?: TransformationRegistry }) {
   const io = new Server(http, { cors: { origin: deps.corsOrigin }, maxHttpBufferSize: 1_000_000 });
-  if (deps.enableTestPeers) attachPeerGateway(io, deps.apiKey);
+  if (deps.enableTestPeers) {
+    if (!deps.transformations) throw new Error('Peer transformations registry is required');
+    attachPeerGateway(io, deps.apiKey, deps.transformations);
+  }
   for (const channel of CHANNELS) {
     const namespace = io.of(`/${channel}`);
     namespace.use((socket, next) => {

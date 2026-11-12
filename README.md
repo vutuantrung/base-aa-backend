@@ -115,3 +115,8 @@ Added the six GET endpoints specified in `api-data.json`. See [HTTP API design](
 The playground consists of AAB (:3000), PServer (:3001), EServer (:3002), SServer (:3003), and Electron AAUI (:3004). Each peer establishes an **outbound Socket.IO connection** to AAB's opt-in `/peers` namespace. AAUI also calls AAB's HTTP health API. No business forwarding between peers is configured yet.
 
 See [testing/README.md](testing/README.md). For AAB: `ENABLE_TEST_PEERS=1 npm run dev`. For the four peers, install dependencies within `testing/` and start each script in its own terminal. Keep this playground on localhost; use API_KEY for shared environments.
+
+
+## Peer message transformation (new)
+
+The opt-in `/peers` test gateway accepts `peer:message` with `from`, `to`, `kind`, `payload.type` and `payload.data`. AAB validates FROM against the authenticated connection, runs optional business transforms selected by FROM/TO/type, then forwards the transformed envelope to TO. Peer receives/logs and acknowledges. This contract is separate from the legacy Phase 2 channels. See [peer message design](docs/PEER_MESSAGE_TRANSFORMATION.md).

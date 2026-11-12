@@ -22,12 +22,24 @@ export async function startPeerServer({ peerId, port }) {
     auth: { peerId, ...(process.env.API_KEY ? { token: process.env.API_KEY } : {}) }
   });
 
+  app.use(express.json({ limit: '1mb' }));
   app.get('/health', (_req, res) => res.json({
     server: peerId,
     port,
     aabConnected: socket.connected,
     status: 'running'
   }));
+
+  app.post('/messages', async (req, res) => {
+    if (!socket.connected) { res.status(503).json({ ok: false, error: 'AAB is offline' }); return; }
+    try {
+      const response = await socket.timeout(8000).emitWithAck('peer:message', req.body);
+      console.log(`[${peerId}] SEND peer:message`, req.body, 'ACK', response);
+      res.status(response.ok ? 200 : 422).json(response);
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'Send failed' });
+    }
+  });
 
   // Local diagnostic Socket.IO server. Inbound only; intentionally no relay to AAB.
   ioServer.on('connection', client => {
@@ -42,6 +54,10 @@ export async function startPeerServer({ peerId, port }) {
       if (error) { console.error(`[${peerId}] PING FAILED`, error.message); return; }
       console.log(`[${peerId}] RECEIVE peer:ping ACK`, response);
     });
+  });
+  socket.on('peer:message', (message, ack) => {
+    console.log(`[${peerId}] RECEIVE peer:message`, JSON.stringify(message));
+    ack?.({ ok: true });
   });
   socket.on('aab:welcome', message => console.log(`[${peerId}] RECEIVE aab:welcome`, message));
   socket.on('connect_error', error => console.error(`[${peerId}] AAB CONNECT ERROR`, error.message));
