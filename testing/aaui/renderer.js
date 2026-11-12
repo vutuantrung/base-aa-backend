@@ -374,6 +374,22 @@ $('clear-instance-logs').addEventListener('click', () => {
   renderInstanceLogs();
 });
 $('health').addEventListener('click', () => { void window.aaui.checkHttp(); });
+$('refresh-tasks').addEventListener('click', async () => {
+  const button = $('refresh-tasks');
+  button.disabled = true;
+  try {
+    const result = await window.aaui.refreshTasks();
+    if (!result?.ok) {
+      state.taskSnapshotError = result?.error || 'Task refresh request failed';
+      renderTasks();
+    }
+  } catch (error) {
+    state.taskSnapshotError = error instanceof Error ? error.message : String(error);
+    renderTasks();
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function receive(record) {
   if (!record) return;
