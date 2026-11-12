@@ -1,0 +1,132 @@
+/* Pure, browser-compatible state helpers for the AAUI integration dashboard. */
+(function (root) {
+  'use strict';
+  const STATUS_TYPE = 'eserver.scheduled-update';
+  const VM_TYPE = 'eserver.vm-info';
+  const MAX_LOGS = 200;
+  const MAX_HISTORY = 32;
+
+  function createState() {
+    return {
+      connection: 'connecting',
+      instances: {},
+      messages: [],
+      totalStatus: 0,
+      totalVmInfo: 0,
+      httpHealth: null
+    };
+  }
+
+  function instanceFor(state, id) {
+    if (!state.instances[id]) {
+      state.instances[id] = {
+        id,
+        statusCount: 0,
+        vmCount: 0,
+        lastStatusAt: null,
+        lastVmAt: null,
+        lastSequence: null,
+        latestStatus: null,
+        vms: [],
+        statusHistory: [],
+        vmHistory: []
+      };
+    }
+    return state.instances[id];
+  }
+
+  function normalizeVmList(value) {
+    if (!Array.isArray(value)) return null;
+    return value.filter(vm => vm && typeof vm === 'object' && !Array.isArray(vm)).map(vm => ({
+      id: typeof vm.id === 'string' ? vm.id : '',
+      browserId: typeof vm.browserId === 'string' ? vm.browserId : '',
+      version: typeof vm.version === 'string' ? vm.version : '',
+      supportingPlatforms: Array.isArray(vm.supportingPlatforms)
+        ? vm.supportingPlatforms.filter(p => p && typeof p === 'object').map(p => ({
+          platform: typeof p.platform === 'string' ? p.platform : '',
+          supportingFeatures: Array.isArray(p.supportingFeatures) ? p.supportingFeatures.filter(s => typeof s === 'string') : [],
+          parserInfo: {
+            version: typeof p.parserInfo?.version === 'string' ? p.parserInfo.version : '',
+            type: Array.isArray(p.parserInfo?.type) ? p.parserInfo.type.filter(s => typeof s === 'string') : []
+          }
+        })) : []
+    }));
+  }
+
+  function ingest(state, record) {
+    if (!record || typeof record !== 'object') return null;
+    const now = Date.parse(record.timestamp) || Date.now();
+    const event = record.event || '';
+    state.messages.push(record);
+    if (state.messages.length > MAX_LOGS) state.messages.shift();
+
+    if (event === 'Socket CONNECT AAB') state.connection = 'connected';
+    if (event === 'Socket DISCONNECT' || event === 'Socket CONNECT ERROR') state.connection = 'disconnected';
+    if (event === 'HTTP AAB /health') state.httpHealth = record.value;
+
+    if (event !== 'RECEIVE peer:message') return null;
+    const message = record.value;
+    if (!message || typeof message !== 'object' || message.from !== 'eserver') return null;
+    const type = message.payload?.type;
+    if (type !== STATUS_TYPE && type !== VM_TYPE) return null;
+    const data = message.payload?.data;
+    const id = typeof message.sourceInstanceId === 'string' && message.sourceInstanceId
+      ? message.sourceInstanceId
+      : (typeof data?.instanceId === 'string' && data.instanceId ? data.instanceId : 'unknown-instance');
+    const instance = instanceFor(state, id);
+
+    if (type === STATUS_TYPE && data && typeof data === 'object' && !Array.isArray(data)) {
+      state.totalStatus += 1;
+      instance.statusCount += 1;
+      instance.lastStatusAt = now;
+      instance.latestStatus = data;
+      instance.lastSequence = Number.isFinite(data.sequence) ? data.sequence : null;
+      instance.statusHistory.push(now);
+      if (instance.statusHistory.length > MAX_HISTORY) instance.statusHistory.shift();
+      return { type: 'status', instanceId: id };
+    }
+    if (type === VM_TYPE) {
+      const vms = normalizeVmList(data);
+      if (!vms) return null;
+      state.totalVmInfo += 1;
+      instance.vmCount += 1;
+      instance.lastVmAt = now;
+      instance.vms = vms;
+      instance.vmHistory.push(now);
+      if (instance.vmHistory.length > MAX_HISTORY) instance.vmHistory.shift();
+      return { type: 'vm', instanceId: id };
+    }
+    return null;
+  }
+
+  function ageLabel(timestamp, now = Date.now()) {
+    if (!timestamp) return 'No data';
+    const diff = Math.max(0, Math.floor((now - timestamp) / 1000));
+    if (diff < 2) return 'Just now';
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    return Math.floor(diff / 3600) + 'h ago';
+  }
+
+  function streamState(lastAt, expectedMs, now = Date.now()) {
+    if (!lastAt) return 'waiting';
+    return now - lastAt <= expectedMs * 2.5 ? 'healthy' : 'stale';
+  }
+
+  function summary(state, selected = 'all', now = Date.now()) {
+    const list = Object.values(state.instances).filter(item => selected === 'all' || item.id === selected);
+    return {
+      instanceCount: list.length,
+      vmCount: list.reduce((sum, item) => sum + item.vms.length, 0),
+      statusCount: list.reduce((sum, item) => sum + item.statusCount, 0),
+      vmUpdates: list.reduce((sum, item) => sum + item.vmCount, 0),
+      activeCount: list.filter(item => streamState(item.lastStatusAt, 10000, now) === 'healthy').length,
+      lastStatusAt: Math.max(0, ...list.map(item => item.lastStatusAt || 0)),
+      lastVmAt: Math.max(0, ...list.map(item => item.lastVmAt || 0))
+    };
+  }
+
+  const api = { STATUS_TYPE, VM_TYPE, createState, ingest, normalizeVmList, ageLabel, streamState, summary };
+  root.AAUIState = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
