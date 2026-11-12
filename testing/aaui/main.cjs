@@ -64,6 +64,12 @@ async function launch() {
 
   ipcMain.handle('aaui:logs', () => logs);
   ipcMain.handle('aaui:check-http', checkHttp);
+  ipcMain.handle('aaui:refresh-tasks', () => {
+    if (!socket?.connected) return { ok: false, error: 'AAUI is disconnected from AAB' };
+    socket.emit('task:lifecycle:refresh');
+    log('TASK SNAPSHOT REFRESH REQUESTED', null);
+    return { ok: true };
+  });
   window = new BrowserWindow({
     width: 1320, height: 860, minWidth: 720, minHeight: 540,
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
