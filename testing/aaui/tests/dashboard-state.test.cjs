@@ -201,3 +201,21 @@ test('AAUI retains only the 50 most recently observed task cards', () => {
   assert.equal(state.tasks['task-0'], undefined);
   assert.ok(state.tasks['task-15']);
 });
+
+
+test('received lifecycle from AAB appears on AAUI without altering EServer logs', () => {
+  const state = createState();
+  const task = {
+    id: 'task-123-received', status: 'inProgress', config: 'demo',
+    createdTime: 1794500000000, updatedTime: 1794500000000
+  };
+  ingest(state, {
+    timestamp: at, event: 'RECEIVE task:lifecycle',
+    value: { status: 'received', event: 'task.received', instanceId: 'e-1', task }
+  });
+  assert.equal(state.tasks[task.id].status, 'received');
+  assert.equal(state.tasks[task.id].instanceId, 'e-1');
+  assert.equal(state.tasks[task.id].delivery, 'received');
+  assert.equal(state.taskOrder.length, 1);
+  assert.equal(Object.keys(state.instances).length, 0);
+});
