@@ -196,6 +196,7 @@ function matchesInstance(record) {
 function activityRow(record) {
   const category = recordCategory(record);
   const row = element('details', 'activity-row');
+  row.dataset.key = [record.timestamp, record.event, JSON.stringify(record.value)].join('|');
   const heading = element('summary');
   const mark = element('span', 'event-mark ' + (category === 'system' ? '' : category),
     category === 'status' ? '↗' : category === 'vm' ? '▣' : '·');
@@ -212,6 +213,7 @@ function activityRow(record) {
 }
 function renderActivity() {
   const root = $('activity-list');
+  const openRecords = new Set(Array.from(root.querySelectorAll('details[open]'), entry => entry.dataset.key));
   root.replaceChildren();
   const records = state.messages.filter(record =>
     (eventFilter === 'all' || recordCategory(record) === eventFilter) && matchesInstance(record)).slice().reverse();
@@ -219,7 +221,11 @@ function renderActivity() {
     root.append(empty('No events to display', 'Incoming messages and connection events will appear here.'));
     return;
   }
-  for (const record of records) root.append(activityRow(record));
+  for (const record of records) {
+    const row = activityRow(record);
+    row.open = openRecords.has(row.dataset.key);
+    root.append(row);
+  }
 }
 
 function render() {
