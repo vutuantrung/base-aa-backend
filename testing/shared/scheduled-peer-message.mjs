@@ -27,7 +27,7 @@ export function startScheduledPeerMessages({ socket, intervalMs, timeoutMs = 800
       const message = createMessage();
       log('[eserver] SCHEDULE SEND peer:message', JSON.stringify(message));
       const response = await socket.timeout(timeoutMs).emitWithAck('peer:message', message);
-      if (response?.ok) log('[eserver] SCHEDULE DELIVERED', message.payload.data.sequence, response.data?.id);
+      if (response?.ok) log('[eserver] SCHEDULE DELIVERED', { type: message.payload.type, messageId: response.data?.id });
       else log('[eserver] SCHEDULE REJECTED', JSON.stringify(response));
     } catch (error) {
       log('[eserver] SCHEDULE ERROR', error instanceof Error ? error.message : String(error));
