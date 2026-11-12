@@ -225,6 +225,25 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     } else if (peerId === 'aaui') {
       // Late AAUI connections and reconnects always receive the online set.
       socket.emit('peer:status:snapshot', presenceSnapshot());
+      // Task lifecycle events are transient; rehydrate the dashboard from disk.
+      void taskStore.listRecent(50).then(tasks => {
+        if (!socket.connected || singlePeers.get('aaui')?.id !== socket.id) return;
+        socket.emit('task:lifecycle:snapshot', {
+          timestamp: Date.now(),
+          tasks: tasks.map(task => ({
+            task, status: task.status === 'finished' ? 'finished' : 'received',
+            event: 'task.snapshot'
+          }))
+        });
+      }).catch(error => {
+        console.error('[AAB] TASK SNAPSHOT ERROR', error);
+        if (socket.connected && singlePeers.get('aaui')?.id === socket.id) {
+          socket.emit('task:lifecycle:snapshot', {
+            timestamp: Date.now(), tasks: [],
+            error: 'Unable to load persisted task history'
+          });
+        }
+      });
     }
     socket.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
