@@ -307,7 +307,11 @@ function renderTasks() {
       element('div', 'task-config', task.config || '—'), meta,
       element('div', 'task-delivery', task.status === 'finished'
         ? '✓ EServer finished; result delivered to PServer'
-        : '✓ Received by AAB, persisted and forwarded to EServer'));
+        : task.forwardStatus === 'forwarded'
+          ? '✓ AAB saved task; EServer acknowledged delivery'
+          : task.forwardStatus === 'failed'
+            ? '⚠ AAB saved task; EServer delivery failed: ' + (task.forwardError || 'unknown')
+            : '✓ Received and persisted by AAB; forwarding pending'));
     root.append(card);
   }
 }
