@@ -276,8 +276,8 @@ Events and lifecycle:
 
 1. `POST /demo/tasks` creates a unique task with `status: "inProgress"`. PServer logs and stores it in memory.
 2. PServer sends a `peer:message` with `payload.type: "demo.task.request"`, `from: "pserver"`, `to: "aaui"` through its existing Socket.IO connection initiated by AAB.
-3. AAUI acknowledges receipt immediately; the **Task Processing** screen displays the task and a 5-second progress bar.
-4. After `PROCESSING_TIME_MS = 5000`, AAUI changes `status` to `finished`, updates `updatedTime`, and sends a new `peer:message` with `payload.type: "demo.task.result"`, `from: "aaui"`, `to: "pserver"` through AAB.
+3. (Historical behavior, removed) AAUI previously acknowledged receipt and displayed a 5-second progress bar.
+4. (Historical behavior, removed) AAUI previously auto-completed tasks after 5 seconds. It now only observes lifecycle events.
 5. PServer validates the returned task against the original (ID, config, createdTime, and status transition), logs `TASK FINISHED RECEIVED FROM AAUI`, and updates its in-memory task record. AAUI shows `Result delivered to PServer` after receiving the delivery acknowledgment.
 
 AAUI's **Task Processing** page stores the most recent 50 tasks. This is independent of the 10-log-per-EServer limit and existing scheduled streams. PServer keeps the most recent 100 tasks, in memory only.
@@ -296,7 +296,7 @@ The task flow uses the existing message router, without changing the PServer `/w
 
 ## Task receipt flow — PServer → AAB → EServer (AAUI observes)
 
-This flow supersedes the earlier PServer → AAB → AAUI task execution demo. **The `received` ACK means AAB has accepted and saved the task, not that EServer has received it.** AAUI is an observer; the existing 5-second mock worker runs only on EServer.
+This flow supersedes the earlier PServer → AAB → AAUI task execution demo. **The `received` ACK means AAB has accepted and saved the task, not that EServer has received it.** AAUI is an observer. EServer now only acknowledges task receipt; automatic task completion after 5 seconds has been removed.
 
 When PServer sends a `demo.task.request` to AAB, the receipt sequence is:
 
@@ -307,7 +307,7 @@ When PServer sends a `demo.task.request` to AAB, the receipt sequence is:
 
 **EServer forwarding is separate and asynchronous.** AAB attempts `peer:message` forwarding to the requested `toInstanceId` (or the sole connected EServer if unambiguous). After receiving the EServer ACK, AAB publishes `task.forwarded`. If it cannot select or reach EServer, or EServer rejects the message, it publishes `task.forwardFailed` with a reason. AAUI keeps the task status **received** and displays the forwarding outcome separately. Failed forwarding does not undo the receipt ACK or delete the stored file. There is currently no queue/retry scheduler; failed tasks require explicit operator recovery.
 
-After EServer's mock 5-second processing, it returns `demo.task.result` with `status: "finished"` through AAB to PServer. AAB stores the result as `data/tasks/<task-id>.result.json`, forwards it, and publishes `task.finished` to AAUI after PServer accepts it.
+EServer no longer sends `demo.task.result` automatically. Tasks remain `received` on AAUI until EServer explicitly sends a result with `status: "finished"` through AAB to PServer. That explicit result is stored at `data/tasks/<task-id>.result.json`, forwarded to PServer, and published as `task.finished` to AAUI after PServer accepts it.
 
 To run the demonstration (separate terminals):
 
@@ -381,3 +381,8 @@ curl http://127.0.0.1:3004/health
 Open AAUI **Task Monitoring**. The task list is restored automatically on AAUI connect/reconnect. Use **Refresh Tasks** to request an on-demand snapshot from AAB without restarting Electron. The AAB task data is stored in `./data/tasks/` relative to AAB's working directory unless `AAB_TASK_STORE_DIR` is configured. Each task ID must be unique because files are created exclusively. If `curl` returns 400, verify the task JSON; if 422, check the PServer response and AAB file persistence logs; if 503, check the PServer↔AAB connection.
 
 The previous implementation delivered `task:lifecycle` events only when AAUI happened to be connected and therefore could leave Task Monitoring empty after late connection or reconnect. This recovery behavior fixes that limitation. The snapshot is a recent-history view, not a durable delivery queue or replay of every monitoring event.
+
+
+### Removed: automatic 5-second task completion
+
+EServer mock task reception is acknowledgment-only. There is no task completion timer or automatic `finished` message. AAB does not change task status after 5 seconds. The original task remains persisted, the AAUI displays `received` (with separate forwarding feedback), and PServer has no finished result unless EServer later explicitly sends one. Socket.IO ping timeouts and EServer status/VM telemetry schedules (10s and 20s) are unrelated and remain enabled.
