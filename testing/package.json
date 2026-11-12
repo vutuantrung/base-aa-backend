@@ -8,7 +8,9 @@
     "eserver": "node eserver.mjs",
     "sserver": "node sserver.mjs",
     "aaui": "electron aaui/main.cjs",
-    "test:scheduler": "node --test tests/scheduled-peer-message.test.mjs"
+    "test:scheduler": "node --test tests/scheduled-peer-message.test.mjs",
+    "test:vm-info": "node --test tests/mock-vm-info.test.mjs",
+    "test:playground": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",
