@@ -12,6 +12,7 @@ export const incomingPeerMessageSchema = z.object({
   kind: z.enum(['request', 'response', 'event']),
   from: z.enum(clientPeerIds),
   to: z.enum(peerIds),
+  toInstanceId: z.string().trim().min(1).max(100).optional(),
   channel: z.string().min(1).max(100).default('worker'),
   event: z.literal('message').default('message'),
   correlationId: z.string().min(1).max(200).optional(),
@@ -25,6 +26,8 @@ export const incomingPeerMessageSchema = z.object({
 export type IncomingPeerMessage = z.infer<typeof incomingPeerMessageSchema>;
 
 export type PeerMessage = IncomingPeerMessage & {
+  /** Authenticated source instance, assigned by AAB (not trusted from payload). */
+  sourceInstanceId?: string;
   id: string;
   timestamp: number;
   processing?: {
@@ -36,4 +39,4 @@ export type PeerMessage = IncomingPeerMessage & {
 
 export type PeerMessageAck =
   | { ok: true; data: PeerMessage }
-  | { ok: false; error: string; code: 'INVALID_MESSAGE' | 'SENDER_MISMATCH' | 'DESTINATION_OFFLINE' | 'TRANSFORMATION_FAILED' | 'DELIVERY_FAILED' | 'UNSUPPORTED_DESTINATION' };
+  | { ok: false; error: string; code: 'INVALID_MESSAGE' | 'SENDER_MISMATCH' | 'DESTINATION_OFFLINE' | 'TRANSFORMATION_FAILED' | 'DELIVERY_FAILED' | 'UNSUPPORTED_DESTINATION' | 'AMBIGUOUS_DESTINATION' };

@@ -3,30 +3,35 @@ import { incomingPeerMessageSchema, type IncomingPeerMessage, type PeerMessage, 
 import { TransformationRegistry } from './transformation-registry.js';
 
 export class PeerMessageError extends Error {
-  constructor(readonly code: 'INVALID_MESSAGE' | 'SENDER_MISMATCH' | 'DESTINATION_OFFLINE' | 'TRANSFORMATION_FAILED' | 'DELIVERY_FAILED' | 'UNSUPPORTED_DESTINATION', message: string) {
+  constructor(readonly code: 'INVALID_MESSAGE' | 'SENDER_MISMATCH' | 'DESTINATION_OFFLINE' | 'TRANSFORMATION_FAILED' | 'DELIVERY_FAILED' | 'UNSUPPORTED_DESTINATION' | 'AMBIGUOUS_DESTINATION', message: string) {
     super(message);
     this.name = 'PeerMessageError';
   }
 }
 
 export interface PeerDelivery {
-  isConnected(peer: PeerId): boolean;
+  isConnected(peer: PeerId, toInstanceId?: string): boolean;
+  validateDestination?(message: IncomingPeerMessage): void;
   deliver(message: PeerMessage): Promise<void>;
 }
 
 export class PeerMessageService {
   constructor(readonly transformations: TransformationRegistry, private readonly delivery: PeerDelivery) {}
 
-  async process(value: unknown, authenticatedFrom: PeerId): Promise<PeerMessage> {
+  async process(value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessage> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
     if (!parsed.success) throw new PeerMessageError('INVALID_MESSAGE', 'Invalid message envelope');
     const input: IncomingPeerMessage = parsed.data;
     if (input.from !== authenticatedFrom) throw new PeerMessageError('SENDER_MISMATCH', 'FROM must match authenticated connection');
-    if (input.to !== 'aab' && !this.delivery.isConnected(input.to))
+    if (input.toInstanceId && input.to !== 'eserver')
+      throw new PeerMessageError('INVALID_MESSAGE', 'toInstanceId is currently supported only for EServer');
+    this.delivery.validateDestination?.(input);
+    if (input.to !== 'aab' && !this.delivery.isConnected(input.to, input.toInstanceId))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${input.to} is offline`);
 
     const original: PeerMessage = {
       ...input, id: input.id ?? randomUUID(), timestamp: Date.now(),
+      ...(authenticatedFrom === 'eserver' && authenticatedInstanceId ? { sourceInstanceId: authenticatedInstanceId } : {}),
       payload: structuredClone(input.payload)
     };
     let message = original;
@@ -54,7 +59,7 @@ export class PeerMessageService {
     };
     if (message.to === 'aab') return message;
     // Validate again after asynchronous transformations (destination may have disconnected).
-    if (!this.delivery.isConnected(message.to))
+    if (!this.delivery.isConnected(message.to, message.toInstanceId))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${message.to} is offline`);
     try {
       await this.delivery.deliver(message);

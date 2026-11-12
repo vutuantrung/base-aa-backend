@@ -98,3 +98,8 @@ Verify logs in EServer, AAB and AAUI terminals. To run focused scheduler tests:
 ```sh
 npm --prefix testing run test:scheduler
 ```
+
+
+## Multiple EServer instances
+
+AAB now supports multiple concurrent EServer connections identified by `auth.instanceId`. Each sends a 10-second scheduled update to AAUI. EServer options: `ESERVER_INSTANCE_ID` and `ESERVER_PORT`. To address one EServer, specify `toInstanceId` in the message. See [multiple EServer guide](../docs/MULTIPLE_ESERVERS.md).

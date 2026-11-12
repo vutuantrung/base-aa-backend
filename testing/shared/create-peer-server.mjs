@@ -9,7 +9,7 @@ import { io } from 'socket.io-client';
  * PServer has a separate inbound Socket.IO implementation in testing/pserver.mjs.
  * Business communication channels are intentionally NOT defined here.
  */
-export async function startPeerServer({ peerId, port }) {
+export async function startPeerServer({ peerId, port, instanceId }) {
   const aabUrl = process.env.AAB_URL ?? 'http://127.0.0.1:3000';
   const host = process.env.PEER_HOST ?? '127.0.0.1';
   const app = express();
@@ -20,12 +20,13 @@ export async function startPeerServer({ peerId, port }) {
     autoConnect: false,
     reconnection: true,
     transports: ['websocket'],
-    auth: { peerId, ...(process.env.API_KEY ? { token: process.env.API_KEY } : {}) }
+    auth: { peerId, ...(instanceId ? { instanceId } : {}), ...(process.env.API_KEY ? { token: process.env.API_KEY } : {}) }
   });
 
   app.use(express.json({ limit: '1mb' }));
   app.get('/health', (_req, res) => res.json({
     server: peerId,
+    instanceId: instanceId ?? null,
     port,
     aabConnected: socket.connected,
     status: 'running'
@@ -50,7 +51,7 @@ export async function startPeerServer({ peerId, port }) {
   });
 
   socket.on('connect', () => {
-    console.log(`[${peerId}] CONNECT to AAB socket=${socket.id}`);
+    console.log(`[${peerId}] CONNECT to AAB instance=${instanceId ?? '-'} socket=${socket.id}`);
     socket.timeout(5000).emit('peer:ping', { from: peerId }, (error, response) => {
       if (error) { console.error(`[${peerId}] PING FAILED`, error.message); return; }
       console.log(`[${peerId}] RECEIVE peer:ping ACK`, response);
@@ -68,7 +69,7 @@ export async function startPeerServer({ peerId, port }) {
     server.once('error', reject);
     server.listen(port, host, () => { server.off('error', reject); resolve(); });
   });
-  console.log(`[${peerId}] HTTP + Socket.IO listening at http://${host}:${port}`);
+  console.log(`[${peerId}] HTTP + Socket.IO instance=${instanceId ?? '-'} listening at http://${host}:${port}`);
   socket.connect();
 
   let stopping = false;
