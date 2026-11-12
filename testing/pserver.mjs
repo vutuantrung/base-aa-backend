@@ -120,7 +120,7 @@ app.post('/demo/tasks', async (req, res) => {
       res.status(422).json({ ok: false, error: response.error, code: response.code });
       return;
     }
-    console.log('[pserver] TASK RECEIVED BY AAB AND ESERVER', JSON.stringify(task));
+    console.log('[pserver] TASK RECEIVED BY AAB', JSON.stringify(task));
     res.status(202).json({ ok: true, status: response.status ?? 'received', task, messageId: response.data?.id });
   } catch (error) {
     tasks.delete(task.id);
