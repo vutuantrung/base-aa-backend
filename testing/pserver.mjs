@@ -61,7 +61,7 @@ namespace.on('connection', socket => {
 
   socket.on('peer:message', (message, ack) => {
     console.log('[pserver] RECEIVE peer:message', JSON.stringify(message));
-    if (message?.from === 'aaui' && message?.to === 'pserver' &&
+    if (message?.from === 'eserver' && message?.to === 'pserver' &&
         message?.payload?.type === TASK_RESULT_TYPE) {
       const task = message.payload.data;
       const previous = tasks.get(task?.id);
@@ -73,7 +73,7 @@ namespace.on('connection', socket => {
         return;
       }
       keepTask(task);
-      console.log('[pserver] TASK FINISHED RECEIVED FROM AAUI', JSON.stringify(task));
+      console.log('[pserver] TASK FINISHED RECEIVED FROM ESERVER', JSON.stringify(task));
     }
     ack?.({ ok: true });
   });
@@ -102,8 +102,14 @@ app.post('/demo/tasks', async (req, res) => {
     return;
   }
   const task = createTask(req.body?.config ?? 'mock task configuration');
+  const toInstanceId = req.body?.toInstanceId;
+  if (toInstanceId !== undefined && (typeof toInstanceId !== 'string' || !toInstanceId.trim())) {
+    res.status(400).json({ ok: false, error: 'toInstanceId must be a non-empty string' });
+    return;
+  }
   const message = {
-    version: '1.0', kind: 'request', from: 'pserver', to: 'aaui',
+    version: '1.0', kind: 'request', from: 'pserver', to: 'eserver',
+    ...(toInstanceId ? { toInstanceId } : {}),
     payload: { type: TASK_REQUEST_TYPE, version: '1.0', data: task }
   };
   keepTask(task);
@@ -114,8 +120,8 @@ app.post('/demo/tasks', async (req, res) => {
       res.status(422).json({ ok: false, error: response.error, code: response.code });
       return;
     }
-    console.log('[pserver] TASK DISPATCHED TO AAUI', JSON.stringify(task));
-    res.status(202).json({ ok: true, task, messageId: response.data?.id });
+    console.log('[pserver] TASK RECEIVED BY AAB AND ESERVER', JSON.stringify(task));
+    res.status(202).json({ ok: true, status: response.status ?? 'received', task, messageId: response.data?.id });
   } catch (error) {
     tasks.delete(task.id);
     res.status(aabSocket?.connected ? 502 : 503).json({
