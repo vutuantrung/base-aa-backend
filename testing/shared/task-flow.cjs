@@ -8,7 +8,7 @@ const TASK_STATUS = Object.freeze({ inProgress: 'inProgress', finished: 'finishe
 
 function isTask(value, status) {
   return value && typeof value === 'object' && !Array.isArray(value) &&
-    typeof value.id === 'string' && /^task-[0-9a-f-]{36}$/.test(value.id) &&
+    typeof value.id === 'string' && /^task-[a-zA-Z0-9-]{1,100}$/.test(value.id) &&
     (status ? value.status === status : Object.values(TASK_STATUS).includes(value.status)) &&
     typeof value.config === 'string' &&
     Number.isSafeInteger(value.createdTime) && Number.isSafeInteger(value.updatedTime) &&
