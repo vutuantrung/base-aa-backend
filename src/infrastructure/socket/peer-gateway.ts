@@ -69,6 +69,8 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
           message.payload.type !== 'demo.task.request') return;
       const task = taskSchema.parse(message.payload.data);
       if (task.status !== 'inProgress') throw new Error('Task must start inProgress');
+      // Pin the selected EServer before delivery so lifecycle events reference the exact recipient.
+      if (!message.toInstanceId && eservers.size === 1) message.toInstanceId = [...eservers.keys()][0];
       await taskStore.save(task);
       console.log('[AAB] TASK STORED', task.id);
     },
@@ -104,8 +106,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
         const task = taskSchema.parse(message.payload.data);
         const target = singlePeers.get('aaui');
         target?.emit('task:lifecycle', {
-          task, status: 'received', instanceId: message.toInstanceId ??
-            [...eservers.keys()][0], event: 'task.received', timestamp: Date.now()
+          task, status: 'received', instanceId: message.toInstanceId, event: 'task.received', timestamp: Date.now()
         });
         return { ok: true, status: 'received', data: message };
       }
