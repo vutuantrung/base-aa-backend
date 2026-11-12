@@ -1,8 +1,289 @@
-const panel = document.getElementById('logs');
-function show(record) {
-  panel.textContent += `[${record.timestamp}] ${record.event}: ${JSON.stringify(record.value)}\n`;
-  panel.scrollTop = panel.scrollHeight;
+/* AAUI dashboard; no Node integration or external browser dependencies. */
+'use strict';
+const {
+  createState, ingest, ageLabel, streamState, summary,
+  STATUS_TYPE, VM_TYPE
+} = window.AAUIState;
+
+const state = createState();
+let page = 'overview';
+let selectedInstance = 'all';
+let searchTerm = '';
+let eventFilter = 'all';
+const seen = new Set();
+
+const $ = id => document.getElementById(id);
+const element = (tag, className = '', content) => {
+  const result = document.createElement(tag);
+  if (className) result.className = className;
+  if (content !== undefined && content !== null) result.textContent = String(content);
+  return result;
+};
+function add(parent, ...children) {
+  for (const child of children) {
+    if (child !== undefined && child !== null) parent.append(child);
+  }
+  return parent;
 }
-window.aaui.getLogs().then(records => records.forEach(show));
-window.aaui.onLog(show);
-document.getElementById('health').addEventListener('click', () => { void window.aaui.checkHttp(); });
+function empty(title, description, icon = '◌') {
+  const wrapper = element('div', 'empty');
+  add(wrapper,
+    element('div', 'empty-icon', icon),
+    element('strong', '', title),
+    element('p', '', description));
+  return wrapper;
+}
+function pill(label, stateName) {
+  return element('span', 'pill' + (stateName ? ' ' + stateName : ''), label);
+}
+function chip(label, variant = '') {
+  return element('span', 'chip' + (variant ? ' ' + variant : ''), label);
+}
+function detail(label, value) {
+  const item = element('div');
+  add(item, element('span', '', label), element('strong', '', value));
+  return item;
+}
+function currentInstances() {
+  return Object.values(state.instances).filter(item => selectedInstance === 'all' || item.id === selectedInstance);
+}
+function updateSelector() {
+  const select = $('instance-filter');
+  const previous = selectedInstance;
+  select.replaceChildren();
+  select.add(new Option('All EServer instances', 'all'));
+  for (const instance of Object.values(state.instances).sort((a, b) => a.id.localeCompare(b.id))) {
+    select.add(new Option(instance.id, instance.id));
+  }
+  if (previous !== 'all' && !state.instances[previous]) selectedInstance = 'all';
+  select.value = selectedInstance;
+}
+
+function streamInfo(kind) {
+  const isStatus = kind === 'status';
+  const items = currentInstances();
+  const times = items.flatMap(item => isStatus ? item.statusHistory : item.vmHistory);
+  const lastAt = Math.max(0, ...items.map(item => isStatus ? item.lastStatusAt || 0 : item.lastVmAt || 0));
+  return { times, lastAt, expected: isStatus ? 10000 : 20000 };
+}
+function renderStream(kind) {
+  const info = streamInfo(kind);
+  const health = streamState(info.lastAt, info.expected);
+  const indicator = $(kind + '-stream-pill');
+  indicator.className = 'pill' + (health === 'waiting' ? '' : ' ' + health);
+  indicator.textContent = health === 'healthy' ? 'Receiving' : health === 'stale' ? 'Stale' : 'Waiting';
+  $(kind + '-last').textContent = ageLabel(info.lastAt);
+  const count = currentInstances().reduce((sum, instance) => sum + (kind === 'status' ? instance.statusCount : instance.vmCount), 0);
+  $(kind + '-stream-count').textContent = count + ' received';
+
+  const chart = $(kind + '-stream-chart');
+  chart.replaceChildren();
+  const now = Date.now();
+  const bins = 20;
+  const bucketMs = info.expected;
+  const counts = Array.from({ length: bins }, () => 0);
+  for (const time of info.times) {
+    const offset = Math.floor((now - time) / bucketMs);
+    if (offset >= 0 && offset < bins) counts[bins - 1 - offset] += 1;
+  }
+  const max = Math.max(1, ...counts);
+  for (const count of counts) {
+    const bar = element('div', 'bar' + (count > 0 ? ' filled ' + kind : ''));
+    bar.style.height = count ? (25 + Math.round(count / max * 75)) + '%' : '13%';
+    bar.title = count + ' arrivals';
+    chart.append(bar);
+  }
+}
+
+function renderSummary() {
+  const stats = summary(state, selectedInstance);
+  $('stat-instances').textContent = stats.instanceCount;
+  $('stat-vms').textContent = stats.vmCount;
+  $('stat-status').textContent = stats.statusCount;
+  $('stat-vm-updates').textContent = stats.vmUpdates;
+  $('instance-count').textContent = stats.instanceCount + (stats.instanceCount === 1 ? ' instance' : ' instances');
+  renderStream('status');
+  renderStream('vm');
+  const connected = state.connection === 'connected';
+  $('sidebar-dot').className = 'status-dot ' + (connected ? 'connected' : state.connection === 'disconnected' ? 'disconnected' : '');
+  $('sidebar-connection').textContent = connected ? 'Connected to AAB' : state.connection === 'disconnected' ? 'Disconnected' : 'Connecting to AAB';
+  $('health').title = state.httpHealth ? 'Latest HTTP check: ' + JSON.stringify(state.httpHealth) : 'Check AAB HTTP health';
+}
+
+function instanceCard(instance) {
+  const card = element('article', 'panel instance-card');
+  const head = element('div', 'instance-head');
+  const name = element('div', 'instance-name');
+  const nameText = element('div');
+  add(nameText, element('strong', '', instance.id), element('span', '', 'EServer instance'));
+  add(name, element('span', 'server-icon', '▥'), nameText);
+  const stateName = streamState(instance.lastStatusAt, 10000);
+  add(head, name, pill(stateName === 'healthy' ? 'Active stream' : stateName === 'stale' ? 'No recent status' : 'Waiting', stateName));
+  const metrics = element('div', 'instance-metrics');
+  add(metrics, detail('Status events', instance.statusCount), detail('VM info', instance.vmCount), detail('VMs', instance.vms.length));
+  const extra = element('div', 'instance-detail');
+  add(extra, chip('Status · ' + ageLabel(instance.lastStatusAt)), chip('VM Info · ' + ageLabel(instance.lastVmAt)));
+  if (instance.lastSequence !== null) extra.append(chip('Seq #' + instance.lastSequence));
+  return add(card, head, metrics, extra);
+}
+function renderOverviewInstances() {
+  const root = $('instances-overview');
+  root.replaceChildren();
+  const instances = currentInstances().sort((a, b) => a.id.localeCompare(b.id));
+  if (!instances.length) {
+    root.append(empty('Waiting for EServer data', 'Connect EServer instances and start AAUI. Status updates arrive every 10s and VM info every 20s.'));
+    return;
+  }
+  for (const instance of instances) root.append(instanceCard(instance));
+}
+
+function vmCard(instance, vm) {
+  const card = element('article', 'panel vm-card');
+  const head = element('div', 'vm-card-head');
+  const identity = element('div');
+  add(identity,
+    element('div', 'vm-id', vm.id || 'Unnamed VM'),
+    element('div', 'vm-sub', 'Browser · ' + (vm.browserId || '—')));
+  add(head, identity, chip('v' + (vm.version || '—')));
+  const subtitle = element('div', 'instance-detail');
+  add(subtitle, chip('EServer · ' + instance.id), chip('Updated ' + ageLabel(instance.lastVmAt)));
+  const platforms = element('div', 'vm-platforms');
+  for (const platform of vm.supportingPlatforms) {
+    const container = element('div', 'platform-card');
+    const label = element('div', 'platform-head');
+    add(label, element('span', 'platform-name', platform.platform || 'Unknown platform'),
+      element('span', 'platform-sub', 'Parser v' + (platform.parserInfo.version || '—')));
+    const features = element('div', 'chips');
+    for (const feature of platform.supportingFeatures) features.append(chip(feature, 'feature'));
+    const types = element('div', 'chips');
+    for (const type of platform.parserInfo.type) types.append(chip(type, 'parser'));
+    add(container, label, element('div', 'platform-label', 'Supporting features'), features,
+      element('div', 'platform-label', 'Parser capabilities'), types);
+    platforms.append(container);
+  }
+  return add(card, head, subtitle, platforms);
+}
+function renderInventory() {
+  const root = $('vm-inventory');
+  root.replaceChildren();
+  let matched = 0;
+  for (const instance of currentInstances().sort((a, b) => a.id.localeCompare(b.id))) {
+    for (const vm of instance.vms) {
+      const searchable = [instance.id, vm.id, vm.browserId, vm.version,
+        ...vm.supportingPlatforms.flatMap(platform => [
+          platform.platform, ...platform.supportingFeatures, ...platform.parserInfo.type
+        ])].join(' ').toLowerCase();
+      if (!searchable.includes(searchTerm)) continue;
+      root.append(vmCard(instance, vm));
+      matched++;
+    }
+  }
+  if (!matched) root.append(empty(searchTerm ? 'No matching VMs' : 'No VM information yet',
+    searchTerm ? 'Try another VM ID, browser ID or capability.' : 'EServer sends a new VM inventory every 20 seconds after connecting.'));
+}
+
+function recordCategory(record) {
+  if (record.event !== 'RECEIVE peer:message') return 'system';
+  if (record.value?.payload?.type === STATUS_TYPE) return 'status';
+  if (record.value?.payload?.type === VM_TYPE) return 'vm';
+  return 'system';
+}
+function matchesInstance(record) {
+  if (selectedInstance === 'all') return true;
+  if (record.event !== 'RECEIVE peer:message') return false;
+  return (record.value?.sourceInstanceId || record.value?.payload?.data?.instanceId) === selectedInstance;
+}
+function activityRow(record) {
+  const category = recordCategory(record);
+  const row = element('details', 'activity-row');
+  const heading = element('summary');
+  const mark = element('span', 'event-mark ' + (category === 'system' ? '' : category),
+    category === 'status' ? '↗' : category === 'vm' ? '▣' : '·');
+  const info = element('span', 'event-title');
+  const type = record.value?.payload?.type;
+  const name = category === 'status' ? 'Status update received' :
+    category === 'vm' ? 'VM inventory received' : record.event;
+  const desc = (record.value?.sourceInstanceId || record.value?.from || '') +
+    (type ? ' · ' + type : '');
+  add(info, element('strong', '', name), element('span', '', desc || 'System event'));
+  add(heading, mark, info, element('span', 'event-time', new Date(record.timestamp).toLocaleTimeString()));
+  add(row, heading, element('pre', 'event-detail', JSON.stringify(record.value, null, 2)));
+  return row;
+}
+function renderActivity() {
+  const root = $('activity-list');
+  root.replaceChildren();
+  const records = state.messages.filter(record =>
+    (eventFilter === 'all' || recordCategory(record) === eventFilter) && matchesInstance(record)).slice().reverse();
+  if (!records.length) {
+    root.append(empty('No events to display', 'Incoming messages and connection events will appear here.'));
+    return;
+  }
+  for (const record of records) root.append(activityRow(record));
+}
+
+function render() {
+  updateSelector();
+  renderSummary();
+  renderOverviewInstances();
+  renderInventory();
+  renderActivity();
+}
+
+function navigate(next) {
+  page = next;
+  for (const button of document.querySelectorAll('[data-page]')) {
+    button.classList.toggle('active', button.dataset.page === page);
+  }
+  for (const section of document.querySelectorAll('[data-section]')) {
+    section.classList.toggle('hidden', section.dataset.section !== page);
+  }
+  const titles = { overview: ['EServer Overview', 'Real-time status and VM capabilities across connected EServer instances.', 'Overview'],
+    inventory: ['VM Inventory', 'Explore VMs and supported platform capabilities.', 'VM Inventory'],
+    activity: ['Event Activity', 'Inspect live events and raw payloads for troubleshooting.', 'Event Activity'] };
+  const item = titles[page];
+  $('page-title').textContent = item[0];
+  $('page-description').textContent = item[1];
+  $('breadcrumb-current').textContent = item[2];
+}
+
+for (const button of document.querySelectorAll('[data-page]')) {
+  button.addEventListener('click', () => navigate(button.dataset.page));
+}
+$('instance-filter').addEventListener('change', event => {
+  selectedInstance = event.target.value;
+  render();
+});
+$('vm-search').addEventListener('input', event => {
+  searchTerm = event.target.value.trim().toLowerCase();
+  renderInventory();
+});
+$('event-filter').addEventListener('change', event => {
+  eventFilter = event.target.value;
+  renderActivity();
+});
+$('clear-logs').addEventListener('click', () => {
+  state.messages.length = 0;
+  renderActivity();
+});
+$('health').addEventListener('click', () => { void window.aaui.checkHttp(); });
+
+function receive(record) {
+  if (!record) return;
+  const key = [record.timestamp, record.event, JSON.stringify(record.value)].join('|');
+  if (seen.has(key)) return;
+  seen.add(key);
+  if (seen.size > 400) seen.delete(seen.values().next().value);
+  ingest(state, record);
+  render();
+}
+
+// Register before requesting the initial log snapshot to reduce missed events.
+window.aaui.onLog(receive);
+window.aaui.getLogs().then(records => {
+  for (const record of records) receive(record);
+}).catch(error => {
+  console.error('Cannot load AAUI log history:', error);
+});
+setInterval(renderSummary, 1000);
+render();
