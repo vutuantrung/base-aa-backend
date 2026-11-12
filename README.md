@@ -108,3 +108,10 @@ See [Phase 2 design and test guide](docs/PHASE_2_MESSAGE_ROUTING.md) for routing
 ## AA / Browser / Extension read API
 
 Added the six GET endpoints specified in `api-data.json`. See [HTTP API design](docs/HTTP_API_DESIGN.md) for contracts and limitations. Records are stored locally in SQLite and can be populated via the internal `app.catalog.upsert*` repository methods; no additional public write API or mock records have been introduced.
+
+
+## Five-server integration playground (no new database functionality)
+
+The playground consists of AAB (:3000), PServer (:3001), EServer (:3002), SServer (:3003), and Electron AAUI (:3004). Each peer establishes an **outbound Socket.IO connection** to AAB's opt-in `/peers` namespace. AAUI also calls AAB's HTTP health API. No business forwarding between peers is configured yet.
+
+See [testing/README.md](testing/README.md). For AAB: `ENABLE_TEST_PEERS=1 npm run dev`. For the four peers, install dependencies within `testing/` and start each script in its own terminal. Keep this playground on localhost; use API_KEY for shared environments.

@@ -15,6 +15,7 @@ export type ApplicationConfig = {
   dbPath: string;
   corsOrigin: string;
   apiKey?: string;
+  enableTestPeers?: boolean;
   routes?: readonly RouteRule[];
   webhooks?: Readonly<Record<string, WebhookEndpoint>>;
 };
@@ -30,7 +31,7 @@ export function createApplication(config: ApplicationConfig) {
   const usage = new SqliteProcessUsageRepository(db);
   const catalog = new SqliteAaCatalogRepository(db);
   const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sender, apiKey: config.apiKey }));
-  const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey });
+  const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers });
   router = new MessageRouter(routes, [
     new SocketOutboundAdapter(sockets),
     new HttpOutboundAdapter(config.webhooks ?? {})

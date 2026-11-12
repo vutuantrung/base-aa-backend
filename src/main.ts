@@ -2,7 +2,7 @@ import { createApplication } from './app/create-app.js';
 
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('Invalid PORT');
-const app = createApplication({ dbPath: process.env.DB_PATH ?? './data/app.db', corsOrigin: process.env.SOCKET_CORS_ORIGIN ?? 'http://localhost:5173', apiKey: process.env.API_KEY });
+const app = createApplication({ dbPath: process.env.DB_PATH ?? './data/app.db', corsOrigin: process.env.SOCKET_CORS_ORIGIN ?? 'http://localhost:5173', apiKey: process.env.API_KEY, enableTestPeers: process.env.ENABLE_TEST_PEERS === '1' });
 await app.listen(port);
 console.log(`Server listening on http://localhost:${port}`);
 let stopping = false;
