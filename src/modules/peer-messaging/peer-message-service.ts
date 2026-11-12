@@ -13,6 +13,7 @@ export interface PeerDelivery {
   isConnected(peer: PeerId, toInstanceId?: string): boolean;
   validateDestination?(message: IncomingPeerMessage): void;
   deliver(message: PeerMessage): Promise<void>;
+  beforeDeliver?(message: PeerMessage): Promise<void>;
 }
 
 export class PeerMessageService {
@@ -62,6 +63,7 @@ export class PeerMessageService {
     if (!this.delivery.isConnected(message.to, message.toInstanceId))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${message.to} is offline`);
     try {
+      await this.delivery.beforeDeliver?.(message);
       await this.delivery.deliver(message);
     } catch (error) {
       throw new PeerMessageError('DELIVERY_FAILED',
