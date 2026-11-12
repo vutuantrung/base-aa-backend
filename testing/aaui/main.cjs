@@ -3,6 +3,7 @@ const express = require('express');
 const { createServer } = require('node:http');
 const { join } = require('node:path');
 const { io } = require('socket.io-client');
+const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, isTask, TASK_STATUS, createTaskProcessor, PROCESSING_TIME_MS } = require('../shared/task-flow.cjs');
 
 const peerId = 'aaui';
 const port = 3004;
@@ -12,6 +13,7 @@ let httpServer;
 let window;
 let socket;
 const logs = [];
+let taskProcessor;
 
 function log(event, value) {
   const record = { timestamp: new Date().toISOString(), event, value };
@@ -81,8 +83,45 @@ async function launch() {
       else log('RECEIVE peer:ping ACK', response);
     });
   });
+  taskProcessor = createTaskProcessor({
+    delayMs: PROCESSING_TIME_MS,
+    onStart: task => log('TASK IN PROGRESS', task),
+    onFinish: async task => {
+      log('TASK FINISHED', task);
+      if (!socket?.connected) {
+        log('TASK RESULT ERROR', { id: task.id, error: 'AAB disconnected; result was not sent' });
+        return;
+      }
+      try {
+        const response = await socket.timeout(8000).emitWithAck('peer:message', {
+          version: '1.0', kind: 'response', from: 'aaui', to: 'pserver',
+          payload: { type: TASK_RESULT_TYPE, version: '1.0', data: task }
+        });
+        if (!response?.ok) {
+          log('TASK RESULT ERROR', { id: task.id, error: response?.error || 'PServer rejected result' });
+        } else {
+          log('TASK RESULT DELIVERED', { id: task.id, messageId: response.data?.id });
+        }
+      } catch (error) {
+        log('TASK RESULT ERROR', { id: task.id, error: error.message });
+      }
+    },
+    onError: error => log('TASK PROCESS ERROR', { error: error?.message || String(error) })
+  });
   socket.on('peer:message', (message, ack) => {
     log('RECEIVE peer:message', message);
+    if (message?.from === 'pserver' && message?.to === 'aaui' &&
+        message?.payload?.type === TASK_REQUEST_TYPE) {
+      const task = message.payload.data;
+      if (!isTask(task, TASK_STATUS.inProgress)) {
+        ack?.({ ok: false, error: 'Invalid task data' });
+        return;
+      }
+      if (!taskProcessor.receive(task)) {
+        ack?.({ ok: false, error: 'Duplicate task or processor stopped' });
+        return;
+      }
+    }
     ack?.({ ok: true });
   });
   socket.on('peer:status', value => log('RECEIVE peer:status', value));
@@ -95,4 +134,4 @@ async function launch() {
 
 app.whenReady().then(() => launch().catch(error => { console.error('[AAUI] STARTUP ERROR', error); app.quit(); }));
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => { socket?.disconnect(); httpServer?.close(); });
+app.on('before-quit', () => { taskProcessor?.stop(); socket?.disconnect(); httpServer?.close(); });
