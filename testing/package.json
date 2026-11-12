@@ -7,7 +7,8 @@
     "pserver": "node pserver.mjs",
     "eserver": "node eserver.mjs",
     "sserver": "node sserver.mjs",
-    "aaui": "electron aaui/main.cjs"
+    "aaui": "electron aaui/main.cjs",
+    "test:scheduler": "node --test tests/scheduled-peer-message.test.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",

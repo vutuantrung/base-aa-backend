@@ -70,3 +70,31 @@ AAB forwards the message to the PServer socket that AAB itself opened. There is 
 ## Session protocol example\n\nStart AAB with `VM_UDID=vm-001 VM_SDK=33 VM_MODEL=Pixel VM_ABI=arm64-v8a VM_FOR_SEARCH=false VM_PLATFORMS=facebook,instagram ENABLE_TEST_PEERS=1 npm run dev`. AAB sends the VM information to PServer on its initial connection, and `session_id` on reconnection. The test PServer generates a session ID and acknowledges it.\n\nTo simulate the source file's task dispatch, call:\n\n```sh\ncurl -X POST http://127.0.0.1:3001/demo/dispatch-task \\\n  -H 'content-type: application/json' \\\n  -d '{"taskId":"task-1"}'\n```\n\nPServer fills `session_id` and `vm_udid` with the registered values and emits `activity:task:dispatch`. AAB logs `ACTIVITY_TASK VALIDATED`. Mismatching values are logged and ignored, and the event is **not** forwarded automatically.\n\n## Scope and security
 
 No new database feature, Message Queue, external Processing Server or business message routes. PServer's test server binds to `127.0.0.1` by default, and shared environments should configure `API_KEY` for both sides. Do not expose testing endpoints publicly. Acknowledgment signals socket receipt, not business completion.
+
+## EServer scheduled message -> AAUI (every 10 seconds)
+
+When EServer starts, it schedules one `peer:message` to AAUI every `SCHEDULE_CALL_TIME = 10_000` milliseconds. Each message goes **EServer -> AAB -> AAUI**, where AAUI receives and logs the event as usual.
+
+- Source: `testing/eserver.mjs`
+- Event: `peer:message`
+- `from`: `eserver`, `to`: `aaui`
+- `payload.type`: `eserver.scheduled-update`
+- `payload.data`: `sequence`, `sentAt`, `message`
+- First send occurs after 10 seconds, not immediately.
+- If disconnected from AAB, a tick is skipped. If AAUI is disconnected, AAB returns a negative ACK. No retry/queue is added.
+- If a previous ACK is still pending, the next scheduled tick is skipped (no overlap).
+- The scheduler stops on SIGINT/SIGTERM.
+
+Run AAB, EServer and AAUI:
+
+```sh
+ENABLE_TEST_PEERS=1 npm run dev
+npm --prefix testing run eserver
+npm --prefix testing run aaui
+```
+
+Verify logs in EServer, AAB and AAUI terminals. To run focused scheduler tests:
+
+```sh
+npm --prefix testing run test:scheduler
+```
