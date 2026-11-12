@@ -59,7 +59,10 @@
         <section class="page-section hidden" data-section="tasks">
           <div class="activity-toolbar">
             <div><h2>Task Receipts</h2><p>PServer → AAB → EServer · AAB persists task and publishes received status</p></div>
-            <span class="pill" id="task-summary">No tasks received</span>
+            <div class="filters">
+              <span class="pill" id="task-summary">No tasks received</span>
+              <button class="btn btn-outline" id="refresh-tasks" type="button">↻ Refresh Tasks</button>
+            </div>
           </div>
           <div class="task-grid" id="task-grid"></div>
         </section>
