@@ -34,7 +34,7 @@ export class PeerMessageService {
     for (const rule of this.transformations.resolve(original)) {
       try {
         // Clone input before each plugin to prevent accidental mutation of the original message.
-        const next = await rule.transform(structuredClone(message), { from: original.from, to: original.to });
+        const next = await rule.transformer.transform(structuredClone(message), { from: original.from, to: original.to });
         if (!next || typeof next.type !== 'string' || !next.type.trim() ||
             typeof next.version !== 'string' || next.data === undefined) throw new Error('Invalid transformed payload');
         message = { ...message, payload: structuredClone(next) };
