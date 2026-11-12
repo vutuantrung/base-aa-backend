@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { io } from 'socket.io-client';
+import taskFlow from './task-flow.cjs';
+const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, TASK_STATUS, isTask, createTaskProcessor, PROCESSING_TIME_MS } = taskFlow;
 
 /**
  * Shared infrastructure for EServer / SServer.
@@ -57,9 +59,32 @@ export async function startPeerServer({ peerId, port, instanceId }) {
       console.log(`[${peerId}] RECEIVE peer:ping ACK`, response);
     });
   });
+  const taskProcessor = peerId === 'eserver' ? createTaskProcessor({
+    delayMs: PROCESSING_TIME_MS,
+    onStart: task => console.log(`[eserver:${instanceId}] TASK RECEIVED`, JSON.stringify(task)),
+    onFinish: async task => {
+      console.log(`[eserver:${instanceId}] TASK FINISHED`, JSON.stringify(task));
+      try {
+        const response = await socket.timeout(8000).emitWithAck('peer:message', {
+          kind: 'response', from: 'eserver', to: 'pserver',
+          payload: { type: TASK_RESULT_TYPE, data: task }
+        });
+        console.log(`[eserver:${instanceId}] TASK RESULT ACK`, JSON.stringify(response));
+      } catch (error) {
+        console.error(`[eserver:${instanceId}] TASK RESULT ERROR`, error.message);
+      }
+    }
+  }) : undefined;
   socket.on('peer:message', (message, ack) => {
     console.log(`[${peerId}] RECEIVE peer:message`, JSON.stringify(message));
-    ack?.({ ok: true });
+    if (peerId === 'eserver' && message?.from === 'pserver' && message?.to === 'eserver' &&
+        message.payload?.type === TASK_REQUEST_TYPE) {
+      if (!isTask(message.payload.data, TASK_STATUS.inProgress) || !taskProcessor.receive(message.payload.data)) {
+        ack?.({ ok: false, error: 'Invalid or duplicate task' });
+        return;
+      }
+    }
+    ack?.({ ok: true, status: 'received' });
   });
   socket.on('aab:welcome', message => console.log(`[${peerId}] RECEIVE aab:welcome`, message));
   socket.on('connect_error', error => console.error(`[${peerId}] AAB CONNECT ERROR`, error.message));
@@ -76,6 +101,7 @@ export async function startPeerServer({ peerId, port, instanceId }) {
   const shutdown = async () => {
     if (stopping) return;
     stopping = true;
+    taskProcessor?.stop();
     socket.disconnect();
     await new Promise(resolve => ioServer.close(resolve));
     if (server.listening) await new Promise(resolve => server.close(resolve));
