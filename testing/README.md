@@ -208,3 +208,28 @@ npm --prefix testing run test:playground
 ```
 
 Implementation is vanilla HTML/CSS/JS in `testing/aaui/`; no additional frontend framework, message queue, database integration or modified Socket.IO message contract is required.
+
+
+## EServer presence (Socket.IO connection state) and per-instance logs
+
+The AAB `/peers` gateway now publishes **transport presence** independently of message activity:
+
+- On a successful EServer connection, it emits `peer:status` with `peerId: "eserver"`, `instanceId`, `status: "online"`, `socketId` and `timestamp`.
+- On that socket's disconnection, it emits `peer:status` with `status: "offline"` and the Socket.IO `reason`. An old socket cannot remove a replacement connection from the registry.
+- When AAUI connects or reconnects, AAB immediately sends `peer:status:snapshot` containing **all currently connected EServer instances**. No 10s/20s business message is required to discover a connection.
+- Presence events are sent only to the connected AAUI socket; this does not change the `peer:message` contract or the EServer scheduled messages.
+
+AAUI now shows an **Online EServers** count (from presence rather than observed messages) and online/offline/unknown badges in Overview. The 10s Status and 20s VM Info stream freshness indicators remain separate. When AAUI itself cannot reach AAB, all instance connection states are displayed as **Unknown**, not as Offline. The last VM inventory is preserved while the EServer is offline, as a last-known snapshot.
+
+The new **Instance Logs** page shows a separate real-time event history for each EServer instance, including connection changes, 10s status messages and 20s VM-info payloads. These are *events observed at AAUI*, not the EServer process's stdout/stderr. Up to 100 records are retained per instance in UI memory; the global **Event Activity** retains 200 records. Use the existing instance selector to filter both pages. You can expand a log row to inspect its payload. Logs remain visible after an EServer disconnects.
+
+The presence lifecycle is in-memory and not persisted. Socket.IO unexpected network failure detection depends on its heartbeat timeout, so offline notification may not be instantaneous. After AAB restarts, AAUI reconnects and receives a fresh snapshot.
+
+Tests:
+
+```sh
+npm test
+npm --prefix testing run test:aaui
+```
+
+To observe an offline event, launch AAB, AAUI and at least two EServers, then stop one EServer process with Ctrl+C. Only that instance should switch to Offline and receive a disconnect log. Restart it with the same `ESERVER_INSTANCE_ID` to see Online again.
