@@ -15,6 +15,7 @@
       <nav aria-label="Main navigation">
         <button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span> Overview</button>
         <button class="nav-item" data-page="inventory"><span class="nav-icon">▤</span> VM Inventory</button>
+        <button class="nav-item" data-page="tasks"><span class="nav-icon">◎</span> Task Processing</button>
         <button class="nav-item" data-page="instance-logs"><span class="nav-icon">☷</span> Instance Logs</button>
         <button class="nav-item" data-page="activity"><span class="nav-icon">≡</span> Event Activity</button>
       </nav>
@@ -55,6 +56,13 @@
           <div class="instances-grid" id="instances-overview"></div>
         </section>
 
+        <section class="page-section hidden" data-section="tasks">
+          <div class="activity-toolbar">
+            <div><h2>PServer Tasks</h2><p>5-second mock processing: PServer → AAB → AAUI → AAB → PServer</p></div>
+            <span class="pill" id="task-summary">No tasks received</span>
+          </div>
+          <div class="task-grid" id="task-grid"></div>
+        </section>
         <section class="page-section hidden" data-section="inventory">
           <div class="inventory-toolbar"><div><h2>VM Inventory</h2><p>Browser identities, supported platforms, features and parsers</p></div><label class="search-field"><span>⌕</span><input id="vm-search" type="search" placeholder="Search VM, browser, platform..." autocomplete="off"></label></div>
           <div id="vm-inventory" class="inventory-grid"></div>
