@@ -10,7 +10,8 @@
     "aaui": "electron aaui/main.cjs",
     "test:scheduler": "node --test tests/scheduled-peer-message.test.mjs",
     "test:vm-info": "node --test tests/mock-vm-info.test.mjs",
-    "test:playground": "node --test tests/*.test.mjs"
+    "test:playground": "node --test tests/*.test.mjs aaui/tests/*.test.cjs",
+    "test:aaui": "node --test aaui/tests/*.test.cjs"
   },
   "dependencies": {
     "express": "^5.1.0",
