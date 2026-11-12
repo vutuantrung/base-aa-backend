@@ -26,6 +26,31 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   const eservers = new Map<string, Socket>();
   let pserverTransport: ExternalPeerTransport | undefined;
 
+  // Transport presence is distinct from the 10s/20s application message streams.
+  // Socket.IO events for each AAUI connection are sent in order.
+  function presenceSnapshot() {
+    return {
+      peerId: 'eserver' as const,
+      timestamp: Date.now(),
+      instances: [...eservers.entries()].map(([instanceId, socket]) => ({
+        peerId: 'eserver' as const,
+        instanceId,
+        status: 'online' as const,
+        socketId: socket.id,
+        timestamp: Date.now()
+      }))
+    };
+  }
+
+  function publishPresence(instanceId: string, status: 'online' | 'offline', socketId: string, reason?: string): void {
+    const target = singlePeers.get('aaui');
+    if (!target?.connected) return;
+    target.emit('peer:status', {
+      peerId: 'eserver', instanceId, status, socketId,
+      timestamp: Date.now(), ...(reason ? { reason } : {})
+    });
+  }
+
   function resolveTarget(message: IncomingPeerMessage): Socket | undefined {
     if (message.to === 'eserver') {
       if (message.toInstanceId) return eservers.get(message.toInstanceId);
@@ -99,6 +124,12 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       singlePeers.set(peerId, socket);
     }
     console.log(`[AAB] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${socket.id}`);
+    if (peerId === 'eserver') {
+      publishPresence(instanceId!, 'online', socket.id);
+    } else if (peerId === 'aaui') {
+      // Late AAUI connections and reconnects always receive the online set.
+      socket.emit('peer:status:snapshot', presenceSnapshot());
+    }
     socket.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
     socket.on('peer:ping', (payload: unknown, ack?: (data: { ok: boolean; from: string; timestamp: number }) => void) => {
@@ -110,7 +141,10 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     });
     socket.on('disconnect', reason => {
       if (peerId === 'eserver') {
-        if (eservers.get(instanceId!)?.id === socket.id) eservers.delete(instanceId!);
+        if (eservers.get(instanceId!)?.id === socket.id) {
+          eservers.delete(instanceId!);
+          publishPresence(instanceId!, 'offline', socket.id, reason);
+        }
       } else if (singlePeers.get(peerId)?.id === socket.id) {
         singlePeers.delete(peerId);
       }
