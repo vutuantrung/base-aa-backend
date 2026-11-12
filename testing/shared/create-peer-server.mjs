@@ -4,8 +4,9 @@ import { Server } from 'socket.io';
 import { io } from 'socket.io-client';
 
 /**
- * Shared infrastructure for PServer / EServer / SServer.
+ * Shared infrastructure for EServer / SServer.
  * Each runs its own Express + Socket.IO server and one outgoing AAB client.
+ * PServer has a separate inbound Socket.IO implementation in testing/pserver.mjs.
  * Business communication channels are intentionally NOT defined here.
  */
 export async function startPeerServer({ peerId, port }) {

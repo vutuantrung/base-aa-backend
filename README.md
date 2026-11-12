@@ -112,7 +112,7 @@ Added the six GET endpoints specified in `api-data.json`. See [HTTP API design](
 
 ## Five-server integration playground (no new database functionality)
 
-The playground consists of AAB (:3000), PServer (:3001), EServer (:3002), SServer (:3003), and Electron AAUI (:3004). Each peer establishes an **outbound Socket.IO connection** to AAB's opt-in `/peers` namespace. AAUI also calls AAB's HTTP health API. No business forwarding between peers is configured yet.
+The playground consists of AAB (:3000), PServer (:3001), EServer (:3002), SServer (:3003), and Electron AAUI (:3004). PServer exposes Socket.IO `/aab` at port 3001 and **AAB connects outbound to PServer**. EServer, SServer and AAUI continue connecting outbound to AAB's `/peers` namespace. AAUI also calls AAB's HTTP health API. No business forwarding between peers is configured yet.
 
 See [testing/README.md](testing/README.md). For AAB: `ENABLE_TEST_PEERS=1 npm run dev`. For the four peers, install dependencies within `testing/` and start each script in its own terminal. Keep this playground on localhost; use API_KEY for shared environments.
 
@@ -125,3 +125,8 @@ The opt-in `/peers` test gateway accepts `peer:message` with `from`, `to`, `kind
 ### End-to-end demonstration
 
 For a concrete PServer -> AAB -> transformed payload -> AAUI example, run the testing environment and use `POST /demo/send-to-aaui` on PServer. [Step-by-step guide](docs/DEMO_PSERVER_AAUI.md).
+
+
+### PServer connection topology
+
+AAB initiates a Socket.IO client connection to `PSERVER_URL` (default `http://127.0.0.1:3001`) namespace `/aab`. PServer is a Socket.IO server and no longer connects as a client to AAB. Other peers use `/peers` as before. PServer can still send messages through AAB and receive routed messages on the same AAB-established socket. See [testing guide](testing/README.md).

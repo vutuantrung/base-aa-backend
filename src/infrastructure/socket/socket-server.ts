@@ -16,9 +16,10 @@ export interface SocketMessageHub {
 /** Socket is an inbound adapter and broadcast-only outbound gateway. Never republish outbound events. */
 export function attachSocketServer(http: HttpServer, deps: { sender: SendMessage; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean; transformations?: TransformationRegistry }) {
   const io = new Server(http, { cors: { origin: deps.corsOrigin }, maxHttpBufferSize: 1_000_000 });
+  let peerGateway: ReturnType<typeof attachPeerGateway> | undefined;
   if (deps.enableTestPeers) {
     if (!deps.transformations) throw new Error('Peer transformations registry is required');
-    attachPeerGateway(io, deps.apiKey, deps.transformations);
+    peerGateway = attachPeerGateway(io, deps.apiKey, deps.transformations);
   }
   for (const channel of CHANNELS) {
     const namespace = io.of(`/${channel}`);
@@ -42,6 +43,7 @@ export function attachSocketServer(http: HttpServer, deps: { sender: SendMessage
   }
   return {
     io,
+    peerGateway,
     broadcast(channel: Channel, message: MessageEnvelope) { io.of(`/${channel}`).emit('message', message); },
     close: async () => { await new Promise<void>(resolve => io.close(() => resolve())); }
   };

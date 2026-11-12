@@ -1,84 +1,72 @@
 # Five-server integration playground
 
-These are **testing applications**, not new production business modules. All peers connect outward to AAB over Socket.IO. AAB is the sole hub. No peer-to-peer message forwarding rules have been defined.
+This is a local integration environment, not a production deployment. AAB is the routing and transformation hub. **The direction of the Socket.IO connection is different for PServer.**
 
-| Application | Runtime | HTTP port | Socket.IO |
-|---|---|---:|---|
-| AAB | TypeScript / Express / Socket.IO | 3000 | Server `/peers` |
-| PServer | Node.js / Express / Socket.IO | 3001 | Own local server + outbound client to AAB |
-| EServer | Node.js / Express / Socket.IO | 3002 | Own local server + outbound client to AAB |
-| SServer | Node.js / Express / Socket.IO | 3003 | Own local server + outbound client to AAB |
-| AAUI | Electron / Express / Socket.IO client / HTTP client | 3004 | Outbound client to AAB |
+| Application | Port | Socket.IO relationship |
+|---|---:|---|
+| AAB | 3000 | **Client** connecting outward to PServer :3001 (/aab), server for EServer/SServer/AAUI (/peers) |
+| PServer | 3001 | Express + Socket.IO **server** for AAB connection (/aab); never connects to AAB itself |
+| EServer | 3002 | Express + Socket.IO server + client connecting to AAB (/peers) |
+| SServer | 3003 | Express + Socket.IO server + client connecting to AAB (/peers) |
+| AAUI | 3004 | Electron + HTTP + Socket.IO client connecting to AAB (/peers) |
 
-## Run (five terminals)
-
-Install the root AAB dependencies once and the testing dependencies once:
+## Start (five terminals)
 
 ```sh
 npm install
-cd testing && npm install && cd ..
+npm install --prefix testing
 ```
 
-Terminal 1, from repository root:
+Terminal 1 (PServer first is convenient, but AAB reconnects if it starts first):
+```sh
+npm --prefix testing run pserver
+```
+
+Terminal 2 (AAB):
 ```sh
 ENABLE_TEST_PEERS=1 npm run dev
 ```
 
-Terminals 2–5, from repository root:
+Terminals 3–5:
 ```sh
-npm --prefix testing run pserver
 npm --prefix testing run eserver
 npm --prefix testing run sserver
 npm --prefix testing run aaui
 ```
 
-For PowerShell, set `$env:ENABLE_TEST_PEERS = '1'` before `npm run dev`. Electron requires a desktop session and a graphical display; it is not designed for headless production or CI.
+PowerShell: `$env:ENABLE_TEST_PEERS = '1'` before `npm run dev`. Electron needs a graphical desktop session.
 
-Each peer reports its local health:
-```sh
-curl http://127.0.0.1:3001/health
-curl http://127.0.0.1:3002/health
-curl http://127.0.0.1:3003/health
-curl http://127.0.0.1:3004/health
-```
+The AAB client connects to `PSERVER_URL` (default `http://127.0.0.1:3001`) and its dedicated `/aab` namespace. The connection is bidirectional: PServer may send `peer:message` over the accepted socket, and AAB may deliver `peer:message` to PServer on that same connection. The gateway checks the `from` property against the authenticated PServer transport. AAB authenticates to PServer as `peerId=aab`, using `API_KEY` when provided. Other peers authenticate as before.
 
-AAB health: `http://127.0.0.1:3000/health`.
+## HTTP test endpoints
 
-## Connection handshake (no routing)
+- PServer: `GET http://127.0.0.1:3001/health`, `POST /messages`, `POST /demo/send-to-aaui`
+- EServer / SServer: `GET /health`, `POST /messages`
+- AAUI: `GET /health`, `POST /messages`
+- AAB: `GET http://127.0.0.1:3000/health`
 
-1. Peer connects to `ws-like` Socket.IO namespace `http://127.0.0.1:3000/peers` using `auth.peerId` = `pserver`, `eserver`, `sserver`, or `aaui`.
-2. AAB logs the connection and emits `aab:welcome` **only to that peer**.
-3. Peer logs received `aab:welcome`, emits `peer:ping` to AAB, and logs the received acknowledgment. AAB logs inbound `peer:ping`.
-4. AAB logs disconnections. Peers reconnect automatically when AAB restarts.
-5. AAUI additionally requests `GET /health` over HTTP and displays status in Electron.
+Health endpoint on PServer exposes `aabConnected`. PServer no longer runs a Socket.IO client; it waits for AAB to connect.
 
-No business message routing or peer-to-peer broadcasting has been implemented. Avoid treating handshake as an application message protocol.
-
-## Configuration and safety
-
-- `AAB_URL` defaults to `http://127.0.0.1:3000` for peer clients.
-- `PEER_HOST` defaults to `127.0.0.1` for P/E/S local HTTP servers.
-- `ENABLE_TEST_PEERS=1` enables AAB's `/peers` namespace; it is disabled by default.
-- `API_KEY` (if configured on AAB) must match on each peer for connection authorization.
-- This is a development playground. Keep it on localhost, do not expose unprotected test listeners to external networks, and do not store credentials in source.
-- Existing HTTP APIs, `/session`, `/worker` and Phase 2 routing are unchanged.
-- SQLite remains an existing AAB implementation dependency; this playground adds no database feature.
-
-
-## Message forwarding and transformation
-
-The playground now supports optional FROM -> AAB -> TO messages, with transforms registered at AAB by authenticated FROM + TO + payload.type. Each test server has a localhost-only POST /messages endpoint that sends to AAB over Socket.IO, and receives/logs forwarded peer:message with an ACK. Detailed contract: [docs/PEER_MESSAGE_TRANSFORMATION.md](../docs/PEER_MESSAGE_TRANSFORMATION.md).
-
-Example (start all five peers before sending):
+## Demo PServer -> AAB -> AAUI
 
 ```sh
-curl -X POST http://127.0.0.1:3001/messages -H 'content-type: application/json' \\
- -d '{"kind":"request","from":"pserver","to":"eserver","payload":{"type":"demo.enrich","data":{"value":1}}}'
+curl -X POST http://127.0.0.1:3001/demo/send-to-aaui \
+  -H 'content-type: application/json' \
+  -d '{"originalParam":"hello"}'
 ```
 
-No application-specific forwarding flows or transformers are preconfigured. AAB can register business-specific transformers through `app.transformations.register(...)`; unhandled types are forwarded unchanged. This new workflow does not use SQLite.
+PServer emits `peer:message` to the connected AAB client. AAB adds `payload.data.modifiedParam = "AAB modified: hello"`, sends the transformed envelope to AAUI, and awaits its receipt acknowledgment. Logs appear at each server and inside Electron.
 
+## Demo AAUI -> AAB -> PServer (reverse message path)
 
-## Runnable PServer -> AAB -> AAUI demo
+```sh
+curl -X POST http://127.0.0.1:3004/messages \
+  -H 'content-type: application/json' \
+  -d '{"kind":"event","from":"aaui","to":"pserver","payload":{"type":"demo.reply","data":{"ok":true}}}'
+```
 
-Start AAB with `ENABLE_TEST_PEERS=1`, then start PServer and AAUI. POST to `http://127.0.0.1:3001/demo/send-to-aaui` with body `{"originalParam":"hello"}`. AAB adds `payload.data.modifiedParam = "AAB modified: hello"` and forwards to AAUI. See [demo guide](../docs/DEMO_PSERVER_AAUI.md).
+AAB forwards the message to the PServer socket that AAB itself opened. There is no separate PServer client connection.
+
+## Scope and security
+
+No new database feature, Message Queue, external Processing Server or business message routes. PServer's test server binds to `127.0.0.1` by default, and shared environments should configure `API_KEY` for both sides. Do not expose testing endpoints publicly. Acknowledgment signals socket receipt, not business completion.

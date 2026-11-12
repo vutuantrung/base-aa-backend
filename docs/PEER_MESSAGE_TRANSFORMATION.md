@@ -51,7 +51,7 @@ The example ID is placeholder data. No business-specific transformer is installe
 
 ## Sending from P/E/S/AAUI
 
-Each test server provides `POST http://127.0.0.1:300{1,2,3,4}/messages` that sends the body to AAB over authenticated Socket.IO. AAB receives a message only from a connected sender. Local HTTP routes are development-only and bound to loopback.
+Each test server provides `POST http://127.0.0.1:300{1,2,3,4}/messages`. PServer emits over the Socket.IO connection initiated by AAB to PServer's `/aab` namespace; EServer, SServer and AAUI connect to AAB's `/peers` namespace. AAB receives a message only from a connected sender. Local HTTP routes are development-only and bound to loopback.
 
 ```sh
 curl -X POST http://127.0.0.1:3001/messages -H 'content-type: application/json' \
@@ -68,3 +68,8 @@ The above is forwarded unchanged by default. Add the transformer to AAB for payl
 - Only the test peer gateway uses this format. Phase 1–2 legacy routes continue unchanged.
 - Security: test peers are intended for loopback. Set `API_KEY` on AAB and all peers. Do not expose the local test HTTP ingress publicly.
 - No durable queue, no retries, no persistent service/route registry, no process-wide exactly-once guarantees, and no SQL changes.
+
+
+## PServer reverse connection
+
+For PServer, AAB is the Socket.IO client (`PSERVER_URL`, default `http://127.0.0.1:3001/aab`) and PServer is the Socket.IO server. Ingress messages from this authenticated connection are processed as `from=pserver`; messages addressed to `to=pserver` are delivered back over the same connection. PServer cannot connect inbound to AAB's `/peers`. The connection direction is independent of message direction.

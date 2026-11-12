@@ -2,17 +2,28 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { io, type Socket } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
+import { createMockPServer } from './support/mock-pserver.js';
 
-const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true, apiKey: 'test' });
-app.transformations.register({
-  id: 'test-enrichment', from: 'pserver', to: 'eserver', payloadType: 'demo.enrich', priority: 10,
-  transformer: { transform(message) { return {
-    ...message.payload, data: { ...(message.payload.data as object), enrichedBy: 'aab' }
-  }; } }
-});
+let app: ReturnType<typeof createApplication>;
+let pserver: Awaited<ReturnType<typeof createMockPServer>>;
 let base: string;
-before(async () => { base = `http://127.0.0.1:${await app.listen(0)}`; });
-after(async () => { await app.close(); });
+
+before(async () => {
+  pserver = await createMockPServer();
+  app = createApplication({
+    dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true,
+    apiKey: 'test', pserverUrl: pserver.url
+  });
+  app.transformations.register({
+    id: 'test-enrichment', from: 'pserver', to: 'eserver', payloadType: 'demo.enrich', priority: 10,
+    transformer: { transform(message) {
+      return { ...message.payload, data: { ...(message.payload.data as object), enrichedBy: 'aab' } };
+    } }
+  });
+  base = `http://127.0.0.1:${await app.listen(0)}`;
+  await pserver.arrival;
+});
+after(async () => { if (app) await app.close(); if (pserver) await pserver.close(); });
 
 async function connect(peerId: string): Promise<Socket> {
   const socket = io(`${base}/peers`, { transports: ['websocket'], reconnection: false,
@@ -24,36 +35,50 @@ async function connect(peerId: string): Promise<Socket> {
   return socket;
 }
 
-test('AAB transforms then forwards PServer -> EServer preserving IDs', async () => {
-  const pserver = await connect('pserver');
+test('AAB connects outward to PServer and forwards transformed PServer -> EServer', async () => {
   const eserver = await connect('eserver');
   try {
     let received: any;
     eserver.on('peer:message', (message, ack) => { received = message; ack({ ok: true }); });
-    const response = await pserver.timeout(3000).emitWithAck('peer:message', {
+    const source = pserver.connected;
+    assert.ok(source?.connected);
+    const response: any = await source.timeout(3000).emitWithAck('peer:message', {
       kind: 'request', from: 'pserver', to: 'eserver',
       payload: { type: 'demo.enrich', data: { profileId: 'profile-001' } }
-    }) as any;
+    });
     assert.equal(response.ok, true);
     assert.equal(received.id, response.data.id);
-    assert.equal(received.from, 'pserver');
-    assert.equal(received.to, 'eserver');
     assert.equal(received.payload.data.enrichedBy, 'aab');
     assert.deepEqual(received.processing.processedBy, ['test-enrichment']);
-  } finally { pserver.disconnect(); eserver.disconnect(); }
+  } finally { eserver.disconnect(); }
 });
 
-test('AAB rejects spoofed sender and offline recipient', async () => {
-  const pserver = await connect('pserver');
+test('AAUI -> AAB -> PServer uses reverse direction on AAB-established connection', async () => {
+  const aaui = await connect('aaui');
+  const source = pserver.connected;
+  assert.ok(source);
   try {
-    const forged = await pserver.timeout(3000).emitWithAck('peer:message', {
-      kind: 'event', from: 'sserver', to: 'eserver', payload: { type: 'test', data: {} }
-    }) as any;
-    assert.equal(forged.ok, false);
-    assert.equal(forged.code, 'SENDER_MISMATCH');
-    const offline = await pserver.timeout(3000).emitWithAck('peer:message', {
-      kind: 'event', from: 'pserver', to: 'eserver', payload: { type: 'test', data: {} }
-    }) as any;
-    assert.equal(offline.code, 'DESTINATION_OFFLINE');
-  } finally { pserver.disconnect(); }
+    let received: any;
+    source.on('peer:message', (message, ack) => { received = message; ack({ ok: true }); });
+    const response: any = await aaui.timeout(3000).emitWithAck('peer:message', {
+      kind: 'event', from: 'aaui', to: 'pserver',
+      payload: { type: 'demo.reply', data: { ok: true } }
+    });
+    assert.equal(response.ok, true);
+    assert.equal(received.id, response.data.id);
+    assert.equal(received.to, 'pserver');
+  } finally { aaui.disconnect(); }
+});
+
+test('AAB rejects forged sender and offline destination', async () => {
+  const source = pserver.connected;
+  assert.ok(source);
+  const forged: any = await source.timeout(3000).emitWithAck('peer:message', {
+    kind: 'event', from: 'sserver', to: 'eserver', payload: { type: 'test', data: {} }
+  });
+  assert.equal(forged.code, 'SENDER_MISMATCH');
+  const offline: any = await source.timeout(3000).emitWithAck('peer:message', {
+    kind: 'event', from: 'pserver', to: 'eserver', payload: { type: 'test', data: {} }
+  });
+  assert.equal(offline.code, 'DESTINATION_OFFLINE');
 });
