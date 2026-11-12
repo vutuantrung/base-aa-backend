@@ -378,6 +378,6 @@ curl http://127.0.0.1:3001/health
 curl http://127.0.0.1:3004/health
 ```
 
-Open AAUI **Task Monitoring**. If it was already open but was disconnected, restart AAUI to force a fresh snapshot. The AAB task data is stored in `./data/tasks/` relative to AAB's working directory unless `AAB_TASK_STORE_DIR` is configured. Each task ID must be unique because files are created exclusively. If `curl` returns 400, verify the task JSON; if 422, check the PServer response and AAB file persistence logs; if 503, check the PServer↔AAB connection.
+Open AAUI **Task Monitoring**. The task list is restored automatically on AAUI connect/reconnect. Use **Refresh Tasks** to request an on-demand snapshot from AAB without restarting Electron. The AAB task data is stored in `./data/tasks/` relative to AAB's working directory unless `AAB_TASK_STORE_DIR` is configured. Each task ID must be unique because files are created exclusively. If `curl` returns 400, verify the task JSON; if 422, check the PServer response and AAB file persistence logs; if 503, check the PServer↔AAB connection.
 
 The previous implementation delivered `task:lifecycle` events only when AAUI happened to be connected and therefore could leave Task Monitoring empty after late connection or reconnect. This recovery behavior fixes that limitation. The snapshot is a recent-history view, not a durable delivery queue or replay of every monitoring event.
