@@ -288,8 +288,9 @@ function renderTasks() {
   const received = tasks.filter(task => task.status === 'received').length;
   $('task-summary').textContent = received + ' received · ' + tasks.length + ' total';
   if (!tasks.length) {
-    root.append(empty('No tasks received yet',
-      'Trigger POST /demo/tasks on PServer. AAB saves and forwards tasks to EServer.'));
+    root.append(empty(state.taskSnapshotError ? 'Task history unavailable' : 'No tasks received yet',
+      state.taskSnapshotError ||
+      'Trigger POST /demo/tasks on PServer. AAUI will also recover persisted tasks on connect.'));
     return;
   }
   for (const task of tasks) {
@@ -306,8 +307,12 @@ function renderTasks() {
     add(card, heading, element('div', 'task-label', 'CONFIG'),
       element('div', 'task-config', task.config || '—'), meta,
       element('div', 'task-delivery', task.status === 'finished'
-        ? '✓ EServer finished; result delivered to PServer'
-        : task.forwardStatus === 'forwarded'
+        ? (task.snapshot
+          ? '✓ Finished result persisted at AAB (delivery confirmation not available in snapshot)'
+          : '✓ EServer finished; result delivered to PServer')
+        : task.forwardStatus === 'unknown'
+          ? '✓ Received and persisted by AAB (forwarding history unavailable after reconnect)'
+          : task.forwardStatus === 'forwarded'
           ? '✓ AAB saved task; EServer acknowledged delivery'
           : task.forwardStatus === 'failed'
             ? '⚠ AAB saved task; EServer delivery failed: ' + (task.forwardError || 'unknown')
