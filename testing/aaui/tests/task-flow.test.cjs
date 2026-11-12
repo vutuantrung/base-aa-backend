@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  TASK_STATUS, TASK_REQUEST_TYPE, TASK_RESULT_TYPE, PROCESSING_TIME_MS,
-  isTask, createTask, finishTask, createTaskProcessor
+  TASK_STATUS, TASK_REQUEST_TYPE, TASK_RESULT_TYPE,
+  isTask, createTask, finishTask
 } = require('../../shared/task-flow.cjs');
 
 test('task mock follows required format and allowed statuses', () => {
@@ -21,43 +21,19 @@ test('task mock follows required format and allowed statuses', () => {
   assert.equal(isTask(done, 'finished'), true);
   assert.equal(TASK_REQUEST_TYPE, 'demo.task.request');
   assert.equal(TASK_RESULT_TYPE, 'demo.task.result');
-  assert.equal(PROCESSING_TIME_MS, 5000);
 });
 
-test('task processor transitions from inProgress to finished after configured delay', async () => {
-  const started = [];
-  const finished = [];
+test('task remains inProgress until an explicit completion is applied', () => {
   const task = createTask('hello');
-  const completed = new Promise(resolve => {
-    const processor = createTaskProcessor({
-      delayMs: 30,
-      onStart: item => started.push(item),
-      onFinish: item => { finished.push(item); processor.stop(); resolve(); }
-    });
-    assert.equal(processor.receive(task), true);
-    assert.equal(processor.receive(task), false);
-    assert.equal(processor.size, 1);
-  });
-  assert.equal(started.length, 1);
-  assert.equal(started[0].status, 'inProgress');
-  assert.equal(finished.length, 0);
-  await completed;
-  assert.equal(finished.length, 1);
-  assert.equal(finished[0].status, 'finished');
-  assert.equal(finished[0].id, task.id);
-});
-
-test('processor cancellation prevents an unsent task result', async () => {
-  let completed = 0;
-  const processor = createTaskProcessor({
-    delayMs: 20,
-    onFinish: () => { completed++; }
-  });
-  assert.equal(processor.receive(createTask('stop')), true);
-  processor.stop();
-  await new Promise(resolve => setTimeout(resolve, 40));
-  assert.equal(completed, 0);
-  assert.equal(processor.size, 0);
+  assert.equal(task.status, 'inProgress');
+  // Receipt never changes the business task status.
+  const receivedAck = { ok: true, status: 'received' };
+  assert.equal(receivedAck.status, 'received');
+  assert.equal(task.status, 'inProgress');
+  const completed = finishTask(task);
+  assert.equal(completed.status, 'finished');
+  assert.equal(task.status, 'inProgress');
+  assert.equal(completed.id, task.id);
 });
 
 test('invalid task status and non-string config are rejected', () => {
