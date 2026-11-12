@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
+import taskFlow from './shared/task-flow.cjs';
+const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, TASK_STATUS, MAX_TASKS, isTask, createTask } = taskFlow;
 
 const port = 3001;
 const host = process.env.PEER_HOST ?? '127.0.0.1';
@@ -14,6 +16,11 @@ const namespace = io.of('/');
 const sessions = new Map();
 let activeSessionId;
 let aabSocket;
+const tasks = new Map();
+function keepTask(task) {
+  tasks.set(task.id, task);
+  if (tasks.size > MAX_TASKS) tasks.delete(tasks.keys().next().value);
+}
 
 namespace.use((socket, next) => {
   if (socket.handshake.auth?.peerId !== 'aab') return next(new Error('invalid AAB identity'));
@@ -54,6 +61,20 @@ namespace.on('connection', socket => {
 
   socket.on('peer:message', (message, ack) => {
     console.log('[pserver] RECEIVE peer:message', JSON.stringify(message));
+    if (message?.from === 'aaui' && message?.to === 'pserver' &&
+        message?.payload?.type === TASK_RESULT_TYPE) {
+      const task = message.payload.data;
+      const previous = tasks.get(task?.id);
+      if (!isTask(task, TASK_STATUS.finished) || !previous ||
+          previous.status !== TASK_STATUS.inProgress ||
+          task.config !== previous.config || task.createdTime !== previous.createdTime) {
+        console.warn('[pserver] TASK RESULT REJECTED', JSON.stringify(task));
+        ack?.({ ok: false, error: 'Unknown task, invalid transition or task data mismatch' });
+        return;
+      }
+      keepTask(task);
+      console.log('[pserver] TASK FINISHED RECEIVED FROM AAUI', JSON.stringify(task));
+    }
     ack?.({ ok: true });
   });
   socket.on('disconnect', reason => {
@@ -73,6 +94,42 @@ async function sendToAab(message) {
 app.get('/health', (_req, res) => res.json({
   server: 'pserver', port, status: 'running', aabConnected: Boolean(aabSocket?.connected), sessionId: activeSessionId ?? null
 }));
+
+// HTTP curl trigger for PServer -> AAB -> AAUI -> AAB -> PServer.
+app.post('/demo/tasks', async (req, res) => {
+  if (req.body?.config !== undefined && typeof req.body.config !== 'string') {
+    res.status(400).json({ ok: false, error: 'config must be a string' });
+    return;
+  }
+  const task = createTask(req.body?.config ?? 'mock task configuration');
+  const message = {
+    version: '1.0', kind: 'request', from: 'pserver', to: 'aaui',
+    payload: { type: TASK_REQUEST_TYPE, version: '1.0', data: task }
+  };
+  keepTask(task);
+  try {
+    const response = await sendToAab(message);
+    if (!response.ok) {
+      tasks.delete(task.id);
+      res.status(422).json({ ok: false, error: response.error, code: response.code });
+      return;
+    }
+    console.log('[pserver] TASK DISPATCHED TO AAUI', JSON.stringify(task));
+    res.status(202).json({ ok: true, task, messageId: response.data?.id });
+  } catch (error) {
+    tasks.delete(task.id);
+    res.status(aabSocket?.connected ? 502 : 503).json({
+      ok: false, error: error instanceof Error ? error.message : 'Delivery failed'
+    });
+  }
+});
+
+app.get('/demo/tasks', (_req, res) => res.json({ tasks: [...tasks.values()].reverse() }));
+app.get('/demo/tasks/:id', (req, res) => {
+  const task = tasks.get(req.params.id);
+  if (!task) { res.status(404).json({ ok: false, error: 'Task not found' }); return; }
+  res.json({ ok: true, task });
+});
 
 app.post('/demo/dispatch-task', (req, res) => {
   if (!aabSocket?.connected || !activeSessionId) {
