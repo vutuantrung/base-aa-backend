@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { io } from 'socket.io-client';
 import taskFlow from './task-flow.cjs';
-const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, TASK_STATUS, isTask, createTaskProcessor, PROCESSING_TIME_MS } = taskFlow;
+const { TASK_REQUEST_TYPE, TASK_STATUS, isTask } = taskFlow;
 
 /**
  * Shared infrastructure for EServer / SServer.
@@ -59,30 +59,20 @@ export async function startPeerServer({ peerId, port, instanceId }) {
       console.log(`[${peerId}] RECEIVE peer:ping ACK`, response);
     });
   });
-  const taskProcessor = peerId === 'eserver' ? createTaskProcessor({
-    delayMs: PROCESSING_TIME_MS,
-    onStart: task => console.log(`[eserver:${instanceId}] TASK RECEIVED`, JSON.stringify(task)),
-    onFinish: async task => {
-      console.log(`[eserver:${instanceId}] TASK FINISHED`, JSON.stringify(task));
-      try {
-        const response = await socket.timeout(8000).emitWithAck('peer:message', {
-          kind: 'response', from: 'eserver', to: 'pserver',
-          payload: { type: TASK_RESULT_TYPE, data: task }
-        });
-        console.log(`[eserver:${instanceId}] TASK RESULT ACK`, JSON.stringify(response));
-      } catch (error) {
-        console.error(`[eserver:${instanceId}] TASK RESULT ERROR`, error.message);
-      }
-    }
-  }) : undefined;
+  // EServer only acknowledges receipt. Completion must come from explicit
+  // EServer business processing; there is no automatic 5-second transition.
+  const receivedTaskIds = new Set();
   socket.on('peer:message', (message, ack) => {
     console.log(`[${peerId}] RECEIVE peer:message`, JSON.stringify(message));
     if (peerId === 'eserver' && message?.from === 'pserver' && message?.to === 'eserver' &&
         message.payload?.type === TASK_REQUEST_TYPE) {
-      if (!isTask(message.payload.data, TASK_STATUS.inProgress) || !taskProcessor.receive(message.payload.data)) {
+      const task = message.payload.data;
+      if (!isTask(task, TASK_STATUS.inProgress) || receivedTaskIds.has(task.id)) {
         ack?.({ ok: false, error: 'Invalid or duplicate task' });
         return;
       }
+      receivedTaskIds.add(task.id);
+      console.log(`[eserver:${instanceId}] TASK ACCEPTED (awaiting explicit completion)`, JSON.stringify(task));
     }
     ack?.({ ok: true, status: 'received' });
   });
@@ -101,7 +91,6 @@ export async function startPeerServer({ peerId, port, instanceId }) {
   const shutdown = async () => {
     if (stopping) return;
     stopping = true;
-    taskProcessor?.stop();
     socket.disconnect();
     await new Promise(resolve => ioServer.close(resolve));
     if (server.listening) await new Promise(resolve => server.close(resolve));
