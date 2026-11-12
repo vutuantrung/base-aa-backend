@@ -1,7 +1,7 @@
 /* AAUI dashboard; no Node integration or external browser dependencies. */
 'use strict';
 const {
-  createState, ingest, ageLabel, streamState, summary,
+  createState, ingest, ageLabel, streamState, summary, effectivePresence,
   STATUS_TYPE, VM_TYPE
 } = window.AAUIState;
 
@@ -97,7 +97,8 @@ function renderStream(kind) {
 
 function renderSummary() {
   const stats = summary(state, selectedInstance);
-  $('stat-instances').textContent = stats.instanceCount;
+  $('stat-instances').textContent = stats.onlineCount;
+  $('stat-presence-note').textContent = stats.instanceCount + ' known · ' + stats.offlineCount + ' offline';
   $('stat-vms').textContent = stats.vmCount;
   $('stat-status').textContent = stats.statusCount;
   $('stat-vm-updates').textContent = stats.vmUpdates;
@@ -117,12 +118,17 @@ function instanceCard(instance) {
   const nameText = element('div');
   add(nameText, element('strong', '', instance.id), element('span', '', 'EServer instance'));
   add(name, element('span', 'server-icon', '▥'), nameText);
-  const stateName = streamState(instance.lastStatusAt, 10000);
-  add(head, name, pill(stateName === 'healthy' ? 'Active stream' : stateName === 'stale' ? 'No recent status' : 'Waiting', stateName));
+  const presence = effectivePresence(state, instance);
+  add(head, name, pill(
+    presence === 'online' ? 'Online' : presence === 'offline' ? 'Offline' : 'Unknown',
+    presence === 'online' ? 'healthy' : presence === 'offline' ? 'offline' : ''
+  ));
   const metrics = element('div', 'instance-metrics');
   add(metrics, detail('Status events', instance.statusCount), detail('VM info', instance.vmCount), detail('VMs', instance.vms.length));
   const extra = element('div', 'instance-detail');
   add(extra, chip('Status · ' + ageLabel(instance.lastStatusAt)), chip('VM Info · ' + ageLabel(instance.lastVmAt)));
+  if (instance.disconnectReason && presence === 'offline') extra.append(chip('Disconnect · ' + instance.disconnectReason));
+  extra.append(chip('Logs · ' + instance.logs.length));
   if (instance.lastSequence !== null) extra.append(chip('Seq #' + instance.lastSequence));
   return add(card, head, metrics, extra);
 }
@@ -183,6 +189,7 @@ function renderInventory() {
 }
 
 function recordCategory(record) {
+  if (record.event === 'RECEIVE peer:status' || record.event === 'SNAPSHOT peer:status') return 'presence';
   if (record.event !== 'RECEIVE peer:message') return 'system';
   if (record.value?.payload?.type === STATUS_TYPE) return 'status';
   if (record.value?.payload?.type === VM_TYPE) return 'vm';
@@ -190,6 +197,8 @@ function recordCategory(record) {
 }
 function matchesInstance(record) {
   if (selectedInstance === 'all') return true;
+  if (record.event === 'RECEIVE peer:status') return record.value?.instanceId === selectedInstance;
+  if (record.event === 'RECEIVE peer:status:snapshot') return record.value?.instances?.some(entry => entry.instanceId === selectedInstance) ?? false;
   if (record.event !== 'RECEIVE peer:message') return false;
   return (record.value?.sourceInstanceId || record.value?.payload?.data?.instanceId) === selectedInstance;
 }
@@ -199,12 +208,13 @@ function activityRow(record) {
   row.dataset.key = [record.timestamp, record.event, JSON.stringify(record.value)].join('|');
   const heading = element('summary');
   const mark = element('span', 'event-mark ' + (category === 'system' ? '' : category),
-    category === 'status' ? '↗' : category === 'vm' ? '▣' : '·');
+    category === 'status' ? '↗' : category === 'vm' ? '▣' : category === 'presence' ? '◉' : '·');
   const info = element('span', 'event-title');
   const type = record.value?.payload?.type;
   const name = category === 'status' ? 'Status update received' :
-    category === 'vm' ? 'VM inventory received' : record.event;
-  const desc = (record.value?.sourceInstanceId || record.value?.from || '') +
+    category === 'vm' ? 'VM inventory received' :
+    category === 'presence' ? 'Connection ' + (record.value?.status || 'changed') : record.event;
+  const desc = (record.value?.instanceId || record.value?.sourceInstanceId || record.value?.from || '') +
     (type ? ' · ' + type : '');
   add(info, element('strong', '', name), element('span', '', desc || 'System event'));
   add(heading, mark, info, element('span', 'event-time', new Date(record.timestamp).toLocaleTimeString()));
@@ -228,11 +238,45 @@ function renderActivity() {
   }
 }
 
+function renderInstanceLogs() {
+  const root = $('instance-logs');
+  const openRecords = new Set(Array.from(root.querySelectorAll('details.activity-row[open]'), row => row.dataset.key));
+  root.replaceChildren();
+  const instances = currentInstances().sort((a, b) => a.id.localeCompare(b.id));
+  if (!instances.length) {
+    root.append(empty('No EServer instances yet', 'AAB will send a presence snapshot as soon as AAUI connects.'));
+    return;
+  }
+  for (const instance of instances) {
+    const card = element('article', 'panel instance-log-card');
+    const head = element('div', 'instance-log-heading');
+    const name = element('div');
+    add(name, element('strong', '', instance.id),
+      element('p', '', instance.logs.length + ' log entries · latest ' + ageLabel(instance.presenceAt)));
+    const presence = effectivePresence(state, instance);
+    add(head, name, pill(presence === 'online' ? 'Online' : presence === 'offline' ? 'Offline' : 'Unknown',
+      presence === 'online' ? 'healthy' : presence === 'offline' ? 'offline' : ''));
+    const list = element('div', 'instance-log-list');
+    if (!instance.logs.length) {
+      list.append(element('p', 'instance-log-empty', 'No events for this instance yet.'));
+    } else {
+      for (const record of instance.logs.slice().reverse()) {
+        const row = activityRow(record);
+        row.open = openRecords.has(row.dataset.key);
+        list.append(row);
+      }
+    }
+    card.append(head, list);
+    root.append(card);
+  }
+}
+
 function render() {
   updateSelector();
   renderSummary();
   renderOverviewInstances();
   renderInventory();
+  renderInstanceLogs();
   renderActivity();
 }
 
@@ -246,7 +290,8 @@ function navigate(next) {
   }
   const titles = { overview: ['EServer Overview', 'Real-time status and VM capabilities across connected EServer instances.', 'Overview'],
     inventory: ['VM Inventory', 'Explore VMs and supported platform capabilities.', 'VM Inventory'],
-    activity: ['Event Activity', 'Inspect live events and raw payloads for troubleshooting.', 'Event Activity'] };
+    activity: ['Event Activity', 'Inspect live events and raw payloads for troubleshooting.', 'Event Activity'],
+    'instance-logs': ['Instance Logs', 'Independent connection and data logs for every EServer instance.', 'Instance Logs'] };
   const item = titles[page];
   $('page-title').textContent = item[0];
   $('page-description').textContent = item[1];
@@ -271,6 +316,10 @@ $('event-filter').addEventListener('change', event => {
 $('clear-logs').addEventListener('click', () => {
   state.messages.length = 0;
   renderActivity();
+});
+$('clear-instance-logs').addEventListener('click', () => {
+  for (const instance of Object.values(state.instances)) instance.logs.length = 0;
+  renderInstanceLogs();
 });
 $('health').addEventListener('click', () => { void window.aaui.checkHttp(); });
 
