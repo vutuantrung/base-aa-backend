@@ -85,6 +85,8 @@ async function launch() {
     log('RECEIVE peer:message', message);
     ack?.({ ok: true });
   });
+  socket.on('peer:status', value => log('RECEIVE peer:status', value));
+  socket.on('peer:status:snapshot', value => log('RECEIVE peer:status:snapshot', value));
   socket.on('aab:welcome', value => log('RECEIVE aab:welcome', value));
   socket.on('connect_error', error => log('Socket CONNECT ERROR', error.message));
   socket.on('disconnect', reason => log('Socket DISCONNECT', reason));
