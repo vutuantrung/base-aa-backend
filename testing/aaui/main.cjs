@@ -53,6 +53,8 @@ async function launch() {
   });
   httpApp.get('/', (_req, res) => res.sendFile(join(__dirname, 'index.html')));
   httpApp.get('/renderer.js', (_req, res) => res.sendFile(join(__dirname, 'renderer.js')));
+  httpApp.get('/styles.css', (_req, res) => res.sendFile(join(__dirname, 'styles.css')));
+  httpApp.get('/dashboard-state.js', (_req, res) => res.sendFile(join(__dirname, 'dashboard-state.js')));
   httpServer = createServer(httpApp);
   await new Promise((resolve, reject) => {
     httpServer.once('error', reject);
@@ -63,7 +65,7 @@ async function launch() {
   ipcMain.handle('aaui:logs', () => logs);
   ipcMain.handle('aaui:check-http', checkHttp);
   window = new BrowserWindow({
-    width: 820, height: 620,
+    width: 1320, height: 860, minWidth: 720, minHeight: 540,
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   });
   await window.loadURL(`http://${host}:${port}/`);
