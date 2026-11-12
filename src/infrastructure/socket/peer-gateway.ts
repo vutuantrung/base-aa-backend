@@ -65,6 +65,12 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
 
   const service = new PeerMessageService(transformations, {
     async beforeDeliver(message: PeerMessage): Promise<void> {
+      if (message.from === 'eserver' && message.to === 'pserver' &&
+          message.payload.type === 'demo.task.result') {
+        await taskStore.saveResult(taskSchema.parse(message.payload.data));
+        console.log('[AAB] TASK RESULT STORED', (message.payload.data as { id: string }).id);
+        return;
+      }
       if (message.from !== 'pserver' || message.to !== 'eserver' ||
           message.payload.type !== 'demo.task.request') return;
       const task = taskSchema.parse(message.payload.data);
