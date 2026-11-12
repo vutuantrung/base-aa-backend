@@ -5,6 +5,7 @@
   const VM_TYPE = 'eserver.vm-info';
   const MAX_LOGS = 200;
   const MAX_HISTORY = 32;
+  const MAX_INSTANCE_LOGS = 100;
 
   function createState() {
     return {
@@ -27,12 +28,64 @@
         lastVmAt: null,
         lastSequence: null,
         latestStatus: null,
+        presence: 'unknown',
+        presenceAt: null,
+        disconnectReason: null,
+        socketId: null,
+        logs: [],
         vms: [],
         statusHistory: [],
         vmHistory: []
       };
     }
     return state.instances[id];
+  }
+
+  function appendInstanceLog(instance, record) {
+    instance.logs.push(record);
+    if (instance.logs.length > MAX_INSTANCE_LOGS) instance.logs.shift();
+  }
+
+  function applyPresence(state, value, record, fromSnapshot = false) {
+    if (!value || value.peerId !== 'eserver' || typeof value.instanceId !== 'string' || !value.instanceId) return;
+    if (value.status !== 'online' && value.status !== 'offline') return;
+    const instance = instanceFor(state, value.instanceId);
+    // Do not apply a late disconnect from a socket that has already been replaced.
+    if (!fromSnapshot && value.status === 'offline' && instance.socketId &&
+        value.socketId && instance.socketId !== value.socketId) return;
+    const changed = instance.presence !== value.status || instance.socketId !== (value.socketId || null);
+    instance.presence = value.status;
+    instance.presenceAt = value.timestamp || Date.parse(record.timestamp) || Date.now();
+    instance.disconnectReason = value.status === 'offline' ? (value.reason || null) : null;
+    instance.socketId = value.status === 'online' ? value.socketId || null : null;
+    if (changed) appendInstanceLog(instance, record);
+  }
+
+  function applySnapshot(state, value, record) {
+    if (!value || value.peerId !== 'eserver' || !Array.isArray(value.instances)) return;
+    const onlineIds = new Set();
+    for (const entry of value.instances) {
+      if (!entry || entry.status !== 'online' || typeof entry.instanceId !== 'string') continue;
+      onlineIds.add(entry.instanceId);
+      applyPresence(state, { ...entry, peerId: 'eserver' },
+        { ...record, event: 'SNAPSHOT peer:status', value: entry }, true);
+    }
+    for (const instance of Object.values(state.instances)) {
+      if (onlineIds.has(instance.id)) continue;
+      if (instance.presence !== 'offline') {
+        applyPresence(state, {
+          peerId: 'eserver', instanceId: instance.id, status: 'offline',
+          reason: 'not in current AAB snapshot', timestamp: value.timestamp
+        }, { ...record, event: 'SNAPSHOT peer:status', value: {
+          peerId: 'eserver', instanceId: instance.id, status: 'offline',
+          reason: 'not in current AAB snapshot'
+        } }, true);
+      }
+    }
+  }
+
+  function effectivePresence(state, instance) {
+    return state.connection !== 'connected' ? 'unknown' : instance.presence;
   }
 
   function normalizeVmList(value) {
@@ -63,6 +116,8 @@
     if (event === 'Socket CONNECT AAB') state.connection = 'connected';
     if (event === 'Socket DISCONNECT' || event === 'Socket CONNECT ERROR') state.connection = 'disconnected';
     if (event === 'HTTP AAB /health') state.httpHealth = record.value;
+    if (event === 'RECEIVE peer:status') applyPresence(state, record.value, record);
+    if (event === 'RECEIVE peer:status:snapshot') applySnapshot(state, record.value, record);
 
     if (event !== 'RECEIVE peer:message') return null;
     const message = record.value;
@@ -74,6 +129,7 @@
       ? message.sourceInstanceId
       : (typeof data?.instanceId === 'string' && data.instanceId ? data.instanceId : 'unknown-instance');
     const instance = instanceFor(state, id);
+    appendInstanceLog(instance, record);
 
     if (type === STATUS_TYPE && data && typeof data === 'object' && !Array.isArray(data)) {
       state.totalStatus += 1;
@@ -117,6 +173,8 @@
     const list = Object.values(state.instances).filter(item => selected === 'all' || item.id === selected);
     return {
       instanceCount: list.length,
+      onlineCount: list.filter(item => effectivePresence(state, item) === 'online').length,
+      offlineCount: list.filter(item => effectivePresence(state, item) === 'offline').length,
       vmCount: list.reduce((sum, item) => sum + item.vms.length, 0),
       statusCount: list.reduce((sum, item) => sum + item.statusCount, 0),
       vmUpdates: list.reduce((sum, item) => sum + item.vmCount, 0),
@@ -126,7 +184,7 @@
     };
   }
 
-  const api = { STATUS_TYPE, VM_TYPE, createState, ingest, normalizeVmList, ageLabel, streamState, summary };
+  const api = { STATUS_TYPE, VM_TYPE, createState, ingest, normalizeVmList, ageLabel, streamState, summary, effectivePresence };
   root.AAUIState = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
