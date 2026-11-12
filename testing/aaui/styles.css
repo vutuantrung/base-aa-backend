@@ -12,3 +12,16 @@
 .instance-log-list .activity-row{padding:11px 14px}
 .instance-log-empty{color:var(--muted);font-size:12px;text-align:center;padding:25px}
 @media(max-width:1250px){.instance-log-grid{grid-template-columns:1fr}}
+
+/* PServer -> AAUI -> PServer mock task processing */
+.task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.task-card{padding:21px;min-width:0}
+.task-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:20px}
+.task-id{font:600 12px/1.5 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+.task-label{color:var(--muted);font-size:10px;letter-spacing:1.4px;font-weight:750}
+.task-config{font:12px/1.6 ui-monospace,Consolas,monospace;color:#c4d6e9;background:#101b2b;padding:12px;border:1px solid var(--border);border-radius:8px;overflow-wrap:anywhere;margin:8px 0 14px}
+.task-meta{display:flex;flex-wrap:wrap;gap:7px}
+.task-progress{height:6px;background:#273348;border-radius:10px;overflow:hidden;margin-top:18px}
+.task-progress-fill{height:100%;background:linear-gradient(90deg,#67a9ed,#4fe0c3);transition:width .4s ease}
+.task-delivery{font-size:11px;color:var(--muted);margin-top:12px;line-height:1.5}
+@media(max-width:1100px){.task-grid{grid-template-columns:1fr}}
