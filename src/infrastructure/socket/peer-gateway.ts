@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { JsonTaskFileStore, taskSchema } from '../../modules/peer-messaging/task-file-store.js';
 import type { Server, Socket } from 'socket.io';
 import { type PeerId, type ClientPeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage } from '../../modules/peer-messaging/contracts.js';
 import { PeerMessageService, PeerMessageError } from '../../modules/peer-messaging/peer-message-service.js';
@@ -25,6 +26,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   const singlePeers = new Map<'sserver' | 'aaui', Socket>();
   const eservers = new Map<string, Socket>();
   let pserverTransport: ExternalPeerTransport | undefined;
+  const taskStore = new JsonTaskFileStore();
 
   // Transport presence is distinct from the 10s/20s application message streams.
   // Socket.IO events for each AAUI connection are sent in order.
@@ -62,6 +64,14 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   }
 
   const service = new PeerMessageService(transformations, {
+    async beforeDeliver(message: PeerMessage): Promise<void> {
+      if (message.from !== 'pserver' || message.to !== 'eserver' ||
+          message.payload.type !== 'demo.task.request') return;
+      const task = taskSchema.parse(message.payload.data);
+      if (task.status !== 'inProgress') throw new Error('Task must start inProgress');
+      await taskStore.save(task);
+      console.log('[AAB] TASK STORED', task.id);
+    },
     isConnected(peer: PeerId, toInstanceId?: string) {
       if (peer === 'aab') return true;
       if (peer === 'pserver') return pserverTransport?.isConnected() ?? false;
@@ -89,6 +99,16 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   async function handleMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
     try {
       const message = await service.process(value, authenticatedFrom, instanceId);
+      if (authenticatedFrom === 'pserver' && message.to === 'eserver' &&
+          message.payload.type === 'demo.task.request') {
+        const task = taskSchema.parse(message.payload.data);
+        const target = singlePeers.get('aaui');
+        target?.emit('task:lifecycle', {
+          task, status: 'received', instanceId: message.toInstanceId ??
+            [...eservers.keys()][0], event: 'task.received', timestamp: Date.now()
+        });
+        return { ok: true, status: 'received', data: message };
+      }
       console.log(`[AAB] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
       return { ok: true, data: message };
     } catch (error) {
