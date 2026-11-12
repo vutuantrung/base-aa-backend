@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { SqliteAaCatalogRepository } from '../modules/aa-catalog/sqlite-catalog.js';
 import { openDatabase } from '../infrastructure/database/sqlite.js';
 import { SqliteSessionRepository } from '../modules/session/session.js';
 import { SqliteProcessUsageRepository } from '../modules/process-usage/process-usage.js';
@@ -27,14 +28,15 @@ export function createApplication(config: ApplicationConfig) {
   const sender = new SendMessage({ publish: message => router.publish(message) });
   const sessions = new SqliteSessionRepository(db);
   const usage = new SqliteProcessUsageRepository(db);
-  const httpServer = createServer(createHttpApp({ sessions, usage, sender, apiKey: config.apiKey }));
+  const catalog = new SqliteAaCatalogRepository(db);
+  const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sender, apiKey: config.apiKey }));
   const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey });
   router = new MessageRouter(routes, [
     new SocketOutboundAdapter(sockets),
     new HttpOutboundAdapter(config.webhooks ?? {})
   ]);
   return {
-    httpServer, router, routes, sender, sessions, usage,
+    httpServer, router, routes, sender, sessions, usage, catalog,
     listen: (port: number) => new Promise<number>((resolve, reject) => {
       httpServer.once('error', reject);
       httpServer.listen(port, () => { httpServer.off('error', reject); const address = httpServer.address(); resolve(typeof address === 'object' && address ? address.port : port); });

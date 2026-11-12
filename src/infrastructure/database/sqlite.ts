@@ -19,6 +19,13 @@ export function openDatabase(dbPath: string): Database.Database {
       memory INTEGER NOT NULL CHECK(memory >= 0)
     );
     CREATE INDEX IF NOT EXISTS idx_process_usage_pid ON ProcessUsage(pid);
+    CREATE TABLE IF NOT EXISTS AaConnection (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS AaBrowser (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS AaExtension (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS AaActivity (id TEXT PRIMARY KEY, extension_id TEXT NOT NULL, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS AaTask (id TEXT PRIMARY KEY, extension_id TEXT NOT NULL, payload TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_aa_activity_extension ON AaActivity(extension_id);
+    CREATE INDEX IF NOT EXISTS idx_aa_task_extension ON AaTask(extension_id);
   `);
   return db;
 }

@@ -104,3 +104,7 @@ await app.listen(3000);
 See [Phase 2 design and test guide](docs/PHASE_2_MESSAGE_ROUTING.md) for routing semantics, failure cases, security and limitations.
 
 **Delivery guarantees:** best-effort only; webhook POST is not the same as delivering a reverse response to an HTTP-only browser client. There is no durable retry, no route persistence and no remote subscriber acknowledgment yet.
+
+## AA / Browser / Extension read API
+
+Added the six GET endpoints specified in `api-data.json`. See [HTTP API design](docs/HTTP_API_DESIGN.md) for contracts and limitations. Records are stored locally in SQLite and can be populated via the internal `app.catalog.upsert*` repository methods; no additional public write API or mock records have been introduced.
