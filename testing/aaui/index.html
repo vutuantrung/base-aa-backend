@@ -15,7 +15,7 @@
       <nav aria-label="Main navigation">
         <button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span> Overview</button>
         <button class="nav-item" data-page="inventory"><span class="nav-icon">▤</span> VM Inventory</button>
-        <button class="nav-item" data-page="tasks"><span class="nav-icon">◎</span> Task Processing</button>
+        <button class="nav-item" data-page="tasks"><span class="nav-icon">◎</span> Task Monitoring</button>
         <button class="nav-item" data-page="instance-logs"><span class="nav-icon">☷</span> Instance Logs</button>
         <button class="nav-item" data-page="activity"><span class="nav-icon">≡</span> Event Activity</button>
       </nav>
@@ -58,7 +58,7 @@
 
         <section class="page-section hidden" data-section="tasks">
           <div class="activity-toolbar">
-            <div><h2>PServer Tasks</h2><p>5-second mock processing: PServer → AAB → AAUI → AAB → PServer</p></div>
+            <div><h2>Task Receipts</h2><p>PServer → AAB → EServer · AAB persists task and publishes received status</p></div>
             <span class="pill" id="task-summary">No tasks received</span>
           </div>
           <div class="task-grid" id="task-grid"></div>
