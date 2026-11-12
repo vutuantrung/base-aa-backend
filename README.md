@@ -66,3 +66,41 @@ await socket.close();
 - Message delivery is in-memory, best-effort and **not persistent**. Future durable delivery can use outbox, queue, or broker without changing publisher consumers.
 - Both namespaces use the same local bus but are isolated by channel. There is no automatic message cross-routing between `session` and `worker`; that should be an explicit business use case.
 - Add DB migrations before changing the schema after production deployment.
+
+## Phase 2 — Message Routing & Forwarding
+
+The HTTP and Socket.IO ingress adapters now publish through the transport-independent `MessageRouter`. It selects outbound transports from `RouteRegistry` and keeps a single message ID across every destination.
+
+Default routes preserve Phase 1 behavior: messages originating on `session` broadcast on `/session`, and messages originating on `worker` broadcast on `/worker`. Cross-channel forwarding and webhook delivery are **opt-in** through trusted application configuration.
+
+Example for embedding the app with custom routing rules:
+
+```ts
+import { createApplication } from './src/app/create-app.js';
+import { defaultRoutes } from './src/modules/messaging/route-registry.js';
+
+const app = createApplication({
+  dbPath: './data/app.db',
+  corsOrigin: 'http://localhost:5173',
+  webhooks: {
+    collector: { url: 'http://127.0.0.1:4000/events' }
+  },
+  routes: [
+    ...defaultRoutes(),
+    {
+      id: 'worker-usage-forward',
+      source: 'worker',
+      event: 'usage',
+      destinations: [
+        { transport: 'socket', channel: 'session' },
+        { transport: 'http', endpointId: 'collector' }
+      ]
+    }
+  ]
+});
+await app.listen(3000);
+```
+
+See [Phase 2 design and test guide](docs/PHASE_2_MESSAGE_ROUTING.md) for routing semantics, failure cases, security and limitations.
+
+**Delivery guarantees:** best-effort only; webhook POST is not the same as delivering a reverse response to an HTTP-only browser client. There is no durable retry, no route persistence and no remote subscriber acknowledgment yet.
