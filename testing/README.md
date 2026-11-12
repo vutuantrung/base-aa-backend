@@ -294,22 +294,22 @@ npm test
 The task flow uses the existing message router, without changing the PServer `/ws` session protocol, the EServer 10s/20s streams, or the AAUI connection-presence implementation.
 
 
-## Updated task receipt flow — PServer → AAB → EServer (AAUI observes)
+## Task receipt flow — PServer → AAB → EServer (AAUI observes)
 
-**This flow supersedes the earlier PServer → AAB → AAUI task processing example** for the `POST /demo/tasks` endpoint. AAUI no longer runs the 5-second processing timer or sends mock task results itself.
+This flow supersedes the earlier PServer → AAB → AAUI task execution demo. **The `received` ACK means AAB has accepted and saved the task, not that EServer has received it.** AAUI is an observer; the existing 5-second mock worker runs only on EServer.
 
-When PServer sends `demo.task.request` to AAB, AAB performs the following operations:
+When PServer sends a `demo.task.request` to AAB, the receipt sequence is:
 
-1. Validates destination EServer and task shape (`id`, `status: "inProgress"`, `config`, `createdTime`, `updatedTime`).
-2. Persists the task as `data/tasks/<task-id>.json` under the AAB working directory, or `AAB_TASK_STORE_DIR` if set. File creation is exclusive, so an existing task ID cannot silently overwrite another task.
-3. Forwards the task via `peer:message` to the selected EServer instance and waits for its acknowledgment.
-4. Sends `task:lifecycle` to AAUI with `status: "received"`, task data and EServer `instanceId`, and returns Socket.IO ACK `{ok: true, status: "received", data: ...}` to PServer.
+1. AAB validates the task shape (`id`, `status: "inProgress"`, `config`, `createdTime`, `updatedTime`) and the peer envelope.
+2. AAB persists the task in `data/tasks/<task-id>.json` (or `AAB_TASK_STORE_DIR`), using exclusive creation to prevent overwrites.
+3. AAB publishes `task:lifecycle` with `status: "received"` to AAUI. The UI shows **Received** immediately, without a progress bar.
+4. AAB returns `{ok: true, status: "received", data: ...}` as the Socket.IO ACK to PServer, so the curl endpoint responds HTTP **202 Accepted**.
 
-An offline EServer, ambiguous destination, failed persistence or negative EServer receipt ACK prevents the success ACK. The disk write occurs *before* forwarding; if forwarding fails afterward, the task file remains for diagnosis. No queue, retry or exactly-once processing guarantee has been added.
+**EServer forwarding is separate and asynchronous.** AAB attempts `peer:message` forwarding to the requested `toInstanceId` (or the sole connected EServer if unambiguous). After receiving the EServer ACK, AAB publishes `task.forwarded`. If it cannot select or reach EServer, or EServer rejects the message, it publishes `task.forwardFailed` with a reason. AAUI keeps the task status **received** and displays the forwarding outcome separately. Failed forwarding does not undo the receipt ACK or delete the stored file. There is currently no queue/retry scheduler; failed tasks require explicit operator recovery.
 
-The EServer playground continues mock processing for 5 seconds and returns `demo.task.result` with `status: "finished"` to PServer via AAB. AAB validates and stores the EServer return message separately as `data/tasks/<task-id>.result.json` before forwarding it. After PServer accepts the result, AAB emits a `task:lifecycle` `finished` event to AAUI. PServer logs the finished result. The `received` acknowledgment does **not** mean business processing has completed.
+After EServer's mock 5-second processing, it returns `demo.task.result` with `status: "finished"` through AAB to PServer. AAB stores the result as `data/tasks/<task-id>.result.json`, forwards it, and publishes `task.finished` to AAUI after PServer accepts it.
 
-To exercise with two EServer instances, run PServer, AAB, AAUI and EServer e-1/e-2:
+To run the demonstration (separate terminals):
 
 ```sh
 npm --prefix testing run pserver
@@ -319,7 +319,7 @@ ESERVER_INSTANCE_ID=e-1 ESERVER_PORT=3002 npm --prefix testing run eserver
 ESERVER_INSTANCE_ID=e-2 ESERVER_PORT=3012 npm --prefix testing run eserver
 ```
 
-Send a task to a known EServer instance:
+Trigger using curl:
 
 ```sh
 curl -X POST http://127.0.0.1:3001/demo/tasks \
@@ -327,11 +327,25 @@ curl -X POST http://127.0.0.1:3001/demo/tasks \
   -d '{"config":"test-config","toInstanceId":"e-1"}'
 ```
 
-The HTTP response has `status: "received"` (202 Accepted) only after AAB has saved the file and EServer has confirmed receipt. The task's business status in that response remains `inProgress`. Inspect the original `./data/tasks/<task-id>.json` and, after processing, the corresponding `.result.json` file; view the **Task Monitoring** page on AAUI and inspect PServer logs for the `finished` result. With one connected EServer, `toInstanceId` may be omitted; with more than one, it is required.
+The resulting task payload keeps the original business shape; `toInstanceId` is a routing parameter in the request wrapper, **not** part of the task data:
+
+```json
+{
+  "id": "task-681bac01-6e86-47d8-b4eb-b6cd0e3c3d11",
+  "status": "inProgress",
+  "config": "test-config",
+  "createdTime": 1794500000000,
+  "updatedTime": 1794500000000
+}
+```
+
+Inspect `data/tasks/` on AAB and the Task Monitoring screen on AAUI. PServer's terminal logs the later `finished` result. Keep in mind AAUI lifecycle notifications are in-memory and are not replayed if AAUI disconnects.
+
+Tests:
 
 ```sh
 npm test
 npm --prefix testing run test:aaui
 ```
 
-The EServer 10s/20s scheduled streams and their 10-log-per-instance limit on AAUI remain unchanged.
+The EServer 10s/20s scheduled streams and the 10-log-per-instance AAUI limit are unchanged.
