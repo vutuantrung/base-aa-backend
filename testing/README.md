@@ -307,7 +307,7 @@ When PServer sends `demo.task.request` to AAB, AAB performs the following operat
 
 An offline EServer, ambiguous destination, failed persistence or negative EServer receipt ACK prevents the success ACK. The disk write occurs *before* forwarding; if forwarding fails afterward, the task file remains for diagnosis. No queue, retry or exactly-once processing guarantee has been added.
 
-The EServer playground continues mock processing for 5 seconds and returns `demo.task.result` with `status: "finished"` to PServer via AAB. PServer logs the finished result. The `received` acknowledgment does **not** mean business processing has completed.
+The EServer playground continues mock processing for 5 seconds and returns `demo.task.result` with `status: "finished"` to PServer via AAB. AAB validates and stores the EServer return message separately as `data/tasks/<task-id>.result.json` before forwarding it. After PServer accepts the result, AAB emits a `task:lifecycle` `finished` event to AAUI. PServer logs the finished result. The `received` acknowledgment does **not** mean business processing has completed.
 
 To exercise with two EServer instances, run PServer, AAB, AAUI and EServer e-1/e-2:
 
@@ -327,7 +327,7 @@ curl -X POST http://127.0.0.1:3001/demo/tasks \
   -d '{"config":"test-config","toInstanceId":"e-1"}'
 ```
 
-The HTTP response has `status: "received"` (202 Accepted) only after AAB has saved the file and EServer has confirmed receipt. The task's business status in that response remains `inProgress`. Inspect the file in `./data/tasks/`, view the **Task Monitoring** page on AAUI, and inspect PServer logs for the later `finished` result. With one connected EServer, `toInstanceId` may be omitted; with more than one, it is required.
+The HTTP response has `status: "received"` (202 Accepted) only after AAB has saved the file and EServer has confirmed receipt. The task's business status in that response remains `inProgress`. Inspect the original `./data/tasks/<task-id>.json` and, after processing, the corresponding `.result.json` file; view the **Task Monitoring** page on AAUI and inspect PServer logs for the `finished` result. With one connected EServer, `toInstanceId` may be omitted; with more than one, it is required.
 
 ```sh
 npm test
