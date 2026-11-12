@@ -171,3 +171,33 @@ test('logs from individual EServer instances are isolated and bounded', () => {
   assert.equal(state.instances['e-2'].logs.length, 1);
   assert.equal(state.messages.length, 131);
 });
+
+
+test('task lifecycle updates UI state without mixing EServer instance logs', () => {
+  const state = createState();
+  const task = { id: 'task-123', config: 'mock config', status: 'inProgress',
+    createdTime: 1000, updatedTime: 1000 };
+  ingest(state, { timestamp: at, event: 'TASK IN PROGRESS', value: task });
+  assert.equal(state.tasks[task.id].status, 'inProgress');
+  assert.equal(state.tasks[task.id].delivery, 'pending');
+  assert.equal(state.taskOrder.length, 1);
+  ingest(state, { timestamp: at, event: 'TASK FINISHED', value: { ...task, status: 'finished', updatedTime: 7000 } });
+  assert.equal(state.tasks[task.id].status, 'finished');
+  ingest(state, { timestamp: at, event: 'TASK RESULT DELIVERED', value: { id: task.id, messageId: 'msg-1' } });
+  assert.equal(state.tasks[task.id].delivery, 'delivered');
+  assert.equal(state.taskOrder.length, 1);
+  assert.equal(Object.keys(state.instances).length, 0);
+});
+
+test('AAUI retains only the 50 most recently observed task cards', () => {
+  const state = createState();
+  for (let i = 0; i < 65; i++) {
+    ingest(state, { timestamp: at, event: 'TASK IN PROGRESS',
+      value: { id: 'task-' + i, status: 'inProgress', config: 'demo',
+        createdTime: i, updatedTime: i } });
+  }
+  assert.equal(state.taskOrder.length, 50);
+  assert.equal(state.taskOrder[0], 'task-64');
+  assert.equal(state.tasks['task-0'], undefined);
+  assert.ok(state.tasks['task-15']);
+});
