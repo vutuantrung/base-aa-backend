@@ -129,4 +129,9 @@ For a concrete PServer -> AAB -> transformed payload -> AAUI example, run the te
 
 ### PServer connection topology
 
-AAB initiates a Socket.IO client connection to `PSERVER_URL` (default `http://127.0.0.1:3001`) namespace `/aab`. PServer is a Socket.IO server and no longer connects as a client to AAB. Other peers use `/peers` as before. PServer can still send messages through AAB and receive routed messages on the same AAB-established socket. See [testing guide](testing/README.md).
+AAB initiates a Socket.IO client connection to `PSERVER_URL` (default `http://127.0.0.1:3001`) Socket.IO path `/ws` (namespace `/`). PServer is a Socket.IO server and no longer connects as a client to AAB. Other peers use `/peers` as before. PServer can still send messages through AAB and receive routed messages on the same AAB-established socket. See [testing guide](testing/README.md).
+
+
+### PServer session registration
+
+AAB now follows the connection protocol from `connect-socket-example.js`: Socket.IO `path: '/ws'`, namespace `/`, `automation_vm:session:connect` on connect, retained session ID on reconnect, and validation of incoming `activity:task:dispatch` by session and VM UDID. See [PServer protocol](docs/PSERVER_SESSION_PROTOCOL.md). The existing `peer:message` demo remains available after session registration.

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { connectToPServer } from '../infrastructure/socket/pserver-connector.js';
+import { connectToPServer, type PServerConnectionConfig } from '../infrastructure/socket/pserver-connector.js';
 import { TransformationRegistry } from '../modules/peer-messaging/transformation-registry.js';
 import { SqliteAaCatalogRepository } from '../modules/aa-catalog/sqlite-catalog.js';
 import { openDatabase } from '../infrastructure/database/sqlite.js';
@@ -18,7 +18,8 @@ export type ApplicationConfig = {
   corsOrigin: string;
   apiKey?: string;
   enableTestPeers?: boolean;
-  pserverUrl?: string;
+  /** Optional outbound Socket.IO connection using the PServer /ws session protocol. */
+  pserver?: Omit<PServerConnectionConfig, 'apiKey'>;
   routes?: readonly RouteRule[];
   webhooks?: Readonly<Record<string, WebhookEndpoint>>;
 };
@@ -36,8 +37,8 @@ export function createApplication(config: ApplicationConfig) {
   const catalog = new SqliteAaCatalogRepository(db);
   const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sender, apiKey: config.apiKey }));
   const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers, transformations });
-  const pserverConnector = sockets.peerGateway && config.pserverUrl
-    ? connectToPServer(config.pserverUrl, config.apiKey, sockets.peerGateway)
+  const pserverConnector = sockets.peerGateway && config.pserver
+    ? connectToPServer({ ...config.pserver, apiKey: config.apiKey }, sockets.peerGateway)
     : undefined;
   router = new MessageRouter(routes, [
     new SocketOutboundAdapter(sockets),

@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
+import { randomUUID } from 'node:crypto';
 
 const port = 3001;
 const host = process.env.PEER_HOST ?? '127.0.0.1';
@@ -8,8 +9,10 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 const server = createServer(app);
-const io = new Server(server, { cors: { origin: false }, maxHttpBufferSize: 1_000_000 });
-const namespace = io.of('/aab');
+const io = new Server(server, { path: '/ws', cors: { origin: false }, maxHttpBufferSize: 1_000_000 });
+const namespace = io.of('/');
+const sessions = new Map();
+let activeSessionId;
 let aabSocket;
 
 namespace.use((socket, next) => {
@@ -24,6 +27,24 @@ namespace.on('connection', socket => {
   if (aabSocket?.connected) { socket.disconnect(true); return; }
   aabSocket = socket;
   console.log(`[pserver] ACCEPT AAB Socket.IO connection id=${socket.id}`);
+  socket.on('automation_vm:session:connect', (payload, ack) => {
+    console.log('[pserver] SESSION CONNECT RECEIVED', JSON.stringify(payload));
+    let session;
+    if (payload && typeof payload.session_id === 'string') {
+      session = sessions.get(payload.session_id);
+      if (!session) { ack?.({ ok: false, error: 'unknown session_id' }); return; }
+    } else {
+      if (!payload || typeof payload.udid !== 'string' || !payload.udid.trim()) {
+        ack?.({ ok: false, error: 'VM UDID required' });
+        return;
+      }
+      session = { id: randomUUID(), vm_udid: payload.udid, vmInfo: payload };
+      sessions.set(session.id, session);
+    }
+    activeSessionId = session.id;
+    console.log('[pserver] SESSION READY', { session_id: session.id, vm_udid: session.vm_udid });
+    ack?.({ ok: true, session: { id: session.id, vm_udid: session.vm_udid } });
+  });
   socket.emit('pserver:welcome', { from: 'pserver', to: 'aab', timestamp: Date.now() });
 
   socket.on('peer:ping', (value, ack) => {
@@ -50,8 +71,25 @@ async function sendToAab(message) {
 }
 
 app.get('/health', (_req, res) => res.json({
-  server: 'pserver', port, status: 'running', aabConnected: Boolean(aabSocket?.connected)
+  server: 'pserver', port, status: 'running', aabConnected: Boolean(aabSocket?.connected), sessionId: activeSessionId ?? null
 }));
+
+app.post('/demo/dispatch-task', (req, res) => {
+  if (!aabSocket?.connected || !activeSessionId) {
+    res.status(503).json({ ok: false, error: 'AAB session not ready' });
+    return;
+  }
+  const value = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const session = sessions.get(activeSessionId);
+  const task = {
+    ...value,
+    session_id: value.session_id ?? activeSessionId,
+    vm_udid: value.vm_udid ?? session.vm_udid
+  };
+  console.log('[pserver] DISPATCH activity:task:dispatch', JSON.stringify(task));
+  aabSocket.emit('activity:task:dispatch', task);
+  res.status(202).json({ ok: true, task });
+});
 
 app.post('/messages', async (req, res) => {
   try {
@@ -89,7 +127,7 @@ await new Promise((resolve, reject) => {
   server.listen(port, host, () => { server.off('error', reject); resolve(); });
 });
 console.log(`[pserver] HTTP + Socket.IO server listening on http://${host}:${port}`);
-console.log('[pserver] Waiting for AAB to connect to /aab');
+console.log('[pserver] Waiting for AAB to connect on Socket.IO path /ws, default namespace');
 
 let stopping = false;
 async function stop() {

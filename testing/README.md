@@ -4,8 +4,8 @@ This is a local integration environment, not a production deployment. AAB is the
 
 | Application | Port | Socket.IO relationship |
 |---|---:|---|
-| AAB | 3000 | **Client** connecting outward to PServer :3001 (/aab), server for EServer/SServer/AAUI (/peers) |
-| PServer | 3001 | Express + Socket.IO **server** for AAB connection (/aab); never connects to AAB itself |
+| AAB | 3000 | **Client** connecting outward to PServer :3001 (path /ws, namespace /), server for EServer/SServer/AAUI (/peers) |
+| PServer | 3001 | Express + Socket.IO **server** for AAB connection (path /ws, namespace /); never connects to AAB itself |
 | EServer | 3002 | Express + Socket.IO server + client connecting to AAB (/peers) |
 | SServer | 3003 | Express + Socket.IO server + client connecting to AAB (/peers) |
 | AAUI | 3004 | Electron + HTTP + Socket.IO client connecting to AAB (/peers) |
@@ -36,11 +36,11 @@ npm --prefix testing run aaui
 
 PowerShell: `$env:ENABLE_TEST_PEERS = '1'` before `npm run dev`. Electron needs a graphical desktop session.
 
-The AAB client connects to `PSERVER_URL` (default `http://127.0.0.1:3001`) and its dedicated `/aab` namespace. The connection is bidirectional: PServer may send `peer:message` over the accepted socket, and AAB may deliver `peer:message` to PServer on that same connection. The gateway checks the `from` property against the authenticated PServer transport. AAB authenticates to PServer as `peerId=aab`, using `API_KEY` when provided. Other peers authenticate as before.
+The AAB client connects to `PSERVER_URL` (default `http://127.0.0.1:3001`) using Socket.IO `path: '/ws'` and namespace `/`. The connection is bidirectional: PServer may send `peer:message` over the accepted socket, and AAB may deliver `peer:message` to PServer on that same connection. The gateway checks the `from` property against the authenticated PServer transport. AAB authenticates to PServer as `peerId=aab`, using `API_KEY` when provided. On each connection AAB emits `automation_vm:session:connect`; after the server acknowledges a session, the peer messaging transport is ready. AAB listens for `activity:task:dispatch` and validates `session_id` / `vm_udid` against the registered session. Other peers authenticate as before.
 
 ## HTTP test endpoints
 
-- PServer: `GET http://127.0.0.1:3001/health`, `POST /messages`, `POST /demo/send-to-aaui`
+- PServer: `GET http://127.0.0.1:3001/health`, `POST /messages`, `POST /demo/send-to-aaui`, `POST /demo/dispatch-task`
 - EServer / SServer: `GET /health`, `POST /messages`
 - AAUI: `GET /health`, `POST /messages`
 - AAB: `GET http://127.0.0.1:3000/health`
@@ -67,6 +67,6 @@ curl -X POST http://127.0.0.1:3004/messages \
 
 AAB forwards the message to the PServer socket that AAB itself opened. There is no separate PServer client connection.
 
-## Scope and security
+## Session protocol example\n\nStart AAB with `VM_UDID=vm-001 VM_SDK=33 VM_MODEL=Pixel VM_ABI=arm64-v8a VM_FOR_SEARCH=false VM_PLATFORMS=facebook,instagram ENABLE_TEST_PEERS=1 npm run dev`. AAB sends the VM information to PServer on its initial connection, and `session_id` on reconnection. The test PServer generates a session ID and acknowledges it.\n\nTo simulate the source file's task dispatch, call:\n\n```sh\ncurl -X POST http://127.0.0.1:3001/demo/dispatch-task \\\n  -H 'content-type: application/json' \\\n  -d '{"taskId":"task-1"}'\n```\n\nPServer fills `session_id` and `vm_udid` with the registered values and emits `activity:task:dispatch`. AAB logs `ACTIVITY_TASK VALIDATED`. Mismatching values are logged and ignored, and the event is **not** forwarded automatically.\n\n## Scope and security
 
 No new database feature, Message Queue, external Processing Server or business message routes. PServer's test server binds to `127.0.0.1` by default, and shared environments should configure `API_KEY` for both sides. Do not expose testing endpoints publicly. Acknowledgment signals socket receipt, not business completion.

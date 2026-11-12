@@ -10,10 +10,14 @@ let pserver: Awaited<ReturnType<typeof createMockPServer>>;
 let base: string;
 before(async () => {
   pserver = await createMockPServer();
-  app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true, pserverUrl: pserver.url });
+  app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true, pserver: { url: pserver.url, vmInfo: { udid: 'test-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } } });
   registerPServerToAauiDemo(app.transformations);
   base = `http://127.0.0.1:${await app.listen(0)}`;
   await pserver.arrival;
+  for (let attempt = 0; attempt < 100 && !app.pserverConnector?.connected; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  if (!app.pserverConnector?.connected) throw new Error('PServer session not ready');
 });
 after(async () => { if (app) await app.close(); if (pserver) await pserver.close(); });
 

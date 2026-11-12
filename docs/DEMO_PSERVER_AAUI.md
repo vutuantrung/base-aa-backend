@@ -12,7 +12,9 @@ npm install --prefix testing
 ENABLE_TEST_PEERS=1 npm run dev
 ```
 
-**PServer must expose its Socket.IO server first. AAB connects to PServer's /aab namespace (not the reverse).**\n\nIn separate terminals:
+**PServer must expose its Socket.IO server first. AAB connects to PServer's Socket.IO path /ws, default namespace (not the reverse).**
+
+In separate terminals:
 
 ```sh
 npm --prefix testing run pserver
@@ -31,7 +33,7 @@ curl -X POST http://127.0.0.1:3001/demo/send-to-aaui \
   -d '{"originalParam":"hello"}'
 ```
 
-The PServer Express endpoint constructs the normal peer envelope and emits `peer:message` to **AAB's outbound Socket.IO client**, which is connected to PServer's `/aab` namespace:
+The PServer Express endpoint constructs the normal peer envelope and emits `peer:message` to **AAB's outbound Socket.IO client**, which is connected to PServer's `/ws` Socket.IO path (default namespace):
 
 ```json
 {
