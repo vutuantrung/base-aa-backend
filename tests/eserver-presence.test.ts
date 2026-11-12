@@ -59,10 +59,6 @@ test('AAUI receives snapshot for existing EServers and subsequent connection eve
     assert.notEqual(online.socketId, offline.socketId);
     reconnect.socket.disconnect();
 
-    const aaui2 = connect('aaui');
-    // Only one AAUI may be connected at a time.
-    aaui.socket.disconnect();
-    aaui2.socket.disconnect();
   } finally {
     aaui.socket.disconnect();
     e1.socket.disconnect();
