@@ -110,6 +110,16 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
         });
         return { ok: true, status: 'received', data: message };
       }
+      if (authenticatedFrom === 'eserver' && message.to === 'pserver' &&
+          message.payload.type === 'demo.task.result') {
+        const task = taskSchema.parse(message.payload.data);
+        if (task.status === 'finished') {
+          singlePeers.get('aaui')?.emit('task:lifecycle', {
+            task, status: 'finished', instanceId, event: 'task.finished',
+            timestamp: Date.now()
+          });
+        }
+      }
       console.log(`[AAB] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
       return { ok: true, data: message };
     } catch (error) {
