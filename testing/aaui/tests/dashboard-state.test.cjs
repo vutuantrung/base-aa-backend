@@ -92,3 +92,81 @@ test('retains at most 200 activity events', () => {
   assert.equal(state.messages[0].value, 30);
   assert.equal(state.messages[199].value, 229);
 });
+
+
+test('presence snapshot exposes EServers before any application messages', () => {
+  const state = createState();
+  ingest(state, { timestamp: at, event: 'Socket CONNECT AAB', value: 'socket-aa' });
+  ingest(state, {
+    timestamp: at, event: 'RECEIVE peer:status:snapshot',
+    value: { peerId: 'eserver', timestamp: Date.parse(at), instances: [
+      { peerId: 'eserver', instanceId: 'e-1', status: 'online', socketId: 'socket-e1', timestamp: Date.parse(at) },
+      { peerId: 'eserver', instanceId: 'e-2', status: 'online', socketId: 'socket-e2', timestamp: Date.parse(at) }
+    ] }
+  });
+  assert.equal(summary(state).instanceCount, 2);
+  assert.equal(summary(state).onlineCount, 2);
+  assert.equal(summary(state).statusCount, 0);
+  assert.equal(state.instances['e-1'].logs.length, 1);
+});
+
+test('disconnect event marks only its EServer offline and logs the reason', () => {
+  const state = createState();
+  ingest(state, { timestamp: at, event: 'Socket CONNECT AAB', value: 'socket-aa' });
+  for (const id of ['e-1', 'e-2']) {
+    ingest(state, { timestamp: at, event: 'RECEIVE peer:status', value: {
+      peerId: 'eserver', instanceId: id, status: 'online', socketId: id, timestamp: Date.parse(at)
+    } });
+  }
+  ingest(state, { timestamp: at, event: 'RECEIVE peer:status', value: {
+    peerId: 'eserver', instanceId: 'e-1', status: 'offline',
+    socketId: 'e-1', reason: 'transport close', timestamp: Date.parse(at)
+  } });
+  assert.equal(state.instances['e-1'].presence, 'offline');
+  assert.equal(state.instances['e-1'].disconnectReason, 'transport close');
+  assert.equal(state.instances['e-2'].presence, 'online');
+  assert.equal(summary(state).onlineCount, 1);
+  assert.equal(state.instances['e-1'].logs.length, 2);
+});
+
+test('late disconnect from a previous socket does not mark a reconnected EServer offline', () => {
+  const state = createState();
+  ingest(state, { timestamp: at, event: 'Socket CONNECT AAB', value: 'socket-aa' });
+  ingest(state, { timestamp: at, event: 'RECEIVE peer:status', value: {
+    peerId: 'eserver', instanceId: 'e-1', status: 'online', socketId: 'new'
+  } });
+  ingest(state, { timestamp: at, event: 'RECEIVE peer:status', value: {
+    peerId: 'eserver', instanceId: 'e-1', status: 'offline', socketId: 'old'
+  } });
+  assert.equal(state.instances['e-1'].presence, 'online');
+  assert.equal(state.instances['e-1'].logs.length, 1);
+});
+
+test('AAUI disconnect makes all EServer connection statuses unknown until snapshot', () => {
+  const state = createState();
+  const online = {
+    peerId: 'eserver', instanceId: 'e-1', status: 'online', socketId: 'esock'
+  };
+  ingest(state, { timestamp: at, event: 'Socket CONNECT AAB', value: 'aaui-1' });
+  ingest(state, { timestamp: at, event: 'RECEIVE peer:status', value: online });
+  assert.equal(summary(state).onlineCount, 1);
+  ingest(state, { timestamp: at, event: 'Socket DISCONNECT', value: 'transport close' });
+  assert.equal(summary(state).onlineCount, 0);
+  assert.equal(state.instances['e-1'].presence, 'online'); // Last known, but not trusted while AAUI is offline
+  ingest(state, { timestamp: at, event: 'Socket CONNECT AAB', value: 'aaui-2' });
+  ingest(state, { timestamp: at, event: 'RECEIVE peer:status:snapshot', value: {
+    peerId: 'eserver', timestamp: Date.parse(at), instances: []
+  } });
+  assert.equal(state.instances['e-1'].presence, 'offline');
+  assert.equal(summary(state).offlineCount, 1);
+});
+
+test('logs from individual EServer instances are isolated and bounded', () => {
+  const state = createState();
+  for (let i = 0; i < 130; i++) ingest(state, message(STATUS_TYPE, 'e-1', { sequence: i }));
+  ingest(state, message(VM_TYPE, 'e-2', vm('other-vm')));
+  assert.equal(state.instances['e-1'].logs.length, 100);
+  assert.equal(state.instances['e-1'].logs[0].value.payload.data.sequence, 30);
+  assert.equal(state.instances['e-2'].logs.length, 1);
+  assert.equal(state.messages.length, 131);
+});
