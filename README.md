@@ -120,3 +120,8 @@ See [testing/README.md](testing/README.md). For AAB: `ENABLE_TEST_PEERS=1 npm ru
 ## Peer message transformation (new)
 
 The opt-in `/peers` test gateway accepts `peer:message` with `from`, `to`, `kind`, `payload.type` and `payload.data`. AAB validates FROM against the authenticated connection, runs optional business transforms selected by FROM/TO/type, then forwards the transformed envelope to TO. Peer receives/logs and acknowledges. This contract is separate from the legacy Phase 2 channels. See [peer message design](docs/PEER_MESSAGE_TRANSFORMATION.md).
+
+
+### End-to-end demonstration
+
+For a concrete PServer -> AAB -> transformed payload -> AAUI example, run the testing environment and use `POST /demo/send-to-aaui` on PServer. [Step-by-step guide](docs/DEMO_PSERVER_AAUI.md).

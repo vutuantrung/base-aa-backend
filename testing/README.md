@@ -77,3 +77,8 @@ curl -X POST http://127.0.0.1:3001/messages -H 'content-type: application/json' 
 ```
 
 No application-specific forwarding flows or transformers are preconfigured. AAB can register business-specific transformers through `app.transformations.register(...)`; unhandled types are forwarded unchanged. This new workflow does not use SQLite.
+
+
+## Runnable PServer -> AAB -> AAUI demo
+
+Start AAB with `ENABLE_TEST_PEERS=1`, then start PServer and AAUI. POST to `http://127.0.0.1:3001/demo/send-to-aaui` with body `{"originalParam":"hello"}`. AAB adds `payload.data.modifiedParam = "AAB modified: hello"` and forwards to AAUI. See [demo guide](../docs/DEMO_PSERVER_AAUI.md).
