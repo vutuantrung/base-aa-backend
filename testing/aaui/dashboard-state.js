@@ -119,9 +119,9 @@
     if (event === 'Socket CONNECT AAB') state.connection = 'connected';
     if (event === 'Socket DISCONNECT' || event === 'Socket CONNECT ERROR') state.connection = 'disconnected';
     if (event === 'HTTP AAB /health') state.httpHealth = record.value;
-    if (event === 'TASK IN PROGRESS' || event === 'TASK FINISHED' ||
+    if (event === 'RECEIVE task:lifecycle' || event === 'TASK IN PROGRESS' || event === 'TASK FINISHED' ||
         event === 'TASK RESULT DELIVERED' || event === 'TASK RESULT ERROR') {
-      const task = record.value;
+      const task = event === 'RECEIVE task:lifecycle' ? record.value?.task : record.value;
       if (task && typeof task.id === 'string') {
         if (!state.tasks[task.id]) {
           state.taskOrder.unshift(task.id);
@@ -133,8 +133,10 @@
         const previous = state.tasks[task.id] || {};
         state.tasks[task.id] = {
           ...previous, ...(event === 'TASK IN PROGRESS' || event === 'TASK FINISHED' ? task : {}),
+          ...(event === 'RECEIVE task:lifecycle' ? { ...task, status: record.value.status, instanceId: record.value.instanceId } : {}),
           id: task.id,
-          delivery: event === 'TASK RESULT DELIVERED' ? 'delivered' :
+          delivery: event === 'RECEIVE task:lifecycle' ? 'received' :
+            event === 'TASK RESULT DELIVERED' ? 'delivered' :
             event === 'TASK RESULT ERROR' ? 'failed' : (previous.delivery || 'pending'),
           error: event === 'TASK RESULT ERROR' ? task.error : previous.error || null,
           receivedAt: previous.receivedAt || now
