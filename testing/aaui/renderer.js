@@ -280,11 +280,50 @@ function renderInstanceLogs() {
   }
 }
 
+function renderTasks() {
+  const root = $('task-grid');
+  if (!root) return;
+  root.replaceChildren();
+  const tasks = state.taskOrder.map(id => state.tasks[id]).filter(Boolean);
+  const inProgress = tasks.filter(task => task.status === 'inProgress').length;
+  $('task-summary').textContent = inProgress + ' in progress · ' + tasks.length + ' total';
+  if (!tasks.length) {
+    root.append(empty('No PServer tasks yet',
+      'Trigger POST /demo/tasks on PServer. Incoming tasks run for 5 seconds and return a finished result.'));
+    return;
+  }
+  for (const task of tasks) {
+    const card = element('article', 'panel task-card');
+    const heading = element('div', 'task-head');
+    add(heading, element('strong', 'task-id', task.id),
+      pill(task.status === 'finished' ? 'Finished' : 'In progress',
+        task.status === 'finished' ? 'healthy' : 'stale'));
+    const config = element('div', 'task-config', task.config || '—');
+    const meta = element('div', 'task-meta');
+    add(meta, chip('Created · ' + (task.createdTime ? new Date(task.createdTime).toLocaleString() : '—')),
+      chip('Updated · ' + (task.updatedTime ? new Date(task.updatedTime).toLocaleString() : '—')));
+    const delivery = element('div', 'task-delivery',
+      task.delivery === 'delivered' ? '✓ Result delivered to PServer' :
+      task.delivery === 'failed' ? '✕ Result delivery failed: ' + (task.error || 'unknown') :
+      task.status === 'finished' ? 'Sending finished result to PServer…' :
+      'Mock processing · completes after 5 seconds');
+    const progress = element('div', 'task-progress');
+    const fill = element('div', 'task-progress-fill');
+    const elapsed = task.status === 'finished' ? 100 :
+      Math.max(0, Math.min(99, (Date.now() - task.receivedAt) / 5000 * 100));
+    fill.style.width = elapsed + '%';
+    progress.append(fill);
+    add(card, heading, element('div', 'task-label', 'CONFIG'), config, meta, progress, delivery);
+    root.append(card);
+  }
+}
+
 function render() {
   updateSelector();
   renderSummary();
   renderOverviewInstances();
   renderInventory();
+  renderTasks();
   renderInstanceLogs();
   renderActivity();
 }
@@ -300,7 +339,8 @@ function navigate(next) {
   const titles = { overview: ['EServer Overview', 'Real-time status and VM capabilities across connected EServer instances.', 'Overview'],
     inventory: ['VM Inventory', 'Explore VMs and supported platform capabilities.', 'VM Inventory'],
     activity: ['Event Activity', 'Inspect live events and raw payloads for troubleshooting.', 'Event Activity'],
-    'instance-logs': ['Instance Logs', 'Independent connection and data logs for every EServer instance.', 'Instance Logs'] };
+    'instance-logs': ['Instance Logs', 'Independent connection and data logs for every EServer instance.', 'Instance Logs'],
+    tasks: ['Task Processing', 'Track five-second PServer tasks and their return delivery status.', 'Task Processing'] };
   const item = titles[page];
   $('page-title').textContent = item[0];
   $('page-description').textContent = item[1];
@@ -349,5 +389,5 @@ window.aaui.getLogs().then(records => {
 }).catch(error => {
   console.error('Cannot load AAUI log history:', error);
 });
-setInterval(renderSummary, 1000);
+setInterval(() => { renderSummary(); if (page === 'tasks') renderTasks(); }, 1000);
 render();
