@@ -165,8 +165,9 @@ test('logs from individual EServer instances are isolated and bounded', () => {
   const state = createState();
   for (let i = 0; i < 130; i++) ingest(state, message(STATUS_TYPE, 'e-1', { sequence: i }));
   ingest(state, message(VM_TYPE, 'e-2', vm('other-vm')));
-  assert.equal(state.instances['e-1'].logs.length, 100);
-  assert.equal(state.instances['e-1'].logs[0].value.payload.data.sequence, 30);
+  assert.equal(state.instances['e-1'].logs.length, 10);
+  assert.equal(state.instances['e-1'].logs[0].value.payload.data.sequence, 120);
+  assert.equal(state.instances['e-1'].logs[9].value.payload.data.sequence, 129);
   assert.equal(state.instances['e-2'].logs.length, 1);
   assert.equal(state.messages.length, 131);
 });
