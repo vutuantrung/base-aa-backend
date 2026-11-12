@@ -194,6 +194,30 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     }
   }
 
+  async function sendTaskSnapshot(socket: Socket): Promise<void> {
+    if (socket.data.peerId !== 'aaui') return;
+    try {
+      const tasks = await taskStore.listRecent(50);
+      if (!socket.connected || singlePeers.get('aaui')?.id !== socket.id) return;
+      socket.emit('task:lifecycle:snapshot', {
+        timestamp: Date.now(),
+        tasks: tasks.map(task => ({
+          task,
+          status: task.status === 'finished' ? 'finished' : 'received',
+          event: 'task.snapshot'
+        }))
+      });
+    } catch (error) {
+      console.error('[AAB] TASK SNAPSHOT ERROR', error);
+      if (socket.connected && singlePeers.get('aaui')?.id === socket.id) {
+        socket.emit('task:lifecycle:snapshot', {
+          timestamp: Date.now(), tasks: [],
+          error: 'Unable to load persisted task history'
+        });
+      }
+    }
+  }
+
   peers.use((socket, next) => {
     const auth = peerAuth.safeParse(socket.handshake.auth);
     if (!auth.success) return next(new Error('invalid peer identity'));
@@ -226,26 +250,13 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       // Late AAUI connections and reconnects always receive the online set.
       socket.emit('peer:status:snapshot', presenceSnapshot());
       // Task lifecycle events are transient; rehydrate the dashboard from disk.
-      void taskStore.listRecent(50).then(tasks => {
-        if (!socket.connected || singlePeers.get('aaui')?.id !== socket.id) return;
-        socket.emit('task:lifecycle:snapshot', {
-          timestamp: Date.now(),
-          tasks: tasks.map(task => ({
-            task, status: task.status === 'finished' ? 'finished' : 'received',
-            event: 'task.snapshot'
-          }))
-        });
-      }).catch(error => {
-        console.error('[AAB] TASK SNAPSHOT ERROR', error);
-        if (socket.connected && singlePeers.get('aaui')?.id === socket.id) {
-          socket.emit('task:lifecycle:snapshot', {
-            timestamp: Date.now(), tasks: [],
-            error: 'Unable to load persisted task history'
-          });
-        }
-      });
+      void sendTaskSnapshot(socket);
     }
     socket.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
+
+    if (peerId === 'aaui') {
+      socket.on('task:lifecycle:refresh', () => { void sendTaskSnapshot(socket); });
+    }
 
     socket.on('peer:ping', (payload: unknown, ack?: (data: { ok: boolean; from: string; timestamp: number }) => void) => {
       console.log(`[AAB] RECEIVE peer=${peerId} instance=${instanceId ?? '-'} event=peer:ping payload=${JSON.stringify(payload)}`);
