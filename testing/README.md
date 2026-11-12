@@ -177,3 +177,34 @@ npm --prefix testing run test:vm-info
 npm --prefix testing run test:playground
 npm test
 ```
+
+
+## AAUI telemetry dashboard
+
+The Electron AAUI window now uses a structured responsive dashboard rather than a raw log-only screen.
+
+- **Overview:** four metrics (observed EServer instances, current VMs, 10s status message count, 20s VM info count), last-arrival indicators, arrival charts, and per-instance health cards.
+- **VM Inventory:** the latest `eserver.vm-info` array per EServer instance; search by VM ID, browser ID, platform, feature or parser type. Cards group supported platforms, supporting features and parser capabilities.
+- **Event Activity:** the latest 200 messages and connection events, expandable JSON, filtering by event category and EServer instance.
+- **Connection:** AAB Socket.IO status in the sidebar, with a manual HTTP health check.
+- **Instance selector:** filter all three views by authenticated `sourceInstanceId`.
+
+AAUI counts *messages it actually receives* and shows "Waiting" before the first delivery. "Active stream" and "Receiving" mean that recent messages have arrived, **not** that AAB has published a complete registry of connected EServer sockets. Stale status is based on the expected 10s/20s stream cadence. Latest VM info replaces the previous VM snapshot for that instance; historical logs remain bounded at 200 records.
+
+Launch:
+
+```sh
+ENABLE_TEST_PEERS=1 npm run dev
+npm --prefix testing run aaui
+ESERVER_INSTANCE_ID=e-1 ESERVER_PORT=3002 npm --prefix testing run eserver
+ESERVER_INSTANCE_ID=e-2 ESERVER_PORT=3012 npm --prefix testing run eserver
+```
+
+Tests:
+
+```sh
+npm --prefix testing run test:aaui
+npm --prefix testing run test:playground
+```
+
+Implementation is vanilla HTML/CSS/JS in `testing/aaui/`; no additional frontend framework, message queue, database integration or modified Socket.IO message contract is required.
