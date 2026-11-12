@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# AAB persisted mock task payloads (runtime)
+/data/tasks/
