@@ -40,6 +40,17 @@ test('persisted tasks appear in AAUI snapshot after AAUI connects late', async (
       assert.equal(received.error, undefined);
       assert.ok(received.tasks.some((entry: any) =>
         entry.task.id === task.id && entry.status === 'received'));
+      // UI can recover the same task again without restarting Electron.
+      const replay = new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Manual refresh snapshot missing')), 3000);
+        aaui.once('task:lifecycle:snapshot', value => {
+          clearTimeout(timeout);
+          resolve(value);
+        });
+      });
+      aaui.emit('task:lifecycle:refresh');
+      const refreshed = await replay;
+      assert.ok(refreshed.tasks.some((entry: any) => entry.task.id === task.id));
     } finally {
       aaui.disconnect();
     }
