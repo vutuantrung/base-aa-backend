@@ -319,13 +319,21 @@ ESERVER_INSTANCE_ID=e-1 ESERVER_PORT=3002 npm --prefix testing run eserver
 ESERVER_INSTANCE_ID=e-2 ESERVER_PORT=3012 npm --prefix testing run eserver
 ```
 
-Trigger using curl:
+Trigger with the **exact task body** and choose EServer using the query parameter:
 
 ```sh
-curl -X POST http://127.0.0.1:3001/demo/tasks \
+curl -X POST "http://127.0.0.1:3001/demo/tasks?toInstanceId=e-1" \
   -H "Content-Type: application/json" \
-  -d '{"config":"test-config","toInstanceId":"e-1"}'
+  -d '{
+    "id": "task-demo-001",
+    "status": "inProgress",
+    "config": "test-config",
+    "createdTime": 19126349235123,
+    "updatedTime": 19126349235223
+  }'
 ```
+
+The earlier config-only shorthand is also supported. Timestamp values must be safe nonnegative integers with `updatedTime >= createdTime` (the reversed example timestamp ordering would otherwise be invalid).
 
 The resulting task payload keeps the original business shape; `toInstanceId` is a routing parameter in the request wrapper, **not** part of the task data:
 
