@@ -15,6 +15,7 @@
       <nav aria-label="Main navigation">
         <button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span> Overview</button>
         <button class="nav-item" data-page="inventory"><span class="nav-icon">▤</span> VM Inventory</button>
+        <button class="nav-item" data-page="instance-logs"><span class="nav-icon">☷</span> Instance Logs</button>
         <button class="nav-item" data-page="activity"><span class="nav-icon">≡</span> Event Activity</button>
       </nav>
       <div class="sidebar-bottom">
@@ -40,7 +41,7 @@
 
         <section class="page-section" data-section="overview">
           <div class="stats-grid">
-            <article class="stat-card"><span class="stat-icon teal">⌘</span><span class="stat-label">Discovered EServers</span><div class="stat-number" id="stat-instances">0</div><span class="stat-note">Instances with received data</span></article>
+            <article class="stat-card"><span class="stat-icon teal">⌘</span><span class="stat-label">Online EServers</span><div class="stat-number" id="stat-instances">0</div><span class="stat-note" id="stat-presence-note">0 known instances</span></article>
             <article class="stat-card"><span class="stat-icon violet">▣</span><span class="stat-label">VMs discovered</span><div class="stat-number" id="stat-vms">0</div><span class="stat-note">From latest VM inventory</span></article>
             <article class="stat-card"><span class="stat-icon blue">↗</span><span class="stat-label">Status messages</span><div class="stat-number" id="stat-status">0</div><span class="stat-note">10s scheduled stream</span></article>
             <article class="stat-card"><span class="stat-icon amber">◷</span><span class="stat-label">VM info updates</span><div class="stat-number" id="stat-vm-updates">0</div><span class="stat-note">20s scheduled stream</span></article>
@@ -59,8 +60,13 @@
           <div id="vm-inventory" class="inventory-grid"></div>
         </section>
 
+        <section class="page-section hidden" data-section="instance-logs">
+          <div class="activity-toolbar"><div><h2>EServer Instance Logs</h2><p>Each instance has its own connection and data event history (latest 100 per instance)</p></div>
+            <button class="btn btn-outline" id="clear-instance-logs" type="button">Clear instance logs</button></div>
+          <div class="instance-log-grid" id="instance-logs"></div>
+        </section>
         <section class="page-section hidden" data-section="activity">
-          <div class="activity-toolbar"><div><h2>Event Activity</h2><p>Most recent 200 events retained in memory</p></div><div class="filters"><select id="event-filter" aria-label="Event filter"><option value="all">All events</option><option value="status">Status updates</option><option value="vm">VM info updates</option><option value="system">Connection / other</option></select><button class="btn btn-outline" id="clear-logs" type="button">Clear view</button></div></div>
+          <div class="activity-toolbar"><div><h2>Event Activity</h2><p>Most recent 200 events retained in memory</p></div><div class="filters"><select id="event-filter" aria-label="Event filter"><option value="all">All events</option><option value="status">Status updates</option><option value="vm">VM info updates</option><option value="presence">Connection changes</option><option value="system">Connection / other</option></select><button class="btn btn-outline" id="clear-logs" type="button">Clear view</button></div></div>
           <div class="panel activity-list" id="activity-list"></div>
         </section>
       </div>
