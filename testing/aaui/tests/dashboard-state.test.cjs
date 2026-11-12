@@ -240,3 +240,27 @@ test('AAB receipt is distinct from EServer forwarding success/failure', () => {
   assert.equal(state.tasks[task.id].forwardStatus, 'forwarded');
   assert.equal(state.tasks[task.id].forwardError, null);
 });
+
+test('AAUI reconnect rehydrates tasks from AAB file snapshot', () => {
+  const state = createState();
+  const task = {
+    id: 'task-history-1', status: 'inProgress', config: 'curl-task',
+    createdTime: 19126349235123, updatedTime: 19126349235223
+  };
+  ingest(state, { timestamp: at, event: 'RECEIVE task:lifecycle:snapshot',
+    value: { timestamp: Date.parse(at), tasks: [{ task, status: 'received', event: 'task.snapshot' }] }
+  });
+  assert.equal(state.taskOrder.length, 1);
+  assert.equal(state.tasks[task.id].status, 'received');
+  assert.equal(state.tasks[task.id].snapshot, true);
+  assert.equal(state.tasks[task.id].forwardStatus, 'unknown');
+  ingest(state, { timestamp: at, event: 'RECEIVE task:lifecycle',
+    value: { task, status: 'forwarded', instanceId: 'e-1' }
+  });
+  assert.equal(state.tasks[task.id].forwardStatus, 'forwarded');
+  ingest(state, { timestamp: at, event: 'RECEIVE task:lifecycle:snapshot',
+    value: { timestamp: Date.parse(at), tasks: [{ task, status: 'received' }] }
+  });
+  assert.equal(state.taskOrder.length, 1);
+  assert.equal(state.tasks[task.id].forwardStatus, 'forwarded');
+});
