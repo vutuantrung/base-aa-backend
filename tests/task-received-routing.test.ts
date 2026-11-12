@@ -86,6 +86,29 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
     assert.equal(event.status, 'received');
     assert.equal(event.instanceId, 'e-task-1');
     assert.deepEqual(event.task, task);
+    // The returned EServer task message is also saved to a distinct file,
+    // forwarded to PServer and observed by AAUI after delivery.
+    const finished = { ...task, status: 'finished', updatedTime: task.updatedTime + 5000 };
+    const returned = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('PServer did not receive result')), 3000);
+      pserver.connected!.once('peer:message', (value, ack) => {
+        clearTimeout(timer);
+        ack?.({ ok: true });
+        resolve(value);
+      });
+    });
+    const finishedEvent = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('AAUI finished event missing')), 3000);
+      ui.client.once('task:lifecycle', value => { clearTimeout(timer); resolve(value); });
+    });
+    const finishAck: any = await e.client.timeout(3000).emitWithAck('peer:message', {
+      kind: 'response', from: 'eserver', to: 'pserver',
+      payload: { type: 'demo.task.result', data: finished }
+    });
+    assert.equal(finishAck.ok, true);
+    assert.deepEqual((await returned).payload.data, finished);
+    assert.deepEqual(JSON.parse(await readFile(join(directory, task.id + '.result.json'), 'utf8')), finished);
+    assert.equal((await finishedEvent).status, 'finished');
   } finally { ui.client.disconnect(); e.client.disconnect(); }
 });
 
