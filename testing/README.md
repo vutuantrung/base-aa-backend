@@ -508,3 +508,29 @@ Tests:
 npm --prefix testing run test:aaui
 npm test
 ```
+
+
+### Persisted Resource Selection history
+
+Each click of **Submit to PServer** creates a unique durable record under AAB's default
+`./data/resource-selections/` directory (configurable with `AAB_SELECTION_STORE_DIR`).
+The receipt file `<uuid>.json` contains `id`, `createdTime`, and **only** the
+selected `browserProfileId`, `proxyId`, `accountId`. The corresponding
+`<uuid>.delivery.json` holds the forwarding outcome.
+
+The new contract mirrors the existing durable task-receipt design: AAB validates and
+saves before ACKing `{ok:true,status:"received"}` to AAUI. AAB then attempts PServer
+delivery asynchronously. The separate `resource-selection:updated` event reports
+`pending`, `forwarded` or `forwardFailed`; a PServer outage does not erase the
+saved selection or undo the receipt ACK. There is no automatic retry yet.
+
+The Resource Selection page shows a **Saved Selections** list below the Submit panel,
+including selected IDs, time and delivery status. AAB serves the latest 50 file-backed
+records through `resource-selection:snapshot` on AAUI connect/reconnect, or on demand
+via the **Refresh List** button (`resource-selection:refresh`). Existing resource
+catalogs and PServer message payload are unchanged. This history is durable across AAUI
+restarts as long as AAB's data directory is preserved. No browser user agents or proxy
+URLs are persisted in these submissions.
+
+Run `npm test` to check routing and disk persistence, and
+`npm --prefix testing run test:aaui` for the UI selection contract tests.
