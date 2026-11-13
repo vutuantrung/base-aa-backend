@@ -3,6 +3,7 @@ const express = require('express');
 const { createServer } = require('node:http');
 const { join } = require('node:path');
 const { io } = require('socket.io-client');
+const { getSelectionOptions, validateSelection } = require('../shared/resource-selection.cjs');
 
 const peerId = 'aaui';
 const port = 3004;
@@ -62,6 +63,28 @@ async function launch() {
   });
   log('HTTP listening', `http://${host}:${port}`);
 
+  ipcMain.handle('aaui:selection-options', () => getSelectionOptions());
+  ipcMain.handle('aaui:submit-selection', async (_event, selection) => {
+    const checked = validateSelection(selection);
+    if (!checked.ok) return checked;
+    if (!socket?.connected) return { ok: false, error: 'AAUI is disconnected from AAB' };
+    try {
+      const response = await socket.timeout(8000).emitWithAck('peer:message', {
+        version: '1.0', kind: 'request', from: 'aaui', to: 'pserver',
+        payload: { type: 'demo.resource-selection', version: '1.0', data: checked.data }
+      });
+      if (!response?.ok) {
+        log('RESOURCE SELECTION REJECTED', { selection: checked.data, response });
+        return { ok: false, error: response?.error || 'PServer did not accept selection' };
+      }
+      log('RESOURCE SELECTION DELIVERED', { selection: checked.data, messageId: response.data?.id });
+      return { ok: true, selection: checked.data, messageId: response.data?.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log('RESOURCE SELECTION ERROR', { error: message });
+      return { ok: false, error: message };
+    }
+  });
   ipcMain.handle('aaui:logs', () => logs);
   ipcMain.handle('aaui:check-http', checkHttp);
   ipcMain.handle('aaui:refresh-tasks', () => {
