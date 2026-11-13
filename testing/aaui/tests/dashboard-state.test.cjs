@@ -42,7 +42,7 @@ test('ingests SServer status stream separately from multiple EServer VM streams'
   assert.equal(summary(state).vmUpdates, 2);
   assert.equal(summary(state, 'e-1').vmCount, 1);
   assert.equal(state.lastStatusSequence, 3);
-  assert.equal(state.instances['e-2'].statusCount, 0);
+  assert.equal(state.instances['e-2'].vmCount, 1);
   assert.equal(Object.keys(state.instances).length, 2);
   assert.deepEqual(state.instances['e-1'].vms[0].supportingPlatforms[0].parserInfo.type, ['Post', 'Profile']);
 });
