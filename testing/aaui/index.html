@@ -16,6 +16,7 @@
         <button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span> Overview</button>
         <button class="nav-item" data-page="inventory"><span class="nav-icon">▤</span> VM Inventory</button>
         <button class="nav-item" data-page="tasks"><span class="nav-icon">◎</span> Task Monitoring</button>
+        <button class="nav-item" data-page="resources"><span class="nav-icon">◈</span> Resource Selection</button>
         <button class="nav-item" data-page="instance-logs"><span class="nav-icon">☷</span> Instance Logs</button>
         <button class="nav-item" data-page="activity"><span class="nav-icon">≡</span> Event Activity</button>
       </nav>
@@ -65,6 +66,34 @@
             </div>
           </div>
           <div class="task-grid" id="task-grid"></div>
+        </section>
+        <section class="page-section hidden" data-section="resources">
+          <div class="selection-heading">
+            <div><h2>Select Resources</h2><p>Choose exactly one Browser Profile, one Proxy and one Platform Account, then submit the three IDs to PServer.</p></div>
+            <span class="pill">AAUI → AAB → PServer</span>
+          </div>
+          <div class="selection-grid">
+            <article class="panel selection-panel">
+              <div class="selection-panel-head"><span class="selection-icon">▣</span><div><h3>Browser Profile</h3><p>Browser version &amp; user agent</p></div><span class="selection-required">Required</span></div>
+              <div class="selection-options" id="browser-profile-options" role="radiogroup" aria-label="Browser Profile"></div>
+            </article>
+            <article class="panel selection-panel">
+              <div class="selection-panel-head"><span class="selection-icon">◈</span><div><h3>Proxy</h3><p>HTTP and HTTPS endpoints</p></div><span class="selection-required">Required</span></div>
+              <div class="selection-options" id="proxy-options" role="radiogroup" aria-label="Proxy"></div>
+            </article>
+            <article class="panel selection-panel">
+              <div class="selection-panel-head"><span class="selection-icon">◎</span><div><h3>Platform Account</h3><p>Choose an account &amp; platform</p></div><span class="selection-required">Required</span></div>
+              <div class="selection-options" id="platform-account-options" role="radiogroup" aria-label="Platform Account"></div>
+            </article>
+          </div>
+          <div class="panel selection-summary">
+            <div><h3>Selection Summary</h3><p>Only record identifiers will be sent. Proxy URLs and user agents stay in AAUI.</p></div>
+            <div class="selection-review" id="selection-review"></div>
+            <div class="selection-actions">
+              <span class="selection-feedback" id="selection-feedback" role="status" aria-live="polite">Select one record in each category to continue.</span>
+              <button class="btn selection-submit" id="selection-submit" type="button" disabled>Submit to PServer</button>
+            </div>
+          </div>
         </section>
         <section class="page-section hidden" data-section="inventory">
           <div class="inventory-toolbar"><div><h2>VM Inventory</h2><p>Browser identities, supported platforms, features and parsers</p></div><label class="search-field"><span>⌕</span><input id="vm-search" type="search" placeholder="Search VM, browser, platform..." autocomplete="off"></label></div>
