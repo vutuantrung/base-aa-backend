@@ -150,3 +150,6 @@ vite.config.ts.timestamp-*
 
 # AAB persisted mock task payloads (runtime)
 /data/tasks/
+
+# AAB persisted Resource Selection submissions
+/data/resource-selections/
