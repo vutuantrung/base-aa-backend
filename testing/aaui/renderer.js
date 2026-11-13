@@ -11,6 +11,15 @@ let selectedInstance = 'all';
 let searchTerm = '';
 let eventFilter = 'all';
 const seen = new Set();
+const resourceSelection = {
+  browserProfileId: null,
+  proxyId: null,
+  accountId: null
+};
+let resourceOptions = null;
+let resourceSubmitting = false;
+let resourceFeedback = { message: 'Select one record in each category to continue.', type: 'muted' };
+
 
 const $ = id => document.getElementById(id);
 const element = (tag, className = '', content) => {
@@ -333,6 +342,99 @@ function renderTasks() {
   }
 }
 
+function selectionOption(record, idKey, groupKey, label, subtitle, details) {
+  const id = record[idKey];
+  const active = resourceSelection[groupKey] === id;
+  const item = element('button', 'selection-option' + (active ? ' selected' : ''));
+  item.type = 'button';
+  item.setAttribute('role', 'radio');
+  item.setAttribute('aria-checked', String(active));
+  item.disabled = resourceSubmitting;
+  add(item,
+    element('span', 'selection-radio' + (active ? ' checked' : '')),
+    add(element('span', 'selection-item-body'),
+      element('strong', 'selection-item-title', label),
+      element('span', 'selection-item-id', id),
+      element('span', 'selection-item-subtitle', subtitle),
+      element('span', 'selection-item-detail', details)));
+  item.addEventListener('click', () => {
+    resourceSelection[groupKey] = id;
+    resourceFeedback = { message: 'Selection ready for review.', type: 'muted' };
+    renderResourceSelection();
+  });
+  return item;
+}
+
+function renderResourceSelection() {
+  const groups = [
+    { root: 'browser-profile-options', list: resourceOptions?.browserProfiles, key: 'browserProfileId', id: 'id',
+      label: r => r.browserVersion, subtitle: () => 'Browser profile', details: r => r.browserUserAgent },
+    { root: 'proxy-options', list: resourceOptions?.proxies, key: 'proxyId', id: 'id',
+      label: r => r.id, subtitle: () => 'Network proxy', details: r => 'HTTP: ' + r.http + ' · HTTPS: ' + r.https },
+    { root: 'platform-account-options', list: resourceOptions?.platformAccounts, key: 'accountId', id: 'accountId',
+      label: r => r.platform.toUpperCase(), subtitle: () => 'Platform account', details: r => r.accountId }
+  ];
+  for (const group of groups) {
+    const root = $(group.root);
+    if (!root) continue;
+    root.replaceChildren();
+    for (const record of group.list || []) {
+      root.append(selectionOption(record, group.id, group.key, group.label(record),
+        group.subtitle(record), group.details(record)));
+    }
+    if (!resourceOptions) root.append(element('p', 'selection-loading', 'Loading available records…'));
+  }
+
+  const review = $('selection-review');
+  if (!review) return;
+  review.replaceChildren();
+  for (const [label, key] of [['Browser Profile ID', 'browserProfileId'], ['Proxy ID', 'proxyId'], ['Account ID', 'accountId']]) {
+    add(review, add(element('div', 'selection-review-item'),
+      element('span', '', label),
+      element('strong', '', resourceSelection[key] || 'Not selected')));
+  }
+  const ready = Boolean(resourceSelection.browserProfileId && resourceSelection.proxyId && resourceSelection.accountId);
+  const button = $('selection-submit');
+  button.disabled = !ready || resourceSubmitting;
+  button.textContent = resourceSubmitting ? 'Submitting…' : 'Submit to PServer';
+  const feedback = $('selection-feedback');
+  feedback.textContent = resourceFeedback.message;
+  feedback.className = 'selection-feedback ' + resourceFeedback.type;
+}
+
+async function loadResourceOptions() {
+  try {
+    resourceOptions = await window.aaui.getSelectionOptions();
+    renderResourceSelection();
+  } catch (error) {
+    resourceFeedback = { message: 'Unable to load resources: ' + String(error), type: 'error' };
+    renderResourceSelection();
+  }
+}
+
+async function submitResourceSelection() {
+  if (resourceSubmitting || !resourceSelection.browserProfileId ||
+      !resourceSelection.proxyId || !resourceSelection.accountId) return;
+  resourceSubmitting = true;
+  resourceFeedback = { message: 'Sending selected IDs via AAB…', type: 'muted' };
+  renderResourceSelection();
+  try {
+    const response = await window.aaui.submitSelection({
+      browserProfileId: resourceSelection.browserProfileId,
+      proxyId: resourceSelection.proxyId,
+      accountId: resourceSelection.accountId
+    });
+    resourceFeedback = response?.ok
+      ? { message: 'Delivered to PServer successfully' + (response.messageId ? ' · ' + response.messageId : ''), type: 'success' }
+      : { message: 'Submission failed: ' + (response?.error || 'Unknown error'), type: 'error' };
+  } catch (error) {
+    resourceFeedback = { message: 'Submission failed: ' + String(error), type: 'error' };
+  } finally {
+    resourceSubmitting = false;
+    renderResourceSelection();
+  }
+}
+
 function render() {
   updateSelector();
   renderSummary();
@@ -341,6 +443,7 @@ function render() {
   renderTasks();
   renderInstanceLogs();
   renderActivity();
+  renderResourceSelection();
 }
 
 function navigate(next) {
@@ -355,7 +458,8 @@ function navigate(next) {
     inventory: ['VM Inventory', 'Explore VMs and supported platform capabilities.', 'VM Inventory'],
     activity: ['Event Activity', 'Inspect live events and raw payloads for troubleshooting.', 'Event Activity'],
     'instance-logs': ['Instance Logs', 'Independent connection and data logs for every EServer instance.', 'Instance Logs'],
-    tasks: ['Task Monitoring', 'Track PServer tasks received by AAB and assigned to EServer.', 'Task Monitoring'] };
+    tasks: ['Task Monitoring', 'Track PServer tasks received by AAB and assigned to EServer.', 'Task Monitoring'],
+    resources: ['Resource Selection', 'Select one Browser Profile, Proxy and Platform Account for PServer.', 'Resource Selection'] };
   const item = titles[page];
   $('page-title').textContent = item[0];
   $('page-description').textContent = item[1];
@@ -386,6 +490,7 @@ $('clear-instance-logs').addEventListener('click', () => {
   renderInstanceLogs();
 });
 $('health').addEventListener('click', () => { void window.aaui.checkHttp(); });
+$('selection-submit').addEventListener('click', () => { void submitResourceSelection(); });
 $('refresh-tasks').addEventListener('click', async () => {
   const button = $('refresh-tasks');
   button.disabled = true;
@@ -422,3 +527,4 @@ window.aaui.getLogs().then(records => {
 });
 setInterval(renderSummary, 1000);
 render();
+void loadResourceOptions();
