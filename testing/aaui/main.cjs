@@ -63,6 +63,11 @@ async function launch() {
   });
   log('HTTP listening', `http://${host}:${port}`);
 
+  ipcMain.handle('aaui:refresh-selections', () => {
+    if (!socket?.connected) return { ok: false, error: 'AAUI is disconnected from AAB' };
+    socket.emit('resource-selection:refresh');
+    return { ok: true };
+  });
   ipcMain.handle('aaui:selection-options', () => getSelectionOptions());
   ipcMain.handle('aaui:submit-selection', async (_event, selection) => {
     const checked = validateSelection(selection);
@@ -77,8 +82,8 @@ async function launch() {
         log('RESOURCE SELECTION REJECTED', { selection: checked.data, response });
         return { ok: false, error: response?.error || 'PServer did not accept selection' };
       }
-      log('RESOURCE SELECTION DELIVERED', { selection: checked.data, messageId: response.data?.id });
-      return { ok: true, selection: checked.data, messageId: response.data?.id };
+      log('RESOURCE SELECTION SAVED BY AAB', { selection: checked.data, messageId: response.data?.id });
+      return { ok: true, status: response.status || 'received', selection: checked.data, messageId: response.data?.id };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log('RESOURCE SELECTION ERROR', { error: message });
@@ -115,6 +120,8 @@ async function launch() {
     log('RECEIVE peer:message', message);
     ack?.({ ok: true });
   });
+  socket.on('resource-selection:updated', value => log('RECEIVE resource-selection:updated', value));
+  socket.on('resource-selection:snapshot', value => log('RECEIVE resource-selection:snapshot', value));
   socket.on('task:lifecycle', value => log('RECEIVE task:lifecycle', value));
   socket.on('task:result:lifecycle', value => log('RECEIVE task:result:lifecycle', value));
   socket.on('task:lifecycle:snapshot', value => log('RECEIVE task:lifecycle:snapshot', value));
