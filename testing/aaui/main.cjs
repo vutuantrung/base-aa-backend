@@ -93,6 +93,7 @@ async function launch() {
     ack?.({ ok: true });
   });
   socket.on('task:lifecycle', value => log('RECEIVE task:lifecycle', value));
+  socket.on('task:result:lifecycle', value => log('RECEIVE task:result:lifecycle', value));
   socket.on('task:lifecycle:snapshot', value => log('RECEIVE task:lifecycle:snapshot', value));
   socket.on('peer:status', value => log('RECEIVE peer:status', value));
   socket.on('peer:status:snapshot', value => log('RECEIVE peer:status:snapshot', value));
