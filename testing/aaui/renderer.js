@@ -18,6 +18,8 @@ const resourceSelection = {
 };
 let resourceOptions = null;
 let resourceSubmitting = false;
+const savedSelections = new Map();
+let savedSelectionsError = null;
 let resourceFeedback = { message: 'Select one record in each category to continue.', type: 'muted' };
 
 
@@ -365,6 +367,74 @@ function selectionOption(record, idKey, groupKey, label, subtitle, details) {
   return item;
 }
 
+function renderSavedSelections() {
+  const root = $('saved-selections-list');
+  if (!root) return;
+  const records = [...savedSelections.values()]
+    .sort((a, b) => b.createdTime - a.createdTime || b.id.localeCompare(a.id));
+  $('saved-selections-count').textContent = records.length + ' saved';
+  root.replaceChildren();
+  if (savedSelectionsError) {
+    root.append(element('p', 'selection-feedback error', savedSelectionsError));
+  }
+  if (!records.length) {
+    root.append(empty('No saved selections yet', 'Submit a Browser Profile, Proxy and Platform Account to store the selection at AAB.'));
+    return;
+  }
+  for (const record of records) {
+    const card = element('article', 'selection-history-row');
+    const heading = element('div', 'selection-history-row-head');
+    const statusLabel = record.deliveryStatus === 'forwarded' ? 'Delivered to PServer' :
+      record.deliveryStatus === 'forwardFailed' ? 'Forward failed' : 'Saved at AAB';
+    add(heading,
+      add(element('div', 'selection-history-identity'),
+        element('strong', '', record.id),
+        element('span', '', new Date(record.createdTime).toLocaleString())),
+      pill(statusLabel, record.deliveryStatus === 'forwarded' ? 'healthy' :
+        record.deliveryStatus === 'forwardFailed' ? 'offline' : ''));
+    const values = element('div', 'selection-history-values');
+    for (const [label, key] of [['Browser Profile', 'browserProfileId'],
+      ['Proxy', 'proxyId'], ['Platform Account', 'accountId']]) {
+      add(values, add(element('div', 'selection-history-value'),
+        element('span', '', label),
+        element('strong', '', record.selection?.[key] || '—')));
+    }
+    add(card, heading, values);
+    if (record.deliveryError) card.append(element('p', 'selection-feedback error', record.deliveryError));
+    root.append(card);
+  }
+}
+
+function ingestSavedSelectionEvent(record) {
+  if (record.event === 'RECEIVE resource-selection:updated') {
+    const value = record.value;
+    if (!value || typeof value.id !== 'string') return;
+    savedSelections.set(value.id, value);
+    savedSelectionsError = null;
+    renderSavedSelections();
+  }
+  if (record.event === 'RECEIVE resource-selection:snapshot') {
+    const value = record.value;
+    if (!value || !Array.isArray(value.records)) return;
+    if (value.error) {
+      savedSelectionsError = value.error;
+      renderSavedSelections();
+      return;
+    }
+    savedSelectionsError = null;
+    // Snapshot is authoritative for persisted data. Merge with newer live events.
+    for (const item of value.records) {
+      if (!item || typeof item.id !== 'string') continue;
+      const current = savedSelections.get(item.id);
+      if (!current || current.deliveryStatus === 'pending' ||
+          item.deliveryStatus !== 'pending') {
+        savedSelections.set(item.id, item);
+      }
+    }
+    renderSavedSelections();
+  }
+}
+
 function renderResourceSelection() {
   const groups = [
     { root: 'browser-profile-options', list: resourceOptions?.browserProfiles, key: 'browserProfileId', id: 'id',
@@ -425,7 +495,7 @@ async function submitResourceSelection() {
       accountId: resourceSelection.accountId
     });
     resourceFeedback = response?.ok
-      ? { message: 'Delivered to PServer successfully' + (response.messageId ? ' · ' + response.messageId : ''), type: 'success' }
+      ? { message: 'Saved at AAB. Delivery to PServer is tracked below.', type: 'success' }
       : { message: 'Submission failed: ' + (response?.error || 'Unknown error'), type: 'error' };
   } catch (error) {
     resourceFeedback = { message: 'Submission failed: ' + String(error), type: 'error' };
@@ -444,6 +514,7 @@ function render() {
   renderInstanceLogs();
   renderActivity();
   renderResourceSelection();
+  renderSavedSelections();
 }
 
 function navigate(next) {
@@ -491,6 +562,22 @@ $('clear-instance-logs').addEventListener('click', () => {
 });
 $('health').addEventListener('click', () => { void window.aaui.checkHttp(); });
 $('selection-submit').addEventListener('click', () => { void submitResourceSelection(); });
+$('refresh-selections').addEventListener('click', async () => {
+  const button = $('refresh-selections');
+  button.disabled = true;
+  try {
+    const reply = await window.aaui.refreshSelections();
+    if (!reply?.ok) {
+      savedSelectionsError = reply?.error || 'Unable to refresh saved selections';
+      renderSavedSelections();
+    }
+  } catch (error) {
+    savedSelectionsError = error instanceof Error ? error.message : String(error);
+    renderSavedSelections();
+  } finally {
+    button.disabled = false;
+  }
+});
 $('refresh-tasks').addEventListener('click', async () => {
   const button = $('refresh-tasks');
   button.disabled = true;
@@ -515,6 +602,7 @@ function receive(record) {
   seen.add(key);
   if (seen.size > 400) seen.delete(seen.values().next().value);
   ingest(state, record);
+  ingestSavedSelectionEvent(record);
   render();
 }
 
