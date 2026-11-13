@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { io } from 'socket.io-client';
 import taskFlow from './task-flow.cjs';
-const { TASK_REQUEST_TYPE, TASK_STATUS, isTask } = taskFlow;
+const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, TASK_STATUS, isTask, finishTask } = taskFlow;
 
 /**
  * Shared infrastructure for EServer / SServer.
@@ -61,21 +61,55 @@ export async function startPeerServer({ peerId, port, instanceId }) {
   });
   // EServer only acknowledges receipt. Completion must come from explicit
   // EServer business processing; there is no automatic 5-second transition.
-  const receivedTaskIds = new Set();
+  const receivedTasks = new Map();
   socket.on('peer:message', (message, ack) => {
     console.log(`[${peerId}] RECEIVE peer:message`, JSON.stringify(message));
     if (peerId === 'eserver' && message?.from === 'pserver' && message?.to === 'eserver' &&
         message.payload?.type === TASK_REQUEST_TYPE) {
       const task = message.payload.data;
-      if (!isTask(task, TASK_STATUS.inProgress) || receivedTaskIds.has(task.id)) {
+      if (!isTask(task, TASK_STATUS.inProgress) || receivedTasks.has(task.id)) {
         ack?.({ ok: false, error: 'Invalid or duplicate task' });
         return;
       }
-      receivedTaskIds.add(task.id);
+      receivedTasks.set(task.id, task);
       console.log(`[eserver:${instanceId}] TASK ACCEPTED (awaiting explicit completion)`, JSON.stringify(task));
     }
     ack?.({ ok: true, status: 'received' });
   });
+  // Explicit F09 trigger; no automatic 5-second completion.
+  // EServer posts the result to AAB; receipt ACK does not wait for PServer.
+  if (peerId === 'eserver') {
+    app.post('/demo/tasks/:id/finish', async (req, res) => {
+      const original = receivedTasks.get(req.params.id);
+      if (!original) {
+        res.status(404).json({ ok: false, error: 'Task has not been received by this EServer' });
+        return;
+      }
+      if (!socket.connected) {
+        res.status(503).json({ ok: false, error: 'AAB is offline' });
+        return;
+      }
+      const task = finishTask(original);
+      try {
+        const response = await socket.timeout(8000).emitWithAck('peer:message', {
+          version: '1.0', kind: 'response', from: 'eserver', to: 'pserver',
+          payload: { type: TASK_RESULT_TYPE, version: '1.0', data: task }
+        });
+        console.log(`[eserver:${instanceId}] TASK RESULT RECEIPT ACK`, JSON.stringify(response));
+        if (!response?.ok) {
+          res.status(422).json(response);
+          return;
+        }
+        receivedTasks.delete(task.id);
+        res.status(202).json({ ok: true, status: response.status, task, messageId: response.data?.id });
+      } catch (error) {
+        res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'AAB receipt failed' });
+      }
+    });
+    app.get('/demo/tasks', (_req, res) => {
+      res.json({ tasks: [...receivedTasks.values()] });
+    });
+  }
   socket.on('aab:welcome', message => console.log(`[${peerId}] RECEIVE aab:welcome`, message));
   socket.on('connect_error', error => console.error(`[${peerId}] AAB CONNECT ERROR`, error.message));
   socket.on('disconnect', reason => console.log(`[${peerId}] AAB DISCONNECT reason=${reason}`));
