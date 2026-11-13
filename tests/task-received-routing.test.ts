@@ -99,18 +99,30 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
         resolve(value);
       });
     });
-    const finishedEvent = new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('AAUI finished event missing')), 3000);
-      ui.client.once('task:lifecycle', value => { clearTimeout(timer); resolve(value); });
+    const events: any[] = [];
+    const forwarded = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('F09 forwarding event missing')), 3000);
+      ui.client.on('task:result:lifecycle', value => {
+        if (value.task?.id !== task.id) return;
+        events.push(value);
+        if (value.status === 'forwarded') {
+          clearTimeout(timer);
+          resolve(value);
+        }
+      });
     });
     const finishAck: any = await e.client.timeout(3000).emitWithAck('peer:message', {
       kind: 'response', from: 'eserver', to: 'pserver',
       payload: { type: 'demo.task.result', data: finished }
     });
     assert.equal(finishAck.ok, true);
+    assert.equal(finishAck.status, 'received');
     assert.deepEqual((await returned).payload.data, finished);
     assert.deepEqual(JSON.parse(await readFile(join(directory, task.id + '.result.json'), 'utf8')), finished);
-    assert.equal((await finishedEvent).status, 'finished');
+    assert.equal((await forwarded).status, 'forwarded');
+    assert.equal(events[0].status, 'received');
+    assert.equal(events[0].instanceId, 'e-task-1');
+    assert.equal(events[0].task.status, 'finished');
   } finally { ui.client.disconnect(); e.client.disconnect(); }
 });
 
