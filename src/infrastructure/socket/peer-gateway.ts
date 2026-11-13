@@ -65,15 +65,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   }
 
   const service = new PeerMessageService(transformations, {
-    async beforeDeliver(message: PeerMessage): Promise<void> {
-      if (message.from === 'eserver' && message.to === 'pserver' &&
-          message.payload.type === 'demo.task.result') {
-        await taskStore.saveResult(taskSchema.parse(message.payload.data));
-        console.log('[AAB] TASK RESULT STORED', (message.payload.data as { id: string }).id);
-        return;
-      }
 
-    },
     isConnected(peer: PeerId, toInstanceId?: string) {
       if (peer === 'aab') return true;
       if (peer === 'pserver') return pserverTransport?.isConnected() ?? false;
@@ -168,23 +160,83 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     return { ok: true, status: 'received', data: envelope };
   }
 
+  function publishResultEvent(
+    task: z.infer<typeof taskSchema>,
+    status: 'received' | 'forwarded' | 'forwardFailed',
+    instanceId: string | undefined,
+    reason?: string
+  ): void {
+    singlePeers.get('aaui')?.emit('task:result:lifecycle', {
+      task, status, instanceId: instanceId ?? null,
+      event: `task.result.${status}`, timestamp: Date.now(),
+      ...(reason ? { reason } : {})
+    });
+  }
+
+  /**
+   * F09 mirrors F08 in the opposite direction.
+   * AAB acknowledges only durable receipt, not PServer delivery.
+   */
+  async function receiveTaskResult(value: unknown, instanceId: string | undefined): Promise<PeerMessageAck> {
+    const parsed = incomingPeerMessageSchema.safeParse(value);
+    if (!parsed.success || parsed.data.from !== 'eserver' || parsed.data.to !== 'pserver' ||
+        parsed.data.payload.type !== 'demo.task.result') {
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid EServer task result envelope' };
+    }
+    const validated = taskSchema.safeParse(parsed.data.payload.data);
+    if (!validated.success || validated.data.status !== 'finished') {
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid finished task result payload' };
+    }
+    const task = validated.data;
+    const messageId = parsed.data.id ?? randomUUID();
+    try {
+      // Persist and validate against the original F08 task before acknowledging EServer.
+      await taskStore.saveResult(task);
+    } catch (error) {
+      console.error('[AAB] TASK RESULT PERSIST FAILED', task.id, error);
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB' };
+    }
+
+    publishResultEvent(task, 'received', instanceId);
+    console.log('[AAB] TASK RESULT RECEIVED', task.id, 'from', instanceId ?? 'eserver');
+
+    setImmediate(() => {
+      void (async () => {
+        try {
+          if (!pserverTransport?.isConnected()) throw new Error('PServer is offline');
+          const outbound: IncomingPeerMessage = { ...parsed.data, id: messageId };
+          await service.process(outbound, 'eserver', instanceId);
+          publishResultEvent(task, 'forwarded', instanceId);
+          console.log('[AAB] TASK RESULT FORWARDED', task.id, 'to PServer');
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          publishResultEvent(task, 'forwardFailed', instanceId, reason);
+          console.error('[AAB] TASK RESULT FORWARD FAILED', task.id, reason);
+        }
+      })();
+    });
+
+    const envelope: PeerMessage = {
+      ...parsed.data,
+      id: messageId,
+      sourceInstanceId: instanceId,
+      timestamp: Date.now(),
+      payload: structuredClone(parsed.data.payload)
+    };
+    return { ok: true, status: 'received', data: envelope };
+  }
+
   async function handleMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
     if (authenticatedFrom === 'pserver' && value && typeof value === 'object' &&
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.request') {
       return receiveTask(value);
     }
+    if (authenticatedFrom === 'eserver' && value && typeof value === 'object' &&
+        (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.result') {
+      return receiveTaskResult(value, instanceId);
+    }
     try {
       const message = await service.process(value, authenticatedFrom, instanceId);
-      if (authenticatedFrom === 'eserver' && message.to === 'pserver' &&
-          message.payload.type === 'demo.task.result') {
-        const task = taskSchema.parse(message.payload.data);
-        if (task.status === 'finished') {
-          singlePeers.get('aaui')?.emit('task:lifecycle', {
-            task, status: 'finished', instanceId, event: 'task.finished',
-            timestamp: Date.now()
-          });
-        }
-      }
       console.log(`[AAB] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
       return { ok: true, data: message };
     } catch (error) {
