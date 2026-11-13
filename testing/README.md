@@ -410,3 +410,63 @@ npm test
 ```
 
 Earlier sections of this README describe the historical F03 EServer origin; this section supersedes those descriptions. No changes were made to PServer task flows or the SServer/EServer Socket.IO connection topology.
+
+
+## F09 — EServer → AAB → PServer (mirror of F08)
+
+The reverse path is now symmetrical to F08: **a successful `received` ACK confirms only that AAB accepted and persisted the task result**. PServer delivery runs separately and does not delay the EServer ACK.
+
+```text
+EServer --demo.task.result (status=finished)--> AAB
+   ^                                         |
+   | ACK {ok:true,status:"received"}        | 1. Validate against saved F08 task
+   |                                         | 2. Save task-<id>.result.json
+   |                                         | 3. Notify AAUI: result received
+   |                                         +---- Async forward to PServer
+   |                                                   |
+   |                             PServer ACK success / error
+   |                                                   |
+   +------------------- AAUI: result forwarded / forwardFailed
+```
+
+On receipt AAB validates `id`, `status: "finished"`, `config`, `createdTime` and `updatedTime`, and checks that the result matches the original F08 request in `data/tasks/task-<id>.json`. It saves the result exclusively as `data/tasks/task-<id>.result.json` before returning `{ok: true, status: "received", data: ...}` to EServer. Invalid, unknown or duplicate result files return a negative ACK and are not forwarded.
+
+AAB broadcasts `task:result:lifecycle` to AAUI with three stages:
+- `task.result.received`: result persisted at AAB; PServer delivery **not** confirmed
+- `task.result.forwarded`: PServer acknowledged the forwarded result
+- `task.result.forwardFailed`: offline PServer, negative ACK or delivery error; result remains persisted at AAB
+
+The AAUI **Task Monitoring** view displays this separate F09 result delivery state and does not confuse an AAB receipt with PServer acknowledgment. Reconnect snapshots can restore a stored `finished` result, but do not claim PServer delivery unless a live `forwarded` event was observed. No auto-retry or 5-second timer is introduced.
+
+### Manually trigger F09 (no automatic task completion)
+
+Start PServer, AAB, EServer and AAUI. First create an F08 task (do not reuse an existing task ID):
+
+```sh
+curl -X POST "http://127.0.0.1:3001/demo/tasks?toInstanceId=e-1" \
+  -H "Content-Type: application/json" \
+  -d '{"config":"f09-reverse-flow-demo"}'
+```
+
+Take the generated `task.id` from PServer's response, confirm EServer received it:
+
+```sh
+curl http://127.0.0.1:3002/demo/tasks
+```
+
+Then explicitly complete that task on EServer (replace `<task-id>` with the full `task-...` value):
+
+```sh
+curl -X POST "http://127.0.0.1:3002/demo/tasks/<task-id>/finish"
+```
+
+EServer returns HTTP `202` with `status: "received"` after AAB saves the result, **not** after PServer delivery. Later, PServer logs `TASK FINISHED RECEIVED FROM ESERVER`, AAUI shows F09 forwarding success, and AAB retains both original `.json` and `.result.json` files. The raw `POST /messages` endpoint remains available for submitting a complete `demo.task.result` message manually.
+
+Run:
+
+```sh
+npm --prefix testing run test:aaui
+npm test
+```
+
+F03 SServer scheduled status, F04 EServer VM telemetry, F08 PServer receipt and EServer acknowledgment, and the 10-entry per-EServer AAUI log limit remain unchanged.
