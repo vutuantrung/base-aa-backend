@@ -292,3 +292,48 @@ test('F03 SServer status remains global when filtering EServer instances', () =>
   assert.equal(summary(state, 'e-1').vmCount, 1);
   assert.equal(state.lastStatusSequence, 5);
 });
+
+test('F09 EServer result receipt is distinct from PServer delivery', () => {
+  const state = createState();
+  const original = {
+    id: 'task-f09-001', status: 'inProgress', config: 'demo',
+    createdTime: 19126349235123, updatedTime: 19126349235123
+  };
+  const finished = { ...original, status: 'finished', updatedTime: original.updatedTime + 200 };
+  ingest(state, {
+    timestamp: at, event: 'RECEIVE task:lifecycle',
+    value: { task: original, status: 'received', instanceId: 'e-1' }
+  });
+  const emit = (status, reason) => ingest(state, {
+    timestamp: at, event: 'RECEIVE task:result:lifecycle',
+    value: { task: finished, status, instanceId: 'e-1', reason }
+  });
+  emit('received');
+  assert.equal(state.tasks[original.id].status, 'finished');
+  assert.equal(state.tasks[original.id].resultReceipt, 'received');
+  assert.equal(state.tasks[original.id].resultForwardStatus, 'pending');
+  assert.equal(state.tasks[original.id].forwardStatus, 'pending');
+  emit('forwardFailed', 'PServer is offline');
+  assert.equal(state.tasks[original.id].resultForwardStatus, 'failed');
+  assert.equal(state.tasks[original.id].resultForwardError, 'PServer is offline');
+  emit('forwarded');
+  assert.equal(state.tasks[original.id].resultForwardStatus, 'forwarded');
+  assert.equal(state.tasks[original.id].resultForwardError, null);
+  assert.equal(state.taskOrder.length, 1);
+});
+
+test('F09 result snapshot restores persisted result without claiming PServer delivery', () => {
+  const state = createState();
+  const finished = {
+    id: 'task-f09-snapshot', status: 'finished', config: 'demo',
+    createdTime: 1000, updatedTime: 2000
+  };
+  ingest(state, {
+    timestamp: at, event: 'RECEIVE task:lifecycle:snapshot',
+    value: { tasks: [{ task: finished, status: 'finished' }] }
+  });
+  const item = state.tasks[finished.id];
+  assert.equal(item.status, 'finished');
+  assert.equal(item.resultReceipt, 'received');
+  assert.equal(item.resultForwardStatus, 'unknown');
+});
