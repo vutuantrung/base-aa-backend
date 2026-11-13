@@ -1,7 +1,7 @@
 /* Pure, browser-compatible state helpers for the AAUI integration dashboard. */
 (function (root) {
   'use strict';
-  const STATUS_TYPE = 'eserver.scheduled-update';
+  const STATUS_TYPE = 'sserver.scheduled-update';
   const VM_TYPE = 'eserver.vm-info';
   const MAX_LOGS = 200;
   const MAX_HISTORY = 32;
@@ -17,6 +17,10 @@
       taskOrder: [],
       taskSnapshotError: null,
       totalStatus: 0,
+      lastStatusAt: null,
+      latestStatus: null,
+      lastStatusSequence: null,
+      statusHistory: [],
       totalVmInfo: 0,
       httpHealth: null
     };
@@ -194,26 +198,29 @@
 
     if (event !== 'RECEIVE peer:message') return null;
     const message = record.value;
-    if (!message || typeof message !== 'object' || message.from !== 'eserver') return null;
+    if (!message || typeof message !== 'object') return null;
     const type = message.payload?.type;
-    if (type !== STATUS_TYPE && type !== VM_TYPE) return null;
     const data = message.payload?.data;
+
+    // F03 is a single SServer stream, not an EServer instance stream.
+    if (message.from === 'sserver' && type === STATUS_TYPE &&
+        data && typeof data === 'object' && !Array.isArray(data)) {
+      state.totalStatus += 1;
+      state.lastStatusAt = now;
+      state.latestStatus = data;
+      state.lastStatusSequence = Number.isFinite(data.sequence) ? data.sequence : null;
+      state.statusHistory.push(now);
+      if (state.statusHistory.length > MAX_HISTORY) state.statusHistory.shift();
+      return { type: 'status', source: 'sserver' };
+    }
+
+    // F04 remains EServer-only. SServer messages never create EServer cards.
+    if (message.from !== 'eserver' || type !== VM_TYPE) return null;
     const id = typeof message.sourceInstanceId === 'string' && message.sourceInstanceId
       ? message.sourceInstanceId
       : (typeof data?.instanceId === 'string' && data.instanceId ? data.instanceId : 'unknown-instance');
     const instance = instanceFor(state, id);
     appendInstanceLog(instance, record);
-
-    if (type === STATUS_TYPE && data && typeof data === 'object' && !Array.isArray(data)) {
-      state.totalStatus += 1;
-      instance.statusCount += 1;
-      instance.lastStatusAt = now;
-      instance.latestStatus = data;
-      instance.lastSequence = Number.isFinite(data.sequence) ? data.sequence : null;
-      instance.statusHistory.push(now);
-      if (instance.statusHistory.length > MAX_HISTORY) instance.statusHistory.shift();
-      return { type: 'status', instanceId: id };
-    }
     if (type === VM_TYPE) {
       const vms = normalizeVmList(data);
       if (!vms) return null;
@@ -249,10 +256,10 @@
       onlineCount: list.filter(item => effectivePresence(state, item) === 'online').length,
       offlineCount: list.filter(item => effectivePresence(state, item) === 'offline').length,
       vmCount: list.reduce((sum, item) => sum + item.vms.length, 0),
-      statusCount: list.reduce((sum, item) => sum + item.statusCount, 0),
+      statusCount: state.totalStatus,
       vmUpdates: list.reduce((sum, item) => sum + item.vmCount, 0),
-      activeCount: list.filter(item => streamState(item.lastStatusAt, 10000, now) === 'healthy').length,
-      lastStatusAt: Math.max(0, ...list.map(item => item.lastStatusAt || 0)),
+      activeCount: streamState(state.lastStatusAt, 10000, now) === 'healthy' ? 1 : 0,
+      lastStatusAt: state.lastStatusAt || 0,
       lastVmAt: Math.max(0, ...list.map(item => item.lastVmAt || 0))
     };
   }
