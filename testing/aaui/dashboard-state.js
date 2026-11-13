@@ -132,6 +132,8 @@
             if (entry.status === 'finished' && existing.status !== 'finished') {
               state.tasks[task.id] = {
                 ...existing, ...task, status: 'finished',
+                resultReceipt: 'received',
+                resultForwardStatus: existing.resultForwardStatus || 'unknown',
                 snapshot: true
               };
             }
@@ -143,6 +145,8 @@
             status: entry.status === 'finished' ? 'finished' : 'received',
             instanceId: entry.instanceId || null,
             forwardStatus: 'unknown',
+            resultReceipt: entry.status === 'finished' ? 'received' : null,
+            resultForwardStatus: entry.status === 'finished' ? 'unknown' : null,
             delivery: 'received',
             snapshot: true,
             receivedAt: now
@@ -155,6 +159,35 @@
       }
     }
 
+    // F09 is the reverse of F08: AAB receipt is distinct from PServer delivery.
+    if (event === 'RECEIVE task:result:lifecycle') {
+      const entry = record.value;
+      const task = entry?.task;
+      if (task && typeof task.id === 'string' &&
+          ['received', 'forwarded', 'forwardFailed'].includes(entry.status)) {
+        if (!state.tasks[task.id]) {
+          state.taskOrder.unshift(task.id);
+          if (state.taskOrder.length > MAX_TASKS) {
+            const oldest = state.taskOrder.pop();
+            delete state.tasks[oldest];
+          }
+        }
+        const previous = state.tasks[task.id] || {};
+        state.tasks[task.id] = {
+          ...previous,
+          ...task,
+          status: 'finished',
+          instanceId: entry.instanceId || previous.instanceId || null,
+          resultReceipt: 'received',
+          resultForwardStatus: entry.status === 'forwarded' ? 'forwarded' :
+            entry.status === 'forwardFailed' ? 'failed' :
+            previous.resultForwardStatus || 'pending',
+          resultForwardError: entry.status === 'forwardFailed' ? entry.reason || 'Unknown delivery failure' :
+            entry.status === 'forwarded' ? null : previous.resultForwardError || null,
+          receivedAt: previous.receivedAt || now
+        };
+      }
+    }
     if (event === 'RECEIVE task:lifecycle' || event === 'TASK IN PROGRESS' || event === 'TASK FINISHED' ||
         event === 'TASK RESULT DELIVERED' || event === 'TASK RESULT ERROR') {
       const task = event === 'RECEIVE task:lifecycle' ? record.value?.task : record.value;
