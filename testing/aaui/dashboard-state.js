@@ -30,19 +30,14 @@
     if (!state.instances[id]) {
       state.instances[id] = {
         id,
-        statusCount: 0,
         vmCount: 0,
-        lastStatusAt: null,
         lastVmAt: null,
-        lastSequence: null,
-        latestStatus: null,
         presence: 'unknown',
         presenceAt: null,
         disconnectReason: null,
         socketId: null,
         logs: [],
         vms: [],
-        statusHistory: [],
         vmHistory: []
       };
     }
