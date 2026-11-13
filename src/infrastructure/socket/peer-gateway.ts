@@ -257,21 +257,27 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     const messageId = parsed.data.id ?? randomUUID();
     setImmediate(() => {
       void (async () => {
+        let status: 'forwarded' | 'forwardFailed' = 'forwarded';
+        let reason: string | undefined;
         try {
           await service.process({ ...parsed.data, id: messageId }, 'aaui');
-          await selectionStore.updateDelivery(record.id, 'forwarded');
-          publishSelection({ ...record, deliveryStatus: 'forwarded' });
           console.log('[AAB] RESOURCE SELECTION FORWARDED', record.id);
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          try {
-            await selectionStore.updateDelivery(record.id, 'forwardFailed', reason);
-          } catch (storeError) {
-            console.error('[AAB] RESOURCE SELECTION STATUS STORE FAILED', record.id, storeError);
-          }
-          publishSelection({ ...record, deliveryStatus: 'forwardFailed', deliveryError: reason });
+          status = 'forwardFailed';
+          reason = error instanceof Error ? error.message : String(error);
           console.error('[AAB] RESOURCE SELECTION FORWARD FAILED', record.id, reason);
         }
+        // A failure to write monitoring metadata must never reclassify a
+        // successfully delivered message as a PServer delivery failure.
+        try {
+          await selectionStore.updateDelivery(record.id, status, reason);
+        } catch (storeError) {
+          console.error('[AAB] RESOURCE SELECTION STATUS STORE FAILED', record.id, storeError);
+        }
+        publishSelection({
+          ...record, deliveryStatus: status,
+          ...(reason ? { deliveryError: reason } : {})
+        });
       })();
     });
 
