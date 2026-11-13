@@ -6,11 +6,14 @@ const {
 
 const at = new Date('2026-11-12T12:00:00.000Z').toISOString();
 function message(type, instanceId, data, timestamp = at) {
+  const isStatus = type === STATUS_TYPE;
   return {
     timestamp,
     event: 'RECEIVE peer:message',
     value: {
-      from: 'eserver', to: 'aaui', sourceInstanceId: instanceId,
+      from: isStatus ? 'sserver' : 'eserver',
+      to: 'aaui',
+      ...(isStatus ? {} : { sourceInstanceId: instanceId }),
       payload: { type, data }
     }
   };
@@ -26,7 +29,7 @@ function vm(id) {
   }];
 }
 
-test('ingests both streams from multiple independent EServer instances', () => {
+test('ingests SServer status stream separately from multiple EServer VM streams', () => {
   const state = createState();
   ingest(state, message(STATUS_TYPE, 'e-1', { instanceId: 'e-1', sequence: 1 }));
   ingest(state, message(STATUS_TYPE, 'e-2', { instanceId: 'e-2', sequence: 3 }));
@@ -38,7 +41,9 @@ test('ingests both streams from multiple independent EServer instances', () => {
   assert.equal(summary(state).statusCount, 2);
   assert.equal(summary(state).vmUpdates, 2);
   assert.equal(summary(state, 'e-1').vmCount, 1);
-  assert.equal(state.instances['e-2'].lastSequence, 3);
+  assert.equal(state.lastStatusSequence, 3);
+  assert.equal(state.instances['e-2'].statusCount, 0);
+  assert.equal(Object.keys(state.instances).length, 2);
   assert.deepEqual(state.instances['e-1'].vms[0].supportingPlatforms[0].parserInfo.type, ['Post', 'Profile']);
 });
 
@@ -78,11 +83,12 @@ test('freshness distinguishes waiting, receiving and stale', () => {
   assert.equal(streamState(now - 30000, 10000, now), 'stale');
 });
 
-test('protects instance dictionary against special instance IDs', () => {
+test('SServer status cannot create EServer instance cards from its instanceId', () => {
   const state = createState();
   ingest(state, message(STATUS_TYPE, '__proto__', { instanceId: '__proto__', sequence: 1 }));
   assert.equal(Object.prototype.hasOwnProperty.call(state.instances, '__proto__'), true);
-  assert.equal(state.instances['__proto__'].statusCount, 1);
+  assert.equal(state.totalStatus, 1);
+  assert.equal(Object.keys(state.instances).length, 0);
 });
 
 test('retains at most 200 activity events', () => {
@@ -161,15 +167,17 @@ test('AAUI disconnect makes all EServer connection statuses unknown until snapsh
   assert.equal(summary(state).offlineCount, 1);
 });
 
-test('logs from individual EServer instances are isolated and bounded', () => {
+test('SServer status does not pollute 10-log EServer histories', () => {
   const state = createState();
-  for (let i = 0; i < 130; i++) ingest(state, message(STATUS_TYPE, 'e-1', { sequence: i }));
-  ingest(state, message(VM_TYPE, 'e-2', vm('other-vm')));
-  assert.equal(state.instances['e-1'].logs.length, 10);
-  assert.equal(state.instances['e-1'].logs[0].value.payload.data.sequence, 120);
-  assert.equal(state.instances['e-1'].logs[9].value.payload.data.sequence, 129);
-  assert.equal(state.instances['e-2'].logs.length, 1);
-  assert.equal(state.messages.length, 131);
+  for (let i = 0; i < 130; i++) ingest(state, message(STATUS_TYPE, 'sserver', { sequence: i }));
+  for (let i = 0; i < 15; i++) ingest(state, message(VM_TYPE, 'e-2', vm('vm-' + i)));
+  assert.equal(state.instances['e-2'].logs.length, 10);
+  assert.equal(state.instances['e-2'].logs[0].value.payload.data[0].id, 'vm-5');
+  assert.equal(state.instances['e-2'].logs[9].value.payload.data[0].id, 'vm-14');
+  assert.equal(state.totalStatus, 130);
+  assert.equal(state.lastStatusSequence, 129);
+  assert.equal(state.statusHistory.length, 32);
+  assert.equal(state.messages.length, 145);
 });
 
 
@@ -263,4 +271,24 @@ test('AAUI reconnect rehydrates tasks from AAB file snapshot', () => {
   });
   assert.equal(state.taskOrder.length, 1);
   assert.equal(state.tasks[task.id].forwardStatus, 'forwarded');
+});
+
+test('rejects spoofed F03 status sent by EServer or incorrect payload type', () => {
+  const state = createState();
+  const spoofed = message(STATUS_TYPE, 'e-1', { sequence: 1 });
+  spoofed.value.from = 'eserver';
+  ingest(state, spoofed);
+  ingest(state, message('eserver.scheduled-update', 'e-1', { sequence: 2 }));
+  assert.equal(state.totalStatus, 0);
+  assert.equal(summary(state).statusCount, 0);
+  assert.equal(Object.keys(state.instances).length, 0);
+});
+
+test('F03 SServer status remains global when filtering EServer instances', () => {
+  const state = createState();
+  ingest(state, message(STATUS_TYPE, 'sserver', { sequence: 5 }));
+  ingest(state, message(VM_TYPE, 'e-1', vm('only-vm')));
+  assert.equal(summary(state, 'e-1').statusCount, 1);
+  assert.equal(summary(state, 'e-1').vmCount, 1);
+  assert.equal(state.lastStatusSequence, 5);
 });
