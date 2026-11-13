@@ -470,3 +470,41 @@ npm test
 ```
 
 F03 SServer scheduled status, F04 EServer VM telemetry, F08 PServer receipt and EServer acknowledgment, and the 10-entry per-EServer AAUI log limit remain unchanged.
+
+
+## AAUI Resource Selection → AAB → PServer
+
+The **Resource Selection** page in Electron AAUI provides three independent single-choice record groups, backed by mock data in `testing/shared/resource-selection.cjs`:
+
+- **Browser Profile:** `{ id, browserVersion, browserUserAgent }`
+- **Proxy:** `{ id, http, https }`
+- **Platform Account:** `{ accountId, platform }`, with `facebook`, `tiktok`, `threads`, `youtube`
+
+Select **exactly one record from each group**. The Submit button remains disabled until all three are selected and is disabled while a request is pending. Only the following IDs are transmitted; neither proxy URLs nor browser user agents are sent:
+
+```json
+{
+  "browserProfileId": "browser-profile-001",
+  "proxyId": "proxy-002",
+  "accountId": "account-tk-001"
+}
+```
+
+AAUI emits `peer:message` via its existing Socket.IO connection to AAB with `kind: "request"`, `from: "aaui"`, `to: "pserver"`, and `payload.type: "demo.resource-selection"`. AAB forwards the message through its existing PServer connector. The test PServer validates that all three IDs refer to known mock records, logs `[pserver] RESOURCE SELECTION RECEIVED` with the payload, and ACKs `{ok:true}`. AAUI displays delivery success or error and logs the outcome in Event Activity. No separate business request handler is added to AAB.
+
+Run:
+
+```sh
+npm --prefix testing run pserver
+ENABLE_TEST_PEERS=1 npm run dev
+npm --prefix testing run aaui
+```
+
+Open AAUI → **Resource Selection**, choose one record in each column, review the three selected IDs and press **Submit to PServer**. Confirm receipt in the PServer console. The catalogs are demo-only, not backed by a database or a real browser/proxy service. The PServer currently logs accepted selections in memory/process output; it does not persist them.
+
+Tests:
+
+```sh
+npm --prefix testing run test:aaui
+npm test
+```
