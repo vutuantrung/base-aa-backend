@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { JsonTaskFileStore, taskSchema } from '../../modules/peer-messaging/task-file-store.js';
+import { JsonResourceSelectionStore, resourceSelectionSchema, type StoredSelection } from '../../modules/peer-messaging/resource-selection-store.js';
 import type { Server, Socket } from 'socket.io';
 import { type PeerId, type ClientPeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
 import { PeerMessageService, PeerMessageError } from '../../modules/peer-messaging/peer-message-service.js';
@@ -28,6 +29,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   const eservers = new Map<string, Socket>();
   let pserverTransport: ExternalPeerTransport | undefined;
   const taskStore = new JsonTaskFileStore();
+  const selectionStore = new JsonResourceSelectionStore();
 
   // Transport presence is distinct from the 10s/20s application message streams.
   // Socket.IO events for each AAUI connection are sent in order.
@@ -226,7 +228,81 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     return { ok: true, status: 'received', data: envelope };
   }
 
+  function publishSelection(record: StoredSelection): void {
+    singlePeers.get('aaui')?.emit('resource-selection:updated', record);
+  }
+
+  async function receiveSelection(value: unknown): Promise<PeerMessageAck> {
+    const parsed = incomingPeerMessageSchema.safeParse(value);
+    if (!parsed.success || parsed.data.from !== 'aaui' || parsed.data.to !== 'pserver' ||
+        parsed.data.payload.type !== 'demo.resource-selection') {
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection envelope' };
+    }
+    const selection = resourceSelectionSchema.safeParse(parsed.data.payload.data);
+    if (!selection.success) {
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection IDs' };
+    }
+
+    let record: StoredSelection;
+    try {
+      record = await selectionStore.save(selection.data);
+    } catch (error) {
+      console.error('[AAB] RESOURCE SELECTION PERSIST FAILED', error);
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist resource selection' };
+    }
+
+    publishSelection(record);
+    console.log('[AAB] RESOURCE SELECTION SAVED', record.id);
+
+    const messageId = parsed.data.id ?? randomUUID();
+    setImmediate(() => {
+      void (async () => {
+        try {
+          await service.process({ ...parsed.data, id: messageId }, 'aaui');
+          await selectionStore.updateDelivery(record.id, 'forwarded');
+          publishSelection({ ...record, deliveryStatus: 'forwarded' });
+          console.log('[AAB] RESOURCE SELECTION FORWARDED', record.id);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          try {
+            await selectionStore.updateDelivery(record.id, 'forwardFailed', reason);
+          } catch (storeError) {
+            console.error('[AAB] RESOURCE SELECTION STATUS STORE FAILED', record.id, storeError);
+          }
+          publishSelection({ ...record, deliveryStatus: 'forwardFailed', deliveryError: reason });
+          console.error('[AAB] RESOURCE SELECTION FORWARD FAILED', record.id, reason);
+        }
+      })();
+    });
+
+    const envelope: PeerMessage = {
+      ...parsed.data, id: messageId, timestamp: Date.now(),
+      payload: structuredClone(parsed.data.payload)
+    };
+    return { ok: true, status: 'received', data: envelope };
+  }
+
+  async function sendSelectionSnapshot(socket: Socket): Promise<void> {
+    if (socket.data.peerId !== 'aaui') return;
+    try {
+      const records = await selectionStore.listRecent(50);
+      if (!socket.connected || singlePeers.get('aaui')?.id !== socket.id) return;
+      socket.emit('resource-selection:snapshot', { records, timestamp: Date.now() });
+    } catch (error) {
+      console.error('[AAB] RESOURCE SELECTION SNAPSHOT FAILED', error);
+      if (socket.connected && singlePeers.get('aaui')?.id === socket.id) {
+        socket.emit('resource-selection:snapshot', {
+          records: [], timestamp: Date.now(), error: 'Could not load saved selections'
+        });
+      }
+    }
+  }
+
   async function handleMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
+    if (authenticatedFrom === 'aaui' && value && typeof value === 'object' &&
+        (value as { payload?: { type?: unknown } }).payload?.type === 'demo.resource-selection') {
+      return receiveSelection(value);
+    }
     if (authenticatedFrom === 'pserver' && value && typeof value === 'object' &&
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.request') {
       return receiveTask(value);
@@ -303,11 +379,13 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       socket.emit('peer:status:snapshot', presenceSnapshot());
       // Task lifecycle events are transient; rehydrate the dashboard from disk.
       void sendTaskSnapshot(socket);
+      void sendSelectionSnapshot(socket);
     }
     socket.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
     if (peerId === 'aaui') {
       socket.on('task:lifecycle:refresh', () => { void sendTaskSnapshot(socket); });
+      socket.on('resource-selection:refresh', () => { void sendSelectionSnapshot(socket); });
     }
 
     socket.on('peer:ping', (payload: unknown, ack?: (data: { ok: boolean; from: string; timestamp: number }) => void) => {
