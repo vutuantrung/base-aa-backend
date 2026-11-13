@@ -36,7 +36,7 @@
       </header>
       <div class="page-inner">
         <div class="page-heading">
-          <div><div class="eyebrow">SYSTEM MONITORING</div><h1 id="page-title">EServer Overview</h1><p id="page-description">Real-time status and VM capabilities across connected EServer instances.</p></div>
+          <div><div class="eyebrow">SYSTEM MONITORING</div><h1 id="page-title">EServer Overview</h1><p id="page-description">SServer status updates every 10 seconds and EServer VM inventory every 20 seconds.</p></div>
           <div class="toolbar"><label class="visually-hidden" for="instance-filter">EServer instance</label><select id="instance-filter"><option value="all">All EServer instances</option></select></div>
         </div>
 
@@ -44,15 +44,15 @@
           <div class="stats-grid">
             <article class="stat-card"><span class="stat-icon teal">⌘</span><span class="stat-label">Online EServers</span><div class="stat-number" id="stat-instances">0</div><span class="stat-note" id="stat-presence-note">0 known instances</span></article>
             <article class="stat-card"><span class="stat-icon violet">▣</span><span class="stat-label">VMs discovered</span><div class="stat-number" id="stat-vms">0</div><span class="stat-note">From latest VM inventory</span></article>
-            <article class="stat-card"><span class="stat-icon blue">↗</span><span class="stat-label">Status messages</span><div class="stat-number" id="stat-status">0</div><span class="stat-note">10s scheduled stream</span></article>
+            <article class="stat-card"><span class="stat-icon blue">↗</span><span class="stat-label">Status messages</span><div class="stat-number" id="stat-status">0</div><span class="stat-note">SServer · 10s scheduled stream</span></article>
             <article class="stat-card"><span class="stat-icon amber">◷</span><span class="stat-label">VM info updates</span><div class="stat-number" id="stat-vm-updates">0</div><span class="stat-note">20s scheduled stream</span></article>
           </div>
           <div class="section-title"><div><h2>Message Streams</h2><p>Delivery freshness based on messages observed by AAUI</p></div></div>
           <div class="stream-grid">
-            <article class="panel stream-panel"><div class="stream-header"><span class="stream-icon blue">↗</span><div><strong>Status Update</strong><span>eserver.scheduled-update</span></div><span class="pill" id="status-stream-pill">Waiting</span></div><div class="stream-meta"><div><span>Schedule</span><strong>Every 10s</strong></div><div><span>Last received</span><strong id="status-last">No data</strong></div></div><div class="stream-chart" id="status-stream-chart" aria-label="Recent status update arrivals"></div><div class="stream-foot"><span>Recent arrivals</span><span id="status-stream-count">0 received</span></div></article>
+            <article class="panel stream-panel"><div class="stream-header"><span class="stream-icon blue">↗</span><div><strong>Status Update</strong><span>SServer · sserver.scheduled-update</span></div><span class="pill" id="status-stream-pill">Waiting</span></div><div class="stream-meta"><div><span>Schedule</span><strong>Every 10s</strong></div><div><span>Last received</span><strong id="status-last">No data</strong></div></div><div class="stream-chart" id="status-stream-chart" aria-label="Recent status update arrivals"></div><div class="stream-foot"><span>Recent arrivals</span><span id="status-stream-count">0 received</span></div></article>
             <article class="panel stream-panel"><div class="stream-header"><span class="stream-icon violet">▣</span><div><strong>VM Information</strong><span>eserver.vm-info</span></div><span class="pill" id="vm-stream-pill">Waiting</span></div><div class="stream-meta"><div><span>Schedule</span><strong>Every 20s</strong></div><div><span>Last received</span><strong id="vm-last">No data</strong></div></div><div class="stream-chart" id="vm-stream-chart" aria-label="Recent VM information arrivals"></div><div class="stream-foot"><span>Recent arrivals</span><span id="vm-stream-count">0 received</span></div></article>
           </div>
-          <div class="section-title"><div><h2>EServer Instances</h2><p>Latest status and VM inventory by instance</p></div><span class="count-label" id="instance-count">0 instances</span></div>
+          <div class="section-title"><div><h2>EServer Instances</h2><p>Latest VM inventory and connectivity by EServer instance</p></div><span class="count-label" id="instance-count">0 instances</span></div>
           <div class="instances-grid" id="instances-overview"></div>
         </section>
 
