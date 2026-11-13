@@ -2,7 +2,6 @@ import { startPeerServer } from './shared/create-peer-server.mjs';
 import { startScheduledPeerMessages } from './shared/scheduled-peer-message.mjs';
 import { createMockVmInfo } from './shared/mock-vm-info.mjs';
 
-export const SCHEDULE_CALL_TIME = 10_000; // Existing status update: 10 seconds
 export const SEND_VM_INFO_TIME = 20_000; // VM information: 20 seconds
 
 const port = Number(process.env.ESERVER_PORT ?? 3002);
@@ -12,7 +11,6 @@ if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(instanceId)) throw new Error('Inval
 
 const { socket } = await startPeerServer({ peerId: 'eserver', port, instanceId });
 
-let sequence = 0;
 let schedules = [];
 
 function stopSchedules() {
@@ -24,28 +22,6 @@ function startSchedules() {
   stopSchedules();
 
   schedules = [
-    startScheduledPeerMessages({
-      socket,
-      intervalMs: SCHEDULE_CALL_TIME,
-      createMessage: () => ({
-        version: '1.0',
-        kind: 'event',
-        from: 'eserver',
-        to: 'aaui',
-        channel: 'worker',
-        event: 'message',
-        payload: {
-          type: 'eserver.scheduled-update',
-          version: '1.0',
-          data: {
-            instanceId,
-            sequence: ++sequence,
-            sentAt: new Date().toISOString(),
-            message: 'Scheduled update from EServer'
-          }
-        }
-      })
-    }),
     startScheduledPeerMessages({
       socket,
       intervalMs: SEND_VM_INFO_TIME,
@@ -65,7 +41,7 @@ function startSchedules() {
       })
     })
   ];
-  console.log(`[eserver:${instanceId}] Scheduled messages: status ${SCHEDULE_CALL_TIME / 1000}s; VM info ${SEND_VM_INFO_TIME / 1000}s`);
+  console.log(`[eserver:${instanceId}] Scheduled messages: VM info ${SEND_VM_INFO_TIME / 1000}s (status update moved to SServer)`);
 }
 
 // Each connection begins a fresh scheduling period; no messages are queued offline.
