@@ -3,6 +3,8 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import taskFlow from './shared/task-flow.cjs';
+import selectionFlow from './shared/resource-selection.cjs';
+const { validateSelection } = selectionFlow;
 const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, TASK_STATUS, MAX_TASKS, isTask, createTask } = taskFlow;
 
 const port = 3001;
@@ -61,6 +63,20 @@ namespace.on('connection', socket => {
 
   socket.on('peer:message', (message, ack) => {
     console.log('[pserver] RECEIVE peer:message', JSON.stringify(message));
+    if (message?.payload?.type === 'demo.resource-selection') {
+      if (message.from !== 'aaui' || message.to !== 'pserver') {
+        ack?.({ ok: false, error: 'Unexpected sender or recipient for resource selection' });
+        return;
+      }
+      const selection = validateSelection(message.payload.data);
+      if (!selection.ok) {
+        ack?.({ ok: false, error: selection.error });
+        return;
+      }
+      console.log('[pserver] RESOURCE SELECTION RECEIVED', JSON.stringify(selection.data));
+      ack?.({ ok: true });
+      return;
+    }
     if (message?.from === 'eserver' && message?.to === 'pserver' &&
         message?.payload?.type === TASK_RESULT_TYPE) {
       const task = message.payload.data;
