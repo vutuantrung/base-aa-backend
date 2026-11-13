@@ -386,3 +386,27 @@ The previous implementation delivered `task:lifecycle` events only when AAUI hap
 ### Removed: automatic 5-second task completion
 
 EServer mock task reception is acknowledgment-only. There is no task completion timer or automatic `finished` message. AAB does not change task status after 5 seconds. The original task remains persisted, the AAUI displays `received` (with separate forwarding feedback), and PServer has no finished result unless EServer later explicitly sends one. Socket.IO ping timeouts and EServer status/VM telemetry schedules (10s and 20s) are unrelated and remain enabled.
+
+
+## F03 migration — SServer → AAB → AAUI (10 seconds)
+
+**Current implementation:** F03 `sserver.scheduled-update` is produced by SServer, not EServer. The original trigger mechanism is unchanged: the first event is sent 10 seconds after the SServer Socket.IO connection, the timer is stopped on disconnect, restarted after reconnect, and skips ticks during disconnection or while a previous ACK is pending. Failed sends are not queued or retried. Each event uses the existing `peer:message` route and `to: "aaui"`. Its mock `payload.data` retains `instanceId`, `sequence`, `sentAt` and `message`; `instanceId` is `"sserver"` rather than an EServer identity.
+
+```text
+F03: SServer --sserver.scheduled-update (every 10s)--> AAB --> AAUI
+F04: EServer --eserver.vm-info (every 20s)-----------> AAB --> AAUI
+```
+
+SServer starts on port 3003 with `npm --prefix testing run sserver`. EServer remains on port 3002 with `npm --prefix testing run eserver`. AAUI's global Status Update metrics/chart now show SServer updates only, while EServer instance cards, per-instance 10-entry logs and VM Inventory remain EServer-only. The EServer filter does not filter SServer metrics, because F03 is system-wide.
+
+Run these three peers with AAB, then open **AAUI → System Overview** to observe the status chart after the first 10-second tick. **Event Activity → Status updates** shows the SServer message. F04 requires EServer and still starts after 20 seconds.
+
+Verification:
+
+```sh
+npm --prefix testing run test:scheduler
+npm --prefix testing run test:aaui
+npm test
+```
+
+Earlier sections of this README describe the historical F03 EServer origin; this section supersedes those descriptions. No changes were made to PServer task flows or the SServer/EServer Socket.IO connection topology.
