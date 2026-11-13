@@ -344,7 +344,7 @@ function navigate(next) {
   for (const section of document.querySelectorAll('[data-section]')) {
     section.classList.toggle('hidden', section.dataset.section !== page);
   }
-  const titles = { overview: ['EServer Overview', 'Real-time status and VM capabilities across connected EServer instances.', 'Overview'],
+  const titles = { overview: ['System Overview', 'SServer status every 10s and EServer VM info every 20s.', 'Overview'],
     inventory: ['VM Inventory', 'Explore VMs and supported platform capabilities.', 'VM Inventory'],
     activity: ['Event Activity', 'Inspect live events and raw payloads for troubleshooting.', 'Event Activity'],
     'instance-logs': ['Instance Logs', 'Independent connection and data logs for every EServer instance.', 'Instance Logs'],
