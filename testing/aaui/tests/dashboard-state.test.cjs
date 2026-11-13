@@ -86,7 +86,7 @@ test('freshness distinguishes waiting, receiving and stale', () => {
 test('SServer status cannot create EServer instance cards from its instanceId', () => {
   const state = createState();
   ingest(state, message(STATUS_TYPE, '__proto__', { instanceId: '__proto__', sequence: 1 }));
-  assert.equal(Object.prototype.hasOwnProperty.call(state.instances, '__proto__'), true);
+  assert.equal(Object.prototype.hasOwnProperty.call(state.instances, '__proto__'), false);
   assert.equal(state.totalStatus, 1);
   assert.equal(Object.keys(state.instances).length, 0);
 });
