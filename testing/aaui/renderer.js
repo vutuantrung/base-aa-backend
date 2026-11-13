@@ -312,9 +312,13 @@ function renderTasks() {
     add(card, heading, element('div', 'task-label', 'CONFIG'),
       element('div', 'task-config', task.config || '—'), meta,
       element('div', 'task-delivery', task.status === 'finished'
-        ? (task.snapshot
-          ? '✓ Finished result persisted at AAB (delivery confirmation not available in snapshot)'
-          : '✓ EServer finished; result delivered to PServer')
+        ? task.resultForwardStatus === 'forwarded'
+          ? '✓ F09 · Result delivered and acknowledged by PServer'
+          : task.resultForwardStatus === 'failed'
+            ? '⚠ F09 · Result saved at AAB; PServer forwarding failed: ' + (task.resultForwardError || 'unknown')
+            : task.resultForwardStatus === 'unknown'
+              ? '✓ F09 · Result saved at AAB (delivery history unavailable after reconnect)'
+              : '✓ F09 · Result received and saved at AAB; forwarding to PServer pending'
         : task.forwardStatus === 'unknown'
           ? '✓ Received and persisted by AAB (forwarding history unavailable after reconnect)'
           : task.forwardStatus === 'forwarded'
@@ -322,6 +326,9 @@ function renderTasks() {
           : task.forwardStatus === 'failed'
             ? '⚠ AAB saved task; EServer delivery failed: ' + (task.forwardError || 'unknown')
             : '✓ Received and persisted by AAB; forwarding pending'));
+    if (task.resultReceipt === 'received') {
+      card.append(chip('F09 result · received by AAB'));
+    }
     root.append(card);
   }
 }
