@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('aaui', {
   checkHttp: () => ipcRenderer.invoke('aaui:check-http'),
   refreshTasks: () => ipcRenderer.invoke('aaui:refresh-tasks'),
   getSelectionOptions: () => ipcRenderer.invoke('aaui:selection-options'),
+  refreshSelections: () => ipcRenderer.invoke('aaui:refresh-selections'),
   submitSelection: selection => ipcRenderer.invoke('aaui:submit-selection', selection),
   onLog: callback => {
     const listener = (_event, record) => callback(record);
