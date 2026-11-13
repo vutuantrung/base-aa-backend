@@ -94,6 +94,16 @@
               <button class="btn selection-submit" id="selection-submit" type="button" disabled>Submit to PServer</button>
             </div>
           </div>
+          <div class="selection-history panel">
+            <div class="selection-history-heading">
+              <div><h3>Saved Selections</h3><p>Recent submissions persisted by AAB, with PServer delivery status.</p></div>
+              <div class="filters">
+                <span class="pill" id="saved-selections-count">0 records</span>
+                <button type="button" class="btn btn-outline" id="refresh-selections">↻ Refresh List</button>
+              </div>
+            </div>
+            <div class="selection-history-list" id="saved-selections-list"></div>
+          </div>
         </section>
         <section class="page-section hidden" data-section="inventory">
           <div class="inventory-toolbar"><div><h2>VM Inventory</h2><p>Browser identities, supported platforms, features and parsers</p></div><label class="search-field"><span>⌕</span><input id="vm-search" type="search" placeholder="Search VM, browser, platform..." autocomplete="off"></label></div>
