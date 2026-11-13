@@ -61,21 +61,27 @@ function updateSelector() {
 
 function streamInfo(kind) {
   const isStatus = kind === 'status';
+  if (isStatus) {
+    return { times: state.statusHistory, lastAt: state.lastStatusAt || 0, expected: 10000 };
+  }
   const items = currentInstances();
-  const times = items.flatMap(item => isStatus ? item.statusHistory : item.vmHistory);
-  const lastAt = Math.max(0, ...items.map(item => isStatus ? item.lastStatusAt || 0 : item.lastVmAt || 0));
-  return { times, lastAt, expected: isStatus ? 10000 : 20000 };
+  const times = items.flatMap(item => item.vmHistory);
+  const lastAt = Math.max(0, ...items.map(item => item.lastVmAt || 0));
+  return { times, lastAt, expected: 20000 };
 }
 function renderStream(kind) {
   const info = streamInfo(kind);
   const instances = currentInstances();
   const allOffline = instances.length > 0 && instances.every(item => effectivePresence(state, item) === 'offline');
-  const health = state.connection !== 'connected' ? 'unknown' : allOffline ? 'offline' : streamState(info.lastAt, info.expected);
+  const health = state.connection !== 'connected' ? 'unknown' :
+    kind === 'status' ? streamState(info.lastAt, info.expected) :
+    allOffline ? 'offline' : streamState(info.lastAt, info.expected);
   const indicator = $(kind + '-stream-pill');
   indicator.className = 'pill' + (health === 'waiting' || health === 'unknown' ? '' : ' ' + health);
   indicator.textContent = health === 'healthy' ? 'Receiving' : health === 'stale' ? 'Stale' : health === 'offline' ? 'Stopped' : health === 'unknown' ? 'Unknown' : 'Waiting';
   $(kind + '-last').textContent = ageLabel(info.lastAt);
-  const count = currentInstances().reduce((sum, instance) => sum + (kind === 'status' ? instance.statusCount : instance.vmCount), 0);
+  const count = kind === 'status' ? state.totalStatus :
+    currentInstances().reduce((sum, instance) => sum + instance.vmCount, 0);
   $(kind + '-stream-count').textContent = count + ' received';
 
   const chart = $(kind + '-stream-chart');
@@ -126,19 +132,17 @@ function instanceCard(instance) {
     presence === 'online' ? 'healthy' : presence === 'offline' ? 'offline' : ''
   ));
   const metrics = element('div', 'instance-metrics');
-  add(metrics, detail('Status events', instance.statusCount), detail('VM info', instance.vmCount), detail('VMs', instance.vms.length));
+  add(metrics, detail('VM info', instance.vmCount), detail('VMs', instance.vms.length));
   const extra = element('div', 'instance-detail');
   const streamLabel = (lastAt, interval) => presence === 'offline' ? 'Stopped'
     : presence === 'unknown' ? 'Unknown'
     : streamState(lastAt, interval) === 'healthy' ? 'Receiving'
     : streamState(lastAt, interval) === 'stale' ? 'Stale' : 'Waiting';
-  add(extra, chip('Status stream · ' + streamLabel(instance.lastStatusAt, 10000)),
-    chip('VM stream · ' + streamLabel(instance.lastVmAt, 20000)));
-  extra.append(chip('Status last · ' + ageLabel(instance.lastStatusAt)));
+  add(extra, chip('VM stream · ' + streamLabel(instance.lastVmAt, 20000)));
   extra.append(chip('VM last · ' + ageLabel(instance.lastVmAt)));
   if (instance.disconnectReason && presence === 'offline') extra.append(chip('Disconnect · ' + instance.disconnectReason));
   extra.append(chip('Logs · ' + instance.logs.length));
-  if (instance.lastSequence !== null) extra.append(chip('Seq #' + instance.lastSequence));
+
   return add(card, head, metrics, extra);
 }
 function renderOverviewInstances() {
@@ -146,7 +150,7 @@ function renderOverviewInstances() {
   root.replaceChildren();
   const instances = currentInstances().sort((a, b) => a.id.localeCompare(b.id));
   if (!instances.length) {
-    root.append(empty('Waiting for EServer data', 'Connect EServer instances and start AAUI. Status updates arrive every 10s and VM info every 20s.'));
+    root.append(empty('Waiting for EServer data', 'Connect EServer instances for VM info every 20s. SServer sends status every 10s independently.'));
     return;
   }
   for (const instance of instances) root.append(instanceCard(instance));
@@ -209,6 +213,7 @@ function matchesInstance(record) {
   if (record.event === 'RECEIVE peer:status') return record.value?.instanceId === selectedInstance;
   if (record.event === 'RECEIVE peer:status:snapshot') return record.value?.instances?.some(entry => entry.instanceId === selectedInstance) ?? false;
   if (record.event !== 'RECEIVE peer:message') return false;
+  if (record.value?.from === 'sserver') return false;
   return (record.value?.sourceInstanceId || record.value?.payload?.data?.instanceId) === selectedInstance;
 }
 function activityRow(record) {
