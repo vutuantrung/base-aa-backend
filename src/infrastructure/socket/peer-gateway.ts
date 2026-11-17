@@ -7,9 +7,8 @@ import { type PeerId, type ClientPeerId, type PeerMessage, type PeerMessageAck, 
 import { PeerMessageService, PeerMessageError } from '../../modules/peer-messaging/peer-message-service.js';
 import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
 
-const inboundPeerIds = ['eserver', 'sserver', 'aaui'] as const;
 const peerAuth = z.object({
-  peerId: z.enum(inboundPeerIds),
+  peerId: z.enum(['eserver', 'sserver', 'aaui']),
   instanceId: z.string().trim().min(1).max(100).optional(),
   token: z.string().optional()
 });
@@ -35,12 +34,12 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   // Socket.IO events for each AAUI connection are sent in order.
   function presenceSnapshot() {
     return {
-      peerId: 'eserver' as const,
+      peerId: 'eserver',
       timestamp: Date.now(),
       instances: [...eservers.entries()].map(([instanceId, socket]) => ({
-        peerId: 'eserver' as const,
+        peerId: 'eserver',
         instanceId,
-        status: 'online' as const,
+        status: 'online',
         socketId: socket.id,
         timestamp: Date.now()
       }))
