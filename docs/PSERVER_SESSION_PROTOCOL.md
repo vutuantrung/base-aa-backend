@@ -43,8 +43,8 @@ AAB listens for `activity:task:dispatch` and validates both:
 
 Valid tasks are logged as `ACTIVITY_TASK VALIDATED`. Invalid tasks are logged and ignored. **Task execution and routing are not defined**; no forwarding or database write is performed.
 
-## Existing peer messaging retained
+## Direct diagnostic messages
 
-`peer:message` is preserved as an additional test-only event for the existing `PServer -> AAB -> AAUI` transformation demo and reverse deliveries. Outbound peer delivery only starts after session ACK. This is an extension beyond the uploaded sample, not a field or event asserted to exist in that sample.
+The test-only peer:message event is retained for direct AAB–PServer communication. It logs and acknowledges incoming messages after AAB session readiness; no peer gateway, routing, transformation or persistence is involved. Both local HTTP /messages endpoints trigger sends. See README for examples.
 
-Run `npm test` to test session registration and peer routing. No Message Queue, separate Processing Server, or new SQLite feature is added.
+Run npm test for session protocol tests.

@@ -8,7 +8,6 @@ let app: ReturnType<typeof createApplication>;
 before(async () => {
   pserver = await createMockPServer();
   app = createApplication({
-    dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true,
     pserver: { url: pserver.url, path: '/ws',
       vmInfo: { udid: 'test-vm', sdk: '33', model: 'Pixel', abi: 'arm64-v8a', forSearch: true, platforms: ['facebook'] } }
   });

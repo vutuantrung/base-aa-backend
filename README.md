@@ -1,137 +1,44 @@
-# base-aa-backend
+# AAB – PServer connector playground
 
-Extendable **TypeScript + Express + Socket.IO + SQLite** backend using business-boundary-first modular monolith architecture.
+Isolated branch from main at 82b6cb68e2016594d42731c2ae022ce43b638557. Only AAB–PServer communication is retained. No multi-namespace implementation yet.
 
-## Getting started
+## Run (Node.js 22+)
 
-Requires Node.js 22+ and build tooling for native `better-sqlite3`.
-
-```bash
+```sh
 npm install
-cp .env.example .env  # reference only: environment variables are not auto-loaded
+npm run pserver
+# separate terminal
 npm run dev
-npm run build
+```
+
+The mock PServer listens at 127.0.0.1:3001. AAB listens locally at 127.0.0.1:3000 and connects as a Socket.IO client to the default namespace / using Engine.IO path /ws. No ENABLE_TEST_PEERS flag is needed. Environment variables are read from the process; .env.example is reference only.
+
+## Try
+
+```sh
+curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:3001/health
+curl -X POST http://127.0.0.1:3000/messages -H 'Content-Type: application/json' -d '{"hello":"PServer"}'
+curl -X POST http://127.0.0.1:3001/messages -H 'Content-Type: application/json' -d '{"hello":"AAB"}'
+curl -X POST http://127.0.0.1:3001/demo/dispatch-task -H 'Content-Type: application/json' -d '{"task_id":"demo"}'
+```
+
+The /messages endpoints are local diagnostic triggers. The peer:message event is a direct test extension, no longer a peer-routing envelope or cross-peer workflow. Receipt is logged and acknowledged; no business execution or persistence. The existing session handshake and task session/VM validation are retained. Session state is in memory, and rejected session resume has no automatic fallback.
+
+## Files
+
+- src/main.ts: configuration and lifecycle.
+- src/app/create-app.ts: application composition, local HTTP diagnostics, connector lifecycle.
+- src/infrastructure/socket/pserver-connector.ts: Socket.IO client, session registration, task validation, direct messages.
+- testing/pserver.mjs: mock PServer.
+- tests/pserver-session.test.ts and tests/support/mock-pserver.ts: session protocol tests.
+- AGENTS.md: code-generation rules.
+
+Removed AAUI, EServer, SServer, peer routing, transformations, task and selection persistence, SQLite/catalog, and general channel/webhook routing. Main is not modified.
+
+```sh
+npm run typecheck
 npm test
+npm run build
+npm start
 ```
-
-For local environment configuration, export the values in `.env` using your shell or use Node's `--env-file=.env` when launching the compiled app. Default HTTP port is `3000` and default database is `./data/app.db`.
-
-## Business boundaries
-
-- **Session** (`src/modules/session`): `Session(id, name)` repository abstraction and SQLite implementation.
-- **Process Usage** (`src/modules/process-usage`): `ProcessUsage(id, pid, cpu, memory)` repository abstraction and SQLite implementation.
-- **Messaging** (`src/modules/messaging`): `SendMessage` use case using only transport-agnostic `MessagePublisher`.
-- **Infrastructure** (`src/infrastructure`): Express/Socket.IO adapters and database bootstrap.
-- **Shared contracts** (`src/shared`): message envelopes, channels, publisher/consumer interfaces, and connectable HTTP/Socket clients.
-
-Composition root is `src/app/create-app.ts`. Keep business code independent of transport and database libraries as features grow. SQLite is an embedded local database, **not a separate DB server**.
-
-## Endpoints
-
-| Method | URL | Description |
-|---|---|---|
-| GET | `/health` | Liveness |
-| GET | `/api/sessions` | List sessions |
-| GET | `/api/sessions/:id` | Find session |
-| POST | `/api/sessions` | `{ "name": "demo" }` |
-| GET | `/api/process-usage?pid=123` | List process usage, optional PID filter |
-| POST | `/api/process-usage` | `{ "pid": 123, "cpu": 12.5, "memory": 1024 }` |
-| POST | `/api/messages` | `{ "channel": "session", "event": "updated", "payload": {} }` |
-
-Socket.IO namespaces are `/session` and `/worker`. Send and receive the `message` event. The inbound socket message is `{ event, payload, correlationId? }`, while the outbound event is `{ id, channel, event, payload, timestamp, correlationId? }`.
-
-**HTTP to Socket:** POST `/api/messages` validates and publishes to a local bus, which broadcasts to all clients of the specified namespace.
-
-**Socket to Socket:** emitting `message` on a namespace publishes to the same bus and broadcasts to all clients in that namespace, including the sender. Client receives an optional acknowledgment `{ok, data}`.
-
-**Socket to HTTP clients:** HTTP is request/response, not a push channel. Connected HTTP clients can *send* using `HttpMessageClient`; reverse real-time delivery to an HTTP-only client requires polling, SSE or a webhook, not an ordinary pending HTTP response. Add an outbound `HttpWebhookAdapter` later if remote HTTP notifications are required.
-
-### Connectable interface
-
-```ts
-import { HttpMessageClient, SocketMessageClient } from './src/shared/transport/connectable-client.js';
-
-const http = new HttpMessageClient('http://localhost:3000');
-const socket = new SocketMessageClient('http://localhost:3000');
-await http.send({ channel: 'worker', event: 'started', payload: { pid: 123 } });
-await socket.send({ channel: 'session', event: 'created', payload: { name: 'x' } });
-await socket.close();
-```
-
-## Design and safety notes
-
-- The envelope is created once by the bus to prevent transport-forwarding loops. Only **inbound** requests publish; Socket.IO outbound events do not automatically republish.
-- Validation applies to HTTP requests and incoming socket messages. Payloads must be JSON serializable.
-- Set `API_KEY` to require `x-api-key` on `/api/*` and `auth.token` on socket connections. Production needs TLS, scoped credentials/authorization and rate limiting.
-- Message delivery is in-memory, best-effort and **not persistent**. Future durable delivery can use outbox, queue, or broker without changing publisher consumers.
-- Both namespaces use the same local bus but are isolated by channel. There is no automatic message cross-routing between `session` and `worker`; that should be an explicit business use case.
-- Add DB migrations before changing the schema after production deployment.
-
-## Phase 2 — Message Routing & Forwarding
-
-The HTTP and Socket.IO ingress adapters now publish through the transport-independent `MessageRouter`. It selects outbound transports from `RouteRegistry` and keeps a single message ID across every destination.
-
-Default routes preserve Phase 1 behavior: messages originating on `session` broadcast on `/session`, and messages originating on `worker` broadcast on `/worker`. Cross-channel forwarding and webhook delivery are **opt-in** through trusted application configuration.
-
-Example for embedding the app with custom routing rules:
-
-```ts
-import { createApplication } from './src/app/create-app.js';
-import { defaultRoutes } from './src/modules/messaging/route-registry.js';
-
-const app = createApplication({
-  dbPath: './data/app.db',
-  corsOrigin: 'http://localhost:5173',
-  webhooks: {
-    collector: { url: 'http://127.0.0.1:4000/events' }
-  },
-  routes: [
-    ...defaultRoutes(),
-    {
-      id: 'worker-usage-forward',
-      source: 'worker',
-      event: 'usage',
-      destinations: [
-        { transport: 'socket', channel: 'session' },
-        { transport: 'http', endpointId: 'collector' }
-      ]
-    }
-  ]
-});
-await app.listen(3000);
-```
-
-See [Phase 2 design and test guide](docs/PHASE_2_MESSAGE_ROUTING.md) for routing semantics, failure cases, security and limitations.
-
-**Delivery guarantees:** best-effort only; webhook POST is not the same as delivering a reverse response to an HTTP-only browser client. There is no durable retry, no route persistence and no remote subscriber acknowledgment yet.
-
-## AA / Browser / Extension read API
-
-Added the six GET endpoints specified in `api-data.json`. See [HTTP API design](docs/HTTP_API_DESIGN.md) for contracts and limitations. Records are stored locally in SQLite and can be populated via the internal `app.catalog.upsert*` repository methods; no additional public write API or mock records have been introduced.
-
-
-## Five-server integration playground (no new database functionality)
-
-The playground consists of AAB (:3000), PServer (:3001), EServer (:3002), SServer (:3003), and Electron AAUI (:3004). PServer exposes Socket.IO `/aab` at port 3001 and **AAB connects outbound to PServer**. EServer, SServer and AAUI continue connecting outbound to AAB's `/peers` namespace. AAUI also calls AAB's HTTP health API. No business forwarding between peers is configured yet.
-
-See [testing/README.md](testing/README.md). For AAB: `ENABLE_TEST_PEERS=1 npm run dev`. For the four peers, install dependencies within `testing/` and start each script in its own terminal. Keep this playground on localhost; use API_KEY for shared environments.
-
-
-## Peer message transformation (new)
-
-The opt-in `/peers` test gateway accepts `peer:message` with `from`, `to`, `kind`, `payload.type` and `payload.data`. AAB validates FROM against the authenticated connection, runs optional business transforms selected by FROM/TO/type, then forwards the transformed envelope to TO. Peer receives/logs and acknowledges. This contract is separate from the legacy Phase 2 channels. See [peer message design](docs/PEER_MESSAGE_TRANSFORMATION.md).
-
-
-### End-to-end demonstration
-
-For a concrete PServer -> AAB -> transformed payload -> AAUI example, run the testing environment and use `POST /demo/send-to-aaui` on PServer. [Step-by-step guide](docs/DEMO_PSERVER_AAUI.md).
-
-
-### PServer connection topology
-
-AAB initiates a Socket.IO client connection to `PSERVER_URL` (default `http://127.0.0.1:3001`) Socket.IO path `/ws` (namespace `/`). PServer is a Socket.IO server and no longer connects as a client to AAB. Other peers use `/peers` as before. PServer can still send messages through AAB and receive routed messages on the same AAB-established socket. See [testing guide](testing/README.md).
-
-
-### PServer session registration
-
-AAB now follows the connection protocol from `connect-socket-example.js`: Socket.IO `path: '/ws'`, namespace `/`, `automation_vm:session:connect` on connect, retained session ID on reconnect, and validation of incoming `activity:task:dispatch` by session and VM UDID. See [PServer protocol](docs/PSERVER_SESSION_PROTOCOL.md). The existing `peer:message` demo remains available after session registration.

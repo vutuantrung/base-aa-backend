@@ -1,60 +1,49 @@
 import { createServer } from 'node:http';
+import express from 'express';
 import { connectToPServer, type PServerConnectionConfig } from '../infrastructure/socket/pserver-connector.js';
-import { TransformationRegistry } from '../modules/peer-messaging/transformation-registry.js';
-import { SqliteAaCatalogRepository } from '../modules/aa-catalog/sqlite-catalog.js';
-import { openDatabase } from '../infrastructure/database/sqlite.js';
-import { SqliteSessionRepository } from '../modules/session/session.js';
-import { SqliteProcessUsageRepository } from '../modules/process-usage/process-usage.js';
-import { SendMessage } from '../modules/messaging/messaging.js';
-import { MessageRouter } from '../modules/messaging/message-router.js';
-import { RouteRegistry, defaultRoutes, type RouteRule } from '../modules/messaging/route-registry.js';
-import { createHttpApp } from '../infrastructure/http/http-server.js';
-import { HttpOutboundAdapter, type WebhookEndpoint } from '../infrastructure/http/http-outbound-adapter.js';
-import { attachSocketServer } from '../infrastructure/socket/socket-server.js';
-import { SocketOutboundAdapter } from '../infrastructure/socket/socket-outbound-adapter.js';
 
 export type ApplicationConfig = {
-  dbPath: string;
-  corsOrigin: string;
-  apiKey?: string;
-  enableTestPeers?: boolean;
-  /** Optional outbound Socket.IO connection using the PServer /ws session protocol. */
-  pserver?: Omit<PServerConnectionConfig, 'apiKey'>;
-  routes?: readonly RouteRule[];
-  webhooks?: Readonly<Record<string, WebhookEndpoint>>;
+  pserver: PServerConnectionConfig;
 };
 
 export function createApplication(config: ApplicationConfig) {
-  const db = openDatabase(config.dbPath);
-  const routes = new RouteRegistry(config.routes ?? defaultRoutes());
-  const transformations = new TransformationRegistry();
-  // HTTP server needs sender, and sender needs outbound socket hub: a narrow late-binding closure
-  // resolves the composition cycle without leaking transport details to application use cases.
-  let router: MessageRouter;
-  const sender = new SendMessage({ publish: message => router.publish(message) });
-  const sessions = new SqliteSessionRepository(db);
-  const usage = new SqliteProcessUsageRepository(db);
-  const catalog = new SqliteAaCatalogRepository(db);
-  const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sender, apiKey: config.apiKey }));
-  const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers, transformations });
-  const pserverConnector = sockets.peerGateway && config.pserver
-    ? connectToPServer({ ...config.pserver, apiKey: config.apiKey }, sockets.peerGateway)
-    : undefined;
-  router = new MessageRouter(routes, [
-    new SocketOutboundAdapter(sockets),
-    new HttpOutboundAdapter(config.webhooks ?? {})
-  ]);
+  const pserverConnector = connectToPServer(config.pserver);
+  const http = express();
+  http.use(express.json({ limit: '1mb' }));
+  http.get('/health', (_req, res) => {
+    res.json({ status: 'ok', pserverReady: pserverConnector.connected, sessionId: pserverConnector.sessionId ?? null });
+  });
+  http.post('/messages', async (req, res) => {
+    if (!pserverConnector.connected) {
+      res.status(503).json({ ok: false, error: 'PServer session not ready' });
+      return;
+    }
+    try {
+      await pserverConnector.sendMessage(req.body);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'Delivery failed' });
+    }
+  });
+  const httpServer = createServer(http);
+
   return {
-    httpServer, router, routes, transformations, sender, sessions, usage, catalog, pserverConnector,
+    httpServer,
+    pserverConnector,
     listen: (port: number) => new Promise<number>((resolve, reject) => {
       httpServer.once('error', reject);
-      httpServer.listen(port, () => { httpServer.off('error', reject); const address = httpServer.address(); pserverConnector?.connect(); resolve(typeof address === 'object' && address ? address.port : port); });
+      httpServer.listen(port, '127.0.0.1', () => {
+        httpServer.off('error', reject);
+        const address = httpServer.address();
+        pserverConnector.connect();
+        resolve(address && typeof address === 'object' ? address.port : port);
+      });
     }),
     close: async () => {
-      pserverConnector?.close();
-      await sockets.close();
-      if (httpServer.listening) await new Promise<void>((resolve, reject) => httpServer.close(err => err ? reject(err) : resolve()));
-      db.close();
+      pserverConnector.close();
+      if (httpServer.listening) {
+        await new Promise<void>((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
+      }
     }
   };
 }
