@@ -1,15 +1,35 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { io, type Socket } from 'socket.io-client';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { io } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
 import { createMockPServer } from './support/mock-pserver.js';
 
 let app: ReturnType<typeof createApplication>;
 let pserver: Awaited<ReturnType<typeof createMockPServer>>;
 let base: string;
+let storeDirectory: string;
+let oldStoreDirectory: string | undefined;
+
+function connect(peerId: string, instanceId?: string) {
+  const socket = io(`${base}/peers`, {
+    transports: ['websocket'], reconnection: false,
+    auth: { peerId, ...(instanceId ? { instanceId } : {}) }
+  });
+  const ready = new Promise<void>((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('connect_error', reject);
+  });
+  return { socket, ready };
+}
 
 before(async () => {
+  storeDirectory = await mkdtemp(join(tmpdir(), 'aab-task-roundtrip-'));
+  oldStoreDirectory = process.env.AAB_TASK_STORE_DIR;
+  process.env.AAB_TASK_STORE_DIR = storeDirectory;
   pserver = await createMockPServer();
   app = createApplication({
     dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true,
@@ -19,62 +39,92 @@ before(async () => {
   });
   base = `http://127.0.0.1:${await app.listen(0)}`;
   await pserver.arrival;
-  for (let i = 0; i < 100 && !app.pserverConnector?.connected; i++) {
+  for (let attempt = 0; attempt < 100 && !app.pserverConnector?.connected; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   assert.equal(app.pserverConnector?.connected, true);
 });
-after(async () => { if (app) await app.close(); if (pserver) await pserver.close(); });
 
-test('PServer sends task through AAB; AAUI acknowledges and returns finished task', async () => {
-  const aaui = io(`${base}/peers`, { transports: ['websocket'], reconnection: false,
-    auth: { peerId: 'aaui' } });
-  await new Promise<void>((resolve, reject) => {
-    aaui.once('connect', resolve);
-    aaui.once('connect_error', reject);
-  });
+after(async () => {
+  if (app) await app.close();
+  if (pserver) await pserver.close();
+  if (oldStoreDirectory === undefined) delete process.env.AAB_TASK_STORE_DIR;
+  else process.env.AAB_TASK_STORE_DIR = oldStoreDirectory;
+  if (storeDirectory) await rm(storeDirectory, { recursive: true, force: true });
+});
+
+test('F08/F09 task lifecycle: PServer -> AAB -> EServer, with AAUI notifications', async () => {
+  const e = connect('eserver', 'e-roundtrip');
+  const ui = connect('aaui');
+  await Promise.all([e.ready, ui.ready]);
   const remote = pserver.connected;
   assert.ok(remote);
 
   const task = {
     id: `task-${randomUUID()}`, status: 'inProgress', config: 'mock-config',
-    createdTime: Date.now() - 200, updatedTime: Date.now() - 100
+    createdTime: Date.now(), updatedTime: Date.now()
   };
-  const resultPromise = new Promise<{ from: string; to: string; payload: { data: typeof task } }>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('No task result arrived')), 3000);
-    remote.once('peer:message', (message, ack) => {
-      clearTimeout(timeout);
-      ack({ ok: true });
-      resolve(message);
-    });
-  });
-
   try {
-    aaui.on('peer:message', (message, ack) => {
-      ack({ ok: true });
-      if (message.payload?.type !== 'demo.task.request') return;
-      assert.deepEqual(message.payload.data, task);
-      setTimeout(() => {
-        void aaui.timeout(2000).emitWithAck('peer:message', {
-          kind: 'response', from: 'aaui', to: 'pserver',
-          payload: { type: 'demo.task.result', data: {
-            ...task, status: 'finished', updatedTime: Date.now()
-          } }
-        });
-      }, 35);
+    const delivered = new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('EServer did not receive F08 task')), 3000);
+      e.socket.once('peer:message', (message, ack) => {
+        clearTimeout(timeout);
+        ack({ ok: true, status: 'received' });
+        resolve(message);
+      });
     });
-
-    const response: any = await remote.timeout(2500).emitWithAck('peer:message', {
-      kind: 'request', from: 'pserver', to: 'aaui',
+    const taskLifecycle = new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('AAUI did not receive F08 lifecycle event')), 3000);
+      ui.socket.on('task:lifecycle', value => {
+        if (value.task?.id !== task.id) return;
+        clearTimeout(timeout);
+        resolve(value);
+      });
+    });
+    const receipt: any = await remote.timeout(3000).emitWithAck('peer:message', {
+      kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'e-roundtrip',
       payload: { type: 'demo.task.request', data: task }
     });
-    assert.equal(response.ok, true);
-    const result = await resultPromise;
-    assert.equal(result.from, 'aaui');
-    assert.equal(result.to, 'pserver');
-    assert.equal(result.payload.data.id, task.id);
-    assert.equal(result.payload.data.status, 'finished');
-    assert.equal(result.payload.data.config, task.config);
-    assert.ok(result.payload.data.updatedTime >= task.updatedTime);
-  } finally { aaui.disconnect(); }
+    assert.equal(receipt.ok, true);
+    assert.equal(receipt.status, 'received');
+    assert.deepEqual((await delivered).payload.data, task);
+    assert.deepEqual(JSON.parse(await readFile(join(storeDirectory, `${task.id}.json`), 'utf8')), task);
+    const lifecycle = await taskLifecycle;
+    assert.equal(lifecycle.status, 'received');
+    assert.equal(lifecycle.instanceId, 'e-roundtrip');
+    assert.deepEqual(lifecycle.task, task);
+
+    const finished = { ...task, status: 'finished', updatedTime: task.updatedTime + 1000 };
+    const returned = new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('PServer did not receive F09 result')), 3000);
+      remote.once('peer:message', (message, ack) => {
+        clearTimeout(timeout);
+        ack({ ok: true });
+        resolve(message);
+      });
+    });
+    const resultLifecycle = new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('AAUI did not receive F09 lifecycle event')), 3000);
+      ui.socket.on('task:result:lifecycle', value => {
+        if (value.task?.id !== task.id || value.status !== 'forwarded') return;
+        clearTimeout(timeout);
+        resolve(value);
+      });
+    });
+    const resultReceipt: any = await e.socket.timeout(3000).emitWithAck('peer:message', {
+      kind: 'response', from: 'eserver', to: 'pserver',
+      payload: { type: 'demo.task.result', data: finished }
+    });
+    assert.equal(resultReceipt.ok, true);
+    assert.equal(resultReceipt.status, 'received');
+    assert.deepEqual((await returned).payload.data, finished);
+    assert.deepEqual(JSON.parse(await readFile(join(storeDirectory, `${task.id}.result.json`), 'utf8')), finished);
+    const resultEvent = await resultLifecycle;
+    assert.equal(resultEvent.status, 'forwarded');
+    assert.equal(resultEvent.instanceId, 'e-roundtrip');
+    assert.deepEqual(resultEvent.task, finished);
+  } finally {
+    e.socket.disconnect();
+    ui.socket.disconnect();
+  }
 });

@@ -37,10 +37,11 @@ export function connectToPServer(
   config: PServerConnectionConfig,
   gateway: ReturnType<typeof attachPeerGateway>
 ) {
-  console.log('[AAB] Connecting to PServer with config:', config);
+  const { apiKey, ...safeConfig } = config;
+  console.log('[AAB] Connecting to PServer with config:', safeConfig);
   if (!config.vmInfo.udid.trim()) throw new Error('PServer VM UDID is required');
 
-  const { url, apiKey, vmInfo } = config;
+  const { url, vmInfo } = config;
   let sessionId: string | undefined;
   let sessionReady = false;
   const client = io(url, {
