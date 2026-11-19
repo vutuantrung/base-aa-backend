@@ -12,11 +12,20 @@ import { createHttpApp } from '../infrastructure/http/http-server.js';
 import { HttpOutboundAdapter, type WebhookEndpoint } from '../infrastructure/http/http-outbound-adapter.js';
 import { attachSocketServer } from '../infrastructure/socket/socket-server.js';
 import { SocketOutboundAdapter } from '../infrastructure/socket/socket-outbound-adapter.js';
+import type { Server as HttpServer } from 'node:http';
+
+type ApplicationInstance = {
+  httpServer: HttpServer; router: MessageRouter; routes: RouteRegistry; transformations: TransformationRegistry;
+  sender: SendMessage; sessions: SqliteSessionRepository | undefined; usage: SqliteProcessUsageRepository | undefined;
+  catalog: SqliteAaCatalogRepository | undefined; pserverConnector: ReturnType<typeof connectToPServer> | undefined;
+  listen: (port: number) => Promise<number>; close: () => Promise<void>;
+};
 
 export type ApplicationConfig = {
   dbPath: string;
   corsOrigin: string;
   apiKey?: string;
+  enableSqlite?: boolean;
   enableTestPeers?: boolean;
   /** Optional outbound Socket.IO connection using the PServer /ws session protocol. */
   pserver?: Omit<PServerConnectionConfig, 'apiKey'>;
@@ -24,18 +33,22 @@ export type ApplicationConfig = {
   webhooks?: Readonly<Record<string, WebhookEndpoint>>;
 };
 
-export function createApplication(config: ApplicationConfig) {
-  const db = openDatabase(config.dbPath);
+export function createApplication(config: ApplicationConfig & { enableSqlite?: true }): ApplicationInstance & { sessions: SqliteSessionRepository; usage: SqliteProcessUsageRepository; catalog: SqliteAaCatalogRepository };
+export function createApplication(config: ApplicationConfig & { enableSqlite: false }): ApplicationInstance;
+export function createApplication(config: ApplicationConfig): ApplicationInstance;
+export function createApplication(config: ApplicationConfig): ApplicationInstance {
+  const sqliteEnabled = config.enableSqlite ?? true;
+  const db = sqliteEnabled ? openDatabase(config.dbPath) : undefined;
   const routes = new RouteRegistry(config.routes ?? defaultRoutes());
   const transformations = new TransformationRegistry();
   // HTTP server needs sender, and sender needs outbound socket hub: a narrow late-binding closure
   // resolves the composition cycle without leaking transport details to application use cases.
   let router: MessageRouter;
   const sender = new SendMessage({ publish: message => router.publish(message) });
-  const sessions = new SqliteSessionRepository(db);
-  const usage = new SqliteProcessUsageRepository(db);
-  const catalog = new SqliteAaCatalogRepository(db);
-  const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sender, apiKey: config.apiKey }));
+  const sessions = db ? new SqliteSessionRepository(db) : undefined;
+  const usage = db ? new SqliteProcessUsageRepository(db) : undefined;
+  const catalog = db ? new SqliteAaCatalogRepository(db) : undefined;
+  const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sqliteEnabled, sender, apiKey: config.apiKey }));
   const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers, transformations });
   const pserverConnector = sockets.peerGateway && config.pserver
     ? connectToPServer({ ...config.pserver, apiKey: config.apiKey }, sockets.peerGateway)
@@ -54,7 +67,7 @@ export function createApplication(config: ApplicationConfig) {
       pserverConnector?.close();
       await sockets.close();
       if (httpServer.listening) await new Promise<void>((resolve, reject) => httpServer.close(err => err ? reject(err) : resolve()));
-      db.close();
+      db?.close();
     }
   };
 }

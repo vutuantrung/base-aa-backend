@@ -4,7 +4,7 @@ import { createMockVmInfo } from './shared/mock-vm-info.mjs';
 
 export const SEND_VM_INFO_TIME = 20_000; // VM information: 20 seconds
 
-const port = Number(process.env.ESERVER_PORT ?? 3002);
+const port = Number(process.env.PORT ?? process.env.ESERVER_PORT ?? 3002);
 if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error('Invalid ESERVER_PORT');
 const instanceId = process.env.ESERVER_INSTANCE_ID ?? `eserver-${port}`;
 if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(instanceId)) throw new Error('Invalid ESERVER_INSTANCE_ID');

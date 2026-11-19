@@ -1,10 +1,17 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
+import type Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export function openDatabase(dbPath: string): Database.Database {
+  let DatabaseConstructor: typeof Database;
+  try {
+    DatabaseConstructor = createRequire(import.meta.url)('better-sqlite3');
+  } catch (error) {
+    throw new Error('SQLite is enabled but better-sqlite3 is unavailable. Install the optional dependency or set ENABLE_SQLITE=0.', { cause: error });
+  }
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath);
+  const db = new DatabaseConstructor(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(`
