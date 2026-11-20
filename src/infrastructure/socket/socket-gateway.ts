@@ -4,7 +4,7 @@ import type { TransformationRegistry } from '../../modules/peer-messaging/transf
 import type { Server as HttpServer } from 'node:http';
 import { z } from 'zod';
 import { CHANNELS, type Channel, type MessageEnvelope } from '../../shared/contracts/message.js';
-import type { SendMessage } from '../../modules/messaging/messaging.js';
+import type { MessageSender } from '../../modules/messaging/messaging.js';
 
 const inboundMessage = z.object({ event: z.string().min(1).max(100), payload: z.unknown(), correlationId: z.string().max(200).optional() });
 type Ack = (result: { ok: true; data: MessageEnvelope } | { ok: false; error: string }) => void;
@@ -14,7 +14,7 @@ export interface SocketMessageHub {
 }
 
 /** M05 owns the Socket.IO server, namespaces, authentication and socket lifecycle. */
-export function createSocketGateway(http: HttpServer, deps: { sender: SendMessage; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean; transformations?: TransformationRegistry }) {
+export function createSocketGateway(http: HttpServer, deps: { sender: MessageSender; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean; transformations?: TransformationRegistry }) {
   const io = new Server(http, { cors: { origin: deps.corsOrigin }, maxHttpBufferSize: 1_000_000 });
   let peerGateway: ReturnType<typeof attachPeerGateway> | undefined;
   if (deps.enableTestPeers) {

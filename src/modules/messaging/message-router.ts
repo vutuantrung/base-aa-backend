@@ -19,20 +19,23 @@ export class MessageRouter implements MessagePublisher {
   }
 
   async publish(message: NewMessage): Promise<MessageEnvelope> {
-    const envelope: MessageEnvelope = {
-      id: randomUUID(),
-      ...message,
-      timestamp: new Date().toISOString()
-    };
-    const destinations = this.routes.resolve(message.channel, message.event);
-    // Plan and validate the entire dispatch before sending to avoid config-related partial delivery.
-    const plan = destinations.map(destination => {
+    const envelope = this.createEnvelope(message);
+    const plan = this.planDispatch(envelope);
+    // Runtime failures may cause partial delivery; Phase 5 will add durable retries.
+    await Promise.all(plan.map(({ adapter, destination }) => adapter.deliver(envelope, destination)));
+    return envelope;
+  }
+
+  private createEnvelope(message: NewMessage): MessageEnvelope {
+    return { id: randomUUID(), ...message, timestamp: new Date().toISOString() };
+  }
+
+  /** Resolve destinations and validate all adapter capabilities before the first delivery. */
+  private planDispatch(message: MessageEnvelope) {
+    return this.routes.resolve(message.channel, message.event).map(destination => {
       const adapter = this.adapters.get(destination.transport);
       if (!adapter) throw new Error(`Missing adapter for transport: ${destination.transport}`);
       return { adapter, destination };
     });
-    // Runtime failures may cause partial delivery; Phase 5 will add durable retries.
-    await Promise.all(plan.map(({ adapter, destination }) => adapter.deliver(envelope, destination)));
-    return envelope;
   }
 }
