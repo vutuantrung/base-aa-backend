@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { incomingPeerMessageSchema, type IncomingPeerMessage, type PeerMessage, type PeerMessageAck, type PeerId } from './contracts.js';
-import { TransformationRegistry } from './transformation-registry.js';
+import { executeTransformations, TransformationExecutionError, TransformationRegistry } from './transformation-registry.js';
 
 export class PeerMessageError extends Error {
   constructor(readonly code: 'INVALID_MESSAGE' | 'SENDER_MISMATCH' | 'DESTINATION_OFFLINE' | 'TRANSFORMATION_FAILED' | 'DELIVERY_FAILED' | 'UNSUPPORTED_DESTINATION' | 'AMBIGUOUS_DESTINATION', message: string) {
@@ -35,26 +35,21 @@ export class PeerMessageService {
       ...(authenticatedFrom === 'eserver' && authenticatedInstanceId ? { sourceInstanceId: authenticatedInstanceId } : {}),
       payload: structuredClone(input.payload)
     };
-    let message = original;
-    const processedBy: string[] = [];
-    for (const rule of this.transformations.resolve(original)) {
-      try {
-        // Clone input before each plugin to prevent accidental mutation of the original message.
-        const next = await rule.transformer.transform(structuredClone(message), { from: original.from, to: original.to });
-        if (!next || typeof next.type !== 'string' || !next.type.trim() ||
-            typeof next.version !== 'string' || next.data === undefined) throw new Error('Invalid transformed payload');
-        message = { ...message, payload: structuredClone(next) };
-        processedBy.push(rule.id);
-      } catch (error) {
-        throw new PeerMessageError('TRANSFORMATION_FAILED',
-          `Transformer ${rule.id} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-      }
+    const execution = executeTransformations(this.transformations, original);
+    let result;
+    try {
+      result = execution instanceof Promise ? await execution : execution;
+    } catch (error) {
+      if (error instanceof TransformationExecutionError)
+        throw new PeerMessageError('TRANSFORMATION_FAILED', error.message);
+      throw error;
     }
-    message = {
-      ...message,
+    const message: PeerMessage = {
+      ...original,
+      payload: result.payload,
       processing: {
-        transformed: processedBy.length > 0,
-        processedBy,
+        transformed: result.processedBy.length > 0,
+        processedBy: result.processedBy,
         timestamp: Date.now()
       }
     };

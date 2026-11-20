@@ -95,3 +95,69 @@ test('authenticated EServer instance is copied to source metadata', async () => 
   const result = await service.process({ ...input, from: 'eserver', to: 'aab' }, 'eserver', 'instance-auth');
   assert.equal(result.sourceInstanceId, 'instance-auth');
 });
+
+test('local AAB messages still transform and receive processing metadata without delivery', async () => {
+  const registry = new TransformationRegistry();
+  registry.register({ id: 'local-transform', from: '*', to: 'aab', payloadType: '*', priority: 1,
+    transformer: { transform(message) { return { ...message.payload, type: 'local.transformed' }; } } });
+  let delivered = false;
+  const service = new PeerMessageService(registry, {
+    isConnected() { assert.fail('AAB is local and does not require destination availability'); },
+    async deliver() { delivered = true; }
+  });
+  const result = await service.process({ ...input, to: 'aab' }, 'pserver');
+  assert.equal(result.payload.type, 'local.transformed');
+  assert.deepEqual(result.processing?.processedBy, ['local-transform']);
+  assert.equal(result.processing?.transformed, true);
+  assert.equal(typeof result.processing?.timestamp, 'number');
+  assert.equal(delivered, false);
+});
+
+test('beforeDeliver runs after transformations and its errors retain delivery classification', async () => {
+  const sequence: string[] = [];
+  const registry = new TransformationRegistry();
+  registry.register({ id: 'hook-order', from: '*', to: '*', payloadType: '*', priority: 1,
+    transformer: { transform(message) { sequence.push('transform'); return message.payload; } } });
+  const service = new PeerMessageService(registry, {
+    isConnected: () => true,
+    async beforeDeliver(message) {
+      sequence.push(`before:${message.processing?.processedBy.join(',')}`);
+      throw new Error('hook failed');
+    },
+    async deliver() { sequence.push('deliver'); }
+  });
+  await assert.rejects(service.process(input, 'pserver'), (error: unknown) =>
+    error instanceof PeerMessageError && error.code === 'DELIVERY_FAILED' && error.message === 'hook failed');
+  assert.deepEqual(sequence, ['transform', 'before:hook-order']);
+});
+
+test('transformer envelope mutations do not replace M10-owned message metadata', async () => {
+  const registry = new TransformationRegistry();
+  registry.register({ id: 'mutates-clone', from: '*', to: '*', payloadType: '*', priority: 1,
+    transformer: { transform(message) {
+      Object.assign(message, {
+        id: '00000000-0000-4000-8000-000000000000', version: '9.0', kind: 'response',
+        from: 'pserver', to: 'sserver', channel: 'changed', event: 'changed', timestamp: -1,
+        sourceInstanceId: 'spoofed', correlationId: 'changed', causationId: 'changed'
+      });
+      return message.payload;
+    } } });
+  const service = new PeerMessageService(registry, {
+    isConnected() { assert.fail('AAB is local'); }, async deliver() { assert.fail('AAB does not deliver'); }
+  });
+  const result = await service.process({
+    ...input, id: '62e3e41d-438d-4a15-95b7-d63832f005f4', from: 'eserver', to: 'aab',
+    correlationId: 'corr-original', causationId: 'cause-original', channel: 'worker', event: 'message'
+  }, 'eserver', 'authenticated-instance');
+  assert.equal(result.id, '62e3e41d-438d-4a15-95b7-d63832f005f4');
+  assert.equal(result.version, '1.0');
+  assert.equal(result.kind, 'request');
+  assert.equal(result.from, 'eserver');
+  assert.equal(result.to, 'aab');
+  assert.equal(result.channel, 'worker');
+  assert.equal(result.event, 'message');
+  assert.equal(result.sourceInstanceId, 'authenticated-instance');
+  assert.equal(result.correlationId, 'corr-original');
+  assert.equal(result.causationId, 'cause-original');
+  assert.ok(result.timestamp > 0);
+});
