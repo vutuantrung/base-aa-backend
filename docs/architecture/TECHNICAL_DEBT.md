@@ -4,7 +4,7 @@ Initial consolidation from historical R6 reports, source reviews and R0–R8 han
 
 | ID | Type | Area / finding | Impact | Proposed step / acceptance evidence |
 |---|---|---|---|---|
-| TD01 | O | M04 protocol still type-imports M03 concrete transport; M08 shared compatibility barrel imports infrastructure; M09/M10 contracts in shared/type dependencies; concrete app repository types | Dependency clarity | R7.1.B–E: protocol transport port, integration-client boundary, app composition review, then separately authorized enforcement; R7.1.A removed M01 infrastructure type dependency |
+| TD01 | O | M08 shared compatibility barrel imports infrastructure; M09/M10 contracts in shared/type dependencies; concrete app repository types | Dependency clarity | R7.1.C–E: integration-client boundary, app composition review, then separately authorized enforcement; R7.1.A/B removed M01/M04 infrastructure type dependencies |
 | TD02 | H | M05/M06 identity registered before namespace connection callback (R6.2.C §11) | Aborted handshake may reserve stale identity | R7.2: controlled pause/abort/reconnect same identity test before fix |
 | TD03 | H | M04 stale registration ACK across disconnect/reconnect; resume rejection recovery (R6.2.A, handoff BC02) | Incorrect session readiness | R7.2: generation/late ACK and rejected resume tests, approve recovery policy |
 | TD04 | H | M10 destination changes during async transformation (R6.3.B/C) | Offline or new ambiguity between selection/delivery | R7.2/3: deterministic mid-transform topology tests, define expected error |

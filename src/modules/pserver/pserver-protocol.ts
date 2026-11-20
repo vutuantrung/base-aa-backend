@@ -1,6 +1,5 @@
 import type { PeerMessage, PeerMessageAck } from '../peer-messaging/contracts.js';
-import type { PServerTransport } from '../../infrastructure/socket/pserver-transport.js';
-import type { VmInfo } from './contracts.js';
+import type { PServerTransport, VmInfo } from './contracts.js';
 
 export const SESSION_CONNECT_EVENT = 'automation_vm:session:connect';
 export const DISPATCH_EVENT = 'activity:task:dispatch';

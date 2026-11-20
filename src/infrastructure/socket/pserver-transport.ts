@@ -1,14 +1,7 @@
 import { io } from 'socket.io-client';
+import type { PServerTransport, TransportEventHandler } from '../../modules/pserver/contracts.js';
 
-export type TransportEventHandler = (...arguments_: unknown[]) => void;
-
-export interface PServerTransport {
-  readonly connected: boolean;
-  on(event: string, handler: TransportEventHandler): () => void;
-  emitWithAck<T>(event: string, payload: unknown, timeoutMs: number): Promise<T>;
-  connect(): void;
-  close(): void;
-}
+export type { PServerTransport, TransportEventHandler } from '../../modules/pserver/contracts.js';
 
 /** Socket.IO mechanics for the outbound PServer connection. */
 export function createPServerTransport(config: { url: string; path?: string; apiKey?: string }): PServerTransport {

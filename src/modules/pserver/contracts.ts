@@ -14,3 +14,13 @@ export interface PServerConnectionConfig {
   vmInfo: VmInfo;
   apiKey?: string;
 }
+
+export type TransportEventHandler = (...arguments_: unknown[]) => void;
+
+export interface PServerTransport {
+  readonly connected: boolean;
+  on(event: string, handler: TransportEventHandler): () => void;
+  emitWithAck<T>(event: string, payload: unknown, timeoutMs: number): Promise<T>;
+  connect(): void;
+  close(): void;
+}
