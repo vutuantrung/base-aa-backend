@@ -1,10 +1,8 @@
 import type Database from 'better-sqlite3';
-export type ProcessUsage = { id: number; pid: number; cpu: number; memory: number };
-export type NewProcessUsage = Omit<ProcessUsage, 'id'>;
-export interface ProcessUsageRepository {
-  list(pid?: number): ProcessUsage[];
-  create(value: NewProcessUsage): ProcessUsage;
-}
+import type { NewProcessUsage, ProcessUsage, ProcessUsageRepository } from './contracts.js';
+
+export type { NewProcessUsage, ProcessUsage, ProcessUsageRepository } from './contracts.js';
+
 export class SqliteProcessUsageRepository implements ProcessUsageRepository {
   constructor(private readonly db: Database.Database) {}
   list(pid?: number): ProcessUsage[] {

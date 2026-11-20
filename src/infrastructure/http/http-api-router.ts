@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createAaCatalogRouter } from './aa-catalog-router.js';
 import type { AaCatalogRepository } from '../../modules/aa-catalog/contracts.js';
 import type { SessionRepository } from '../../modules/session/contracts.js';
-import type { ProcessUsageRepository } from '../../modules/process-usage/process-usage.js';
+import type { ProcessUsageRepository } from '../../modules/process-usage/contracts.js';
 import type { MessageEnvelope, NewMessage } from '../../shared/contracts/message.js';
 
 export interface HttpMessageSender {
