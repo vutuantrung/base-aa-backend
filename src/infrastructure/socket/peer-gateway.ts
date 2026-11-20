@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { JsonTaskFileStore } from '../../modules/task-workflow/task-file-store.js';
 import { TaskWorkflow } from '../../modules/task-workflow/task-workflow.js';
-import { JsonResourceSelectionStore, resourceSelectionSchema, type StoredSelection } from '../../modules/peer-messaging/resource-selection-store.js';
+import { JsonResourceSelectionStore } from '../../modules/resource-selection/resource-selection-store.js';
+import { ResourceSelectionWorkflow } from '../../modules/resource-selection/resource-selection-workflow.js';
 import type { Server } from 'socket.io';
-import { type PeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
+import type { PeerId, PeerMessageAck } from '../../modules/peer-messaging/contracts.js';
 import { PeerMessageService, processPeerMessageForAck } from '../../modules/peer-messaging/peer-message-service.js';
 import { PeerDestinationPolicy, type PServerPeerTransport } from '../../modules/peer-messaging/peer-destination-policy.js';
 import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
@@ -11,6 +11,7 @@ import { PeerDirectory } from '../../modules/peer-messaging/peer-directory.js';
 import { createSocketPeerGateway, type PeerSocketConnection } from './socket-peer-gateway.js';
 import { SocketPeerMessageDelivery } from './socket-peer-message-delivery.js';
 import { sendTaskHistorySnapshot } from './task-history-snapshot.js';
+import { sendResourceSelectionSnapshot } from './resource-selection-snapshot.js';
 
 export interface ExternalPeerTransport extends PServerPeerTransport {}
 
@@ -57,91 +58,25 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     publishTaskLifecycle: notification => getConnection('aaui')?.emit('task:lifecycle', notification),
     publishTaskResultLifecycle: notification => getConnection('aaui')?.emit('task:result:lifecycle', notification)
   });
-
-  function publishSelection(record: StoredSelection): void {
-    getConnection('aaui')?.emit('resource-selection:updated', record);
-  }
-
-  async function receiveSelection(value: unknown): Promise<PeerMessageAck> {
-    const parsed = incomingPeerMessageSchema.safeParse(value);
-    if (!parsed.success || parsed.data.from !== 'aaui' || parsed.data.to !== 'pserver' ||
-        parsed.data.payload.type !== 'demo.resource-selection') {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection envelope' };
-    }
-    const selection = resourceSelectionSchema.safeParse(parsed.data.payload.data);
-    if (!selection.success) {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection IDs' };
-    }
-
-    let record: StoredSelection;
-    try {
-      record = await selectionStore.save(selection.data);
-    } catch (error) {
-      console.error('[AAB] RESOURCE SELECTION PERSIST FAILED', error);
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist resource selection' };
-    }
-
-    publishSelection(record);
-    console.log('[AAB] RESOURCE SELECTION SAVED', record.id);
-
-    const messageId = parsed.data.id ?? randomUUID();
-    setImmediate(() => {
-      void (async () => {
-        let status: 'forwarded' | 'forwardFailed' = 'forwarded';
-        let reason: string | undefined;
-        try {
-          await service.process({ ...parsed.data, id: messageId }, 'aaui');
-          console.log('[AAB] RESOURCE SELECTION FORWARDED', record.id);
-        } catch (error) {
-          status = 'forwardFailed';
-          reason = error instanceof Error ? error.message : String(error);
-          console.error('[AAB] RESOURCE SELECTION FORWARD FAILED', record.id, reason);
-        }
-        // A failure to write monitoring metadata must never reclassify a
-        // successfully delivered message as a PServer delivery failure.
-        try {
-          await selectionStore.updateDelivery(record.id, status, reason);
-        } catch (storeError) {
-          console.error('[AAB] RESOURCE SELECTION STATUS STORE FAILED', record.id, storeError);
-        }
-        publishSelection({
-          ...record, deliveryStatus: status,
-          ...(reason ? { deliveryError: reason } : {})
-        });
-      })();
-    });
-
-    const envelope: PeerMessage = {
-      ...parsed.data, id: messageId, timestamp: Date.now(),
-      payload: structuredClone(parsed.data.payload)
-    };
-    return { ok: true, status: 'received', data: envelope };
-  }
+  const selectionWorkflow = new ResourceSelectionWorkflow({
+    store: selectionStore,
+    processMessage: (value, authenticatedFrom) => service.process(value, authenticatedFrom),
+    defer: work => { setImmediate(() => { void work(); }); },
+    publishUpdated: record => getConnection('aaui')?.emit('resource-selection:updated', record)
+  });
 
   function isCurrentAaui(connection: PeerSocketConnection): boolean {
     return connection.peerId === 'aaui' && directory.lookup('aaui')?.connectionId === connection.connectionId;
   }
 
   async function sendSelectionSnapshot(connection: PeerSocketConnection): Promise<void> {
-    if (!isCurrentAaui(connection)) return;
-    try {
-      const records = await selectionStore.listRecent(50);
-      if (!connection.connected || !isCurrentAaui(connection)) return;
-      connection.emit('resource-selection:snapshot', { records, timestamp: Date.now() });
-    } catch (error) {
-      console.error('[AAB] RESOURCE SELECTION SNAPSHOT FAILED', error);
-      if (connection.connected && isCurrentAaui(connection)) {
-        connection.emit('resource-selection:snapshot', {
-          records: [], timestamp: Date.now(), error: 'Could not load saved selections'
-        });
-      }
-    }
+    await sendResourceSelectionSnapshot(connection, () => isCurrentAaui(connection), selectionWorkflow);
   }
 
   async function handleMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
     if (authenticatedFrom === 'aaui' && value && typeof value === 'object' &&
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.resource-selection') {
-      return receiveSelection(value);
+      return selectionWorkflow.receiveSelection(value);
     }
     if (authenticatedFrom === 'pserver' && value && typeof value === 'object' &&
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.request') {
