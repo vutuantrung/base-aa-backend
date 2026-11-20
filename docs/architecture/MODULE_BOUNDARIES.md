@@ -1,6 +1,6 @@
 # AAB — Module boundaries
 
-All file paths below are relative to `src/` unless noted; brace notation expands to actual filenames. Logical responsibility/dependency inventory, not a computed import graph. Classifications originate in R0–R8 handoff §6 and R6 reports. R6 review accepted each boundary; formal closure and R7.1 static dependency verification remain pending.
+All file paths below are relative to `src/` unless noted; brace notation expands to actual filenames. Logical responsibility/dependency inventory, not a computed import graph. Classifications originate in R0–R8 handoff §6 and R6 reports. R6 Closure is accepted. The separate R7.1.0 inventory is in [DEPENDENCY_INVENTORY.md](DEPENDENCY_INVENTORY.md); enforcement and any corrective implementation remain pending review/authorization.
 
 | ID | Module | Canonical files | Ownership/state | Capabilities and consumers (logical, not import graph) | Class | Evidence |
 |---|---|---|---|---|---|---|

@@ -17,7 +17,7 @@ TypeScript/ESM/NodeNext, Express, Socket.IO, optional better-sqlite3, native nod
 F03 SServer status and F04 EServer VM info forwarded to AAUI through existing PM paths. F08 PServer task request: validate, capture EServer target, persist, notify receipt, ACK received, defer forwarding; unresolved/offline target fails later. F09 EServer result: validate correlation with stored request, persist result, ACK received, defer PServer delivery using authenticated source instance. M12 history prefers finished results. M13 selection: validate, save normalized receipt, emit pending record, capture distinct message ID, ACK original parsed payload, defer M10 processing, independently persist delivery outcome and publish update. Status write failure does not reclassify delivery. Both snapshot adapters guard original current/connected AAUI around async reads. Receipt is write completion, not fsync or downstream ACK; no durable forwarding queue. Catalog ExtensionTask is not M12 task; generic session is not M04 session or GM channel; catalog AaConnection is not live peer identity.
 
 ## Roadmap
-R0–R5: System Context, Responsibility Discovery, L2 Decomposition, Module Boundaries, Dependency/State, Public Contracts. R6: extraction and behavior preservation (R6.0, R6.1, R6.2 A–C, R6.3 A–C, R6.4 A–E); closure pending. R7:
+R0–R5: System Context, Responsibility Discovery, L2 Decomposition, Module Boundaries, Dependency/State, Public Contracts. R6: extraction and behavior preservation (R6.0, R6.1, R6.2 A–C, R6.3 A–C, R6.4 A–E); closure accepted. R7.1.0 dependency inventory is audit-only; R7.1.A implementation awaits review/authorization. R7:
 | Step | Scope |
 |---|---|
 | R7.1 | Dependency direction / contract ownership |
