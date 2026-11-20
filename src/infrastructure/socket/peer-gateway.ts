@@ -2,16 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { JsonTaskFileStore, taskSchema } from '../../modules/peer-messaging/task-file-store.js';
 import { JsonResourceSelectionStore, resourceSelectionSchema, type StoredSelection } from '../../modules/peer-messaging/resource-selection-store.js';
-import type { Server, Socket } from 'socket.io';
-import { type PeerId, type ClientPeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
+import type { Server } from 'socket.io';
+import { type PeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
 import { PeerMessageService, PeerMessageError } from '../../modules/peer-messaging/peer-message-service.js';
 import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
-
-const peerAuth = z.object({
-  peerId: z.enum(['eserver', 'sserver', 'aaui']),
-  instanceId: z.string().trim().min(1).max(100).optional(),
-  token: z.string().optional()
-});
+import { PeerDirectory } from '../../modules/peer-messaging/peer-directory.js';
+import { createSocketPeerGateway, type PeerSocketConnection } from './socket-peer-gateway.js';
 
 export interface ExternalPeerTransport {
   isConnected(): boolean;
@@ -23,31 +19,25 @@ export interface ExternalPeerTransport {
  * SServer and AAUI retain their single-connection behavior.
  */
 export function attachPeerGateway(io: Server, apiKey: string | undefined, transformations: TransformationRegistry) {
-  const peers = io.of('/peers');
-  const singlePeers = new Map<'sserver' | 'aaui', Socket>();
-  const eservers = new Map<string, Socket>();
+  const directory = new PeerDirectory();
+  const connections = createSocketPeerGateway(io, apiKey, directory);
   let pserverTransport: ExternalPeerTransport | undefined;
   const taskStore = new JsonTaskFileStore();
   const selectionStore = new JsonResourceSelectionStore();
 
+  function getConnection(peerId: 'eserver' | 'sserver' | 'aaui', instanceId?: string): PeerSocketConnection | undefined {
+    const identity = directory.lookup(peerId, instanceId);
+    return identity ? connections.getConnection(identity.connectionId) : undefined;
+  }
+
   // Transport presence is distinct from the 10s/20s application message streams.
   // Socket.IO events for each AAUI connection are sent in order.
   function presenceSnapshot() {
-    return {
-      peerId: 'eserver',
-      timestamp: Date.now(),
-      instances: [...eservers.entries()].map(([instanceId, socket]) => ({
-        peerId: 'eserver',
-        instanceId,
-        status: 'online',
-        socketId: socket.id,
-        timestamp: Date.now()
-      }))
-    };
+    return directory.presenceSnapshot();
   }
 
   function publishPresence(instanceId: string, status: 'online' | 'offline', socketId: string, reason?: string): void {
-    const target = singlePeers.get('aaui');
+    const target = getConnection('aaui');
     if (!target?.connected) return;
     target.emit('peer:status', {
       peerId: 'eserver', instanceId, status, socketId,
@@ -55,13 +45,14 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     });
   }
 
-  function resolveTarget(message: IncomingPeerMessage): Socket | undefined {
+  function resolveTarget(message: IncomingPeerMessage): PeerSocketConnection | undefined {
     if (message.to === 'eserver') {
-      if (message.toInstanceId) return eservers.get(message.toInstanceId);
-      if (eservers.size === 1) return eservers.values().next().value;
+      if (message.toInstanceId) return getConnection('eserver', message.toInstanceId);
+      const instances = directory.listInstances('eserver');
+      if (instances.length === 1) return connections.getConnection(instances[0]?.connectionId ?? '');
       return undefined;
     }
-    if (message.to === 'sserver' || message.to === 'aaui') return singlePeers.get(message.to);
+    if (message.to === 'sserver' || message.to === 'aaui') return getConnection(message.to);
     return undefined;
   }
 
@@ -70,11 +61,11 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     isConnected(peer: PeerId, toInstanceId?: string) {
       if (peer === 'aab') return true;
       if (peer === 'pserver') return pserverTransport?.isConnected() ?? false;
-      if (peer === 'eserver') return toInstanceId ? eservers.has(toInstanceId) : eservers.size > 0;
-      return peer === 'sserver' || peer === 'aaui' ? singlePeers.has(peer) : false;
+      if (peer === 'eserver') return directory.has('eserver', toInstanceId);
+      return peer === 'sserver' || peer === 'aaui' ? directory.has(peer) : false;
     },
     validateDestination(message: IncomingPeerMessage): void {
-      if (message.to === 'eserver' && !message.toInstanceId && eservers.size > 1)
+      if (message.to === 'eserver' && !message.toInstanceId && directory.listInstances('eserver').length > 1)
         throw new PeerMessageError('AMBIGUOUS_DESTINATION', 'Multiple EServer instances connected; toInstanceId is required');
     },
     async deliver(message: PeerMessage): Promise<void> {
@@ -84,7 +75,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       } else {
         const target = resolveTarget(message);
         if (!target) throw new Error(`Destination ${message.to} is offline`);
-        const response: { ok?: boolean } = await target.timeout(5000).emitWithAck('peer:message', message);
+        const response = await target.emitWithAck<{ ok?: boolean }>('peer:message', message, 5000);
         if (!response?.ok) throw new Error(`Destination ${message.to} rejected message`);
       }
       console.log(`[AAB] FORWARD id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} toInstance=${message.toInstanceId ?? '-'} type=${message.payload.type}`);
@@ -95,7 +86,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     task: z.infer<typeof taskSchema>, status: 'received' | 'forwarded' | 'forwardFailed',
     targetId?: string, reason?: string
   ): void {
-    singlePeers.get('aaui')?.emit('task:lifecycle', {
+    getConnection('aaui')?.emit('task:lifecycle', {
       task, status, instanceId: targetId ?? null,
       event: `task.${status}`, timestamp: Date.now(),
       ...(reason ? { reason } : {})
@@ -118,7 +109,8 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     }
     const task = validated.data;
     const messageId = parsed.data.id ?? randomUUID();
-    const targetId = parsed.data.toInstanceId ?? (eservers.size === 1 ? [...eservers.keys()][0] : undefined);
+    const instances = directory.listInstances('eserver');
+    const targetId = parsed.data.toInstanceId ?? (instances.length === 1 ? instances[0]?.instanceId : undefined);
     try {
       // File persistence is the durability boundary for the receipt ACK.
       await taskStore.save(task);
@@ -135,7 +127,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       void (async () => {
         try {
           if (!targetId) throw new Error('No unique EServer destination; specify toInstanceId');
-          const target = eservers.get(targetId);
+          const target = getConnection('eserver', targetId);
           if (!target?.connected) throw new Error('EServer is offline');
           const outbound: IncomingPeerMessage = {
             ...parsed.data, id: messageId, toInstanceId: targetId,
@@ -167,7 +159,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     instanceId: string | undefined,
     reason?: string
   ): void {
-    singlePeers.get('aaui')?.emit('task:result:lifecycle', {
+    getConnection('aaui')?.emit('task:result:lifecycle', {
       task, status, instanceId: instanceId ?? null,
       event: `task.result.${status}`, timestamp: Date.now(),
       ...(reason ? { reason } : {})
@@ -228,7 +220,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   }
 
   function publishSelection(record: StoredSelection): void {
-    singlePeers.get('aaui')?.emit('resource-selection:updated', record);
+    getConnection('aaui')?.emit('resource-selection:updated', record);
   }
 
   async function receiveSelection(value: unknown): Promise<PeerMessageAck> {
@@ -287,16 +279,20 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     return { ok: true, status: 'received', data: envelope };
   }
 
-  async function sendSelectionSnapshot(socket: Socket): Promise<void> {
-    if (socket.data.peerId !== 'aaui') return;
+  function isCurrentAaui(connection: PeerSocketConnection): boolean {
+    return connection.peerId === 'aaui' && directory.lookup('aaui')?.connectionId === connection.connectionId;
+  }
+
+  async function sendSelectionSnapshot(connection: PeerSocketConnection): Promise<void> {
+    if (!isCurrentAaui(connection)) return;
     try {
       const records = await selectionStore.listRecent(50);
-      if (!socket.connected || singlePeers.get('aaui')?.id !== socket.id) return;
-      socket.emit('resource-selection:snapshot', { records, timestamp: Date.now() });
+      if (!connection.connected || !isCurrentAaui(connection)) return;
+      connection.emit('resource-selection:snapshot', { records, timestamp: Date.now() });
     } catch (error) {
       console.error('[AAB] RESOURCE SELECTION SNAPSHOT FAILED', error);
-      if (socket.connected && singlePeers.get('aaui')?.id === socket.id) {
-        socket.emit('resource-selection:snapshot', {
+      if (connection.connected && isCurrentAaui(connection)) {
+        connection.emit('resource-selection:snapshot', {
           records: [], timestamp: Date.now(), error: 'Could not load saved selections'
         });
       }
@@ -327,12 +323,12 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     }
   }
 
-  async function sendTaskSnapshot(socket: Socket): Promise<void> {
-    if (socket.data.peerId !== 'aaui') return;
+  async function sendTaskSnapshot(connection: PeerSocketConnection): Promise<void> {
+    if (!isCurrentAaui(connection)) return;
     try {
       const tasks = await taskStore.listRecent(50);
-      if (!socket.connected || singlePeers.get('aaui')?.id !== socket.id) return;
-      socket.emit('task:lifecycle:snapshot', {
+      if (!connection.connected || !isCurrentAaui(connection)) return;
+      connection.emit('task:lifecycle:snapshot', {
         timestamp: Date.now(),
         tasks: tasks.map(task => ({
           task,
@@ -342,8 +338,8 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
       });
     } catch (error) {
       console.error('[AAB] TASK SNAPSHOT ERROR', error);
-      if (socket.connected && singlePeers.get('aaui')?.id === socket.id) {
-        socket.emit('task:lifecycle:snapshot', {
+      if (connection.connected && isCurrentAaui(connection)) {
+        connection.emit('task:lifecycle:snapshot', {
           timestamp: Date.now(), tasks: [],
           error: 'Unable to load persisted task history'
         });
@@ -351,63 +347,36 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     }
   }
 
-  peers.use((socket, next) => {
-    const auth = peerAuth.safeParse(socket.handshake.auth);
-    if (!auth.success) return next(new Error('invalid peer identity'));
-    if (apiKey && auth.data.token !== apiKey) return next(new Error('unauthorized'));
-    if (auth.data.peerId === 'eserver') {
-      const instanceId = auth.data.instanceId ?? 'default';
-      if (eservers.has(instanceId)) return next(new Error('EServer instance already connected'));
-      socket.data.instanceId = instanceId;
-    } else if (singlePeers.has(auth.data.peerId)) {
-      return next(new Error('peer already connected'));
-    }
-    socket.data.peerId = auth.data.peerId;
-    next();
-  });
-
-  peers.on('connection', (socket: Socket) => {
-    const peerId = socket.data.peerId as Exclude<ClientPeerId, 'pserver'>;
-    const instanceId = peerId === 'eserver' ? socket.data.instanceId as string : undefined;
+  connections.onConnection(connection => {
+    const peerId = connection.peerId;
+    const instanceId = connection.instanceId;
+    console.log(`[AAB] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${connection.connectionId}`);
     if (peerId === 'eserver') {
-      if (eservers.has(instanceId!)) { socket.disconnect(true); return; }
-      eservers.set(instanceId!, socket);
-    } else {
-      if (singlePeers.has(peerId)) { socket.disconnect(true); return; }
-      singlePeers.set(peerId, socket);
-    }
-    console.log(`[AAB] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${socket.id}`);
-    if (peerId === 'eserver') {
-      publishPresence(instanceId!, 'online', socket.id);
+      publishPresence(instanceId!, 'online', connection.connectionId);
     } else if (peerId === 'aaui') {
       // Late AAUI connections and reconnects always receive the online set.
-      socket.emit('peer:status:snapshot', presenceSnapshot());
+      connection.emit('peer:status:snapshot', presenceSnapshot());
       // Task lifecycle events are transient; rehydrate the dashboard from disk.
-      void sendTaskSnapshot(socket);
-      void sendSelectionSnapshot(socket);
+      void sendTaskSnapshot(connection);
+      void sendSelectionSnapshot(connection);
     }
-    socket.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
+    connection.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
     if (peerId === 'aaui') {
-      socket.on('task:lifecycle:refresh', () => { void sendTaskSnapshot(socket); });
-      socket.on('resource-selection:refresh', () => { void sendSelectionSnapshot(socket); });
+      connection.on('task:lifecycle:refresh', () => { void sendTaskSnapshot(connection); });
+      connection.on('resource-selection:refresh', () => { void sendSelectionSnapshot(connection); });
     }
 
-    socket.on('peer:ping', (payload: unknown, ack?: (data: { ok: boolean; from: string; timestamp: number }) => void) => {
+    connection.on('peer:ping', (payload, ackCandidate) => {
       console.log(`[AAB] RECEIVE peer=${peerId} instance=${instanceId ?? '-'} event=peer:ping payload=${JSON.stringify(payload)}`);
-      ack?.({ ok: true, from: 'aab', timestamp: Date.now() });
+      if (typeof ackCandidate === 'function') ackCandidate({ ok: true, from: 'aab', timestamp: Date.now() });
     });
-    socket.on('peer:message', async (value: unknown, ack?: (response: PeerMessageAck) => void) => {
-      ack?.(await handleMessage(value, peerId, instanceId));
+    connection.on('peer:message', async (value, ackCandidate) => {
+      if (typeof ackCandidate === 'function') ackCandidate(await handleMessage(value, peerId, instanceId));
     });
-    socket.on('disconnect', reason => {
-      if (peerId === 'eserver') {
-        if (eservers.get(instanceId!)?.id === socket.id) {
-          eservers.delete(instanceId!);
-          publishPresence(instanceId!, 'offline', socket.id, reason);
-        }
-      } else if (singlePeers.get(peerId)?.id === socket.id) {
-        singlePeers.delete(peerId);
+    connection.onDisconnect((reason, removedCurrentIdentity) => {
+      if (peerId === 'eserver' && removedCurrentIdentity) {
+        publishPresence(instanceId!, 'offline', connection.connectionId, reason);
       }
       console.log(`[AAB] DISCONNECT peer=${peerId} instance=${instanceId ?? '-'} reason=${reason}`);
     });
