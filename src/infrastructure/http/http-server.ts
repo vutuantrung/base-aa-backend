@@ -1,6 +1,6 @@
 import express, { type Express } from 'express';
 import type { AaCatalogRepository } from '../../modules/aa-catalog/contracts.js';
-import type { SessionRepository } from '../../modules/session/session.js';
+import type { SessionRepository } from '../../modules/session/contracts.js';
 import type { ProcessUsageRepository } from '../../modules/process-usage/process-usage.js';
 import { createApiAccessMiddleware, httpErrorHandler } from './http-middleware.js';
 import { createHttpApiRouter, type HttpMessageSender } from './http-api-router.js';

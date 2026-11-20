@@ -1,11 +1,8 @@
 import type Database from 'better-sqlite3';
+import type { Session, SessionRepository } from './contracts.js';
 
-export type Session = { id: number; name: string };
-export interface SessionRepository {
-  list(): Session[];
-  get(id: number): Session | undefined;
-  create(name: string): Session;
-}
+export type { Session, SessionRepository } from './contracts.js';
+
 export class SqliteSessionRepository implements SessionRepository {
   constructor(private readonly db: Database.Database) {}
   list(): Session[] { return this.db.prepare('SELECT id, name FROM Session ORDER BY id').all() as Session[]; }
