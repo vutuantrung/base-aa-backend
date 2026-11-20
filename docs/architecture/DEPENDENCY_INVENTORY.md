@@ -13,7 +13,7 @@ Audit-only static view of tracked TypeScript in `src/`, NodeNext resolution, sou
 | M05 | `infrastructure/socket/{peer-gateway,resource-selection-snapshot,socket-gateway,socket-outbound-adapter,socket-peer-gateway,socket-peer-message-delivery,socket-server,task-history-snapshot}.ts` |
 | M06 | `modules/peer-messaging/peer-directory.ts` |
 | M07 | `infrastructure/http/{aa-catalog-router,http-api-router,http-middleware,http-outbound-adapter,http-server}.ts` |
-| M08 | `infrastructure/integration-clients/{http-message-client,socket-message-client}.ts` |
+| M08 | `infrastructure/integration-clients/{index,http-message-client,socket-message-client}.ts` |
 | M09 | `modules/messaging/{message-router,messaging,route-registry}.ts` |
 | M10 | `modules/peer-messaging/{contracts,peer-destination-policy,peer-message-service,transformation-registry}.ts` (transformation registry is logically M11) |
 | M11 | `modules/peer-messaging/transformation-registry.ts` (shared physical folder with M10) |
@@ -61,7 +61,7 @@ Every resolved cross-owner edge is listed; multiple symbols from one file pair a
 | M10 peer service | M11 transformation | runtime execution dependency |
 | M11 transformation | M10 contracts | type-only; reciprocal module-level edge, legitimate dependency but blurs ownership |
 | M06 peer directory | M10 contracts | type-only peer identity types |
-| shared `connectable-client.ts` | M08 HTTP/socket clients | runtime re-export; inversion/compatibility debt, tests import this public path |
+| shared `connectable-client.ts` | M08 integration-clients index | runtime compatibility re-export; sole authorized shared-to-infrastructure exception; focused test verifies same class identities |
 
 Same-owner resolved imports (for full traceability): M14 session -> M14 contracts (type); M15 process-usage -> M15 contracts (type); M16 sqlite-catalog -> M16 contracts (type); M17 persistence -> sqlite (runtime); M09 message-router -> route-registry (runtime plus type); M07 server -> middleware/API router and API router -> AA catalog router (runtime); M05 socket server -> socket gateway and socket gateway -> peer gateway (runtime); M05 peer-message delivery -> socket peer gateway (type). M12/M13 workflows import their store/schema at runtime and type-only. Shared client interface and MessageBus import shared message types only.
 
@@ -80,7 +80,7 @@ Same-owner resolved imports (for full traceability): M14 session -> M14 contract
 |---|---|
 | M01 config -> M03 connector types | Resolved in R7.1.A: canonical PServer config/value types live in M04 contracts; M03 connector re-exports legacy types. M04 -> M03 concrete transport type remains for step B. |
 | M04 protocol -> M03 concrete transport | Resolved in R7.1.B: M04 owns the unchanged `PServerTransport`/`TransportEventHandler` port; M03 adapter implements it structurally and re-exports legacy types. Other TD01 findings remain. |
-| M08 shared compatibility barrel -> infra | Compatibility debt under R5-D08; `tests/integration*.test.ts` import clients from this path. Preserve/re-export strategy before moving public import path. |
+| M08 shared compatibility barrel -> infra | Narrow R5-D08 compatibility exception: maintained callers now use M08 index; `connectable-client.ts` re-exports the same class identities from that index for old callers. Keep this explicit exception for enforcement; no new old-barrel consumers. |
 | M10/M11 reciprocal relationship | M10 service runtime executes M11; M11 only type-imports M10 contracts. Legitimate contract use, but physical shared folder and aggregated SCC hide direction. R5-D01/07 suggest separating neutral contracts if desired. |
 | M02 concrete repository handles | Intentional composition plus public test API: app exposes concrete handles and tests call catalog upserts. M07 depends on neutral contracts; no production upsert caller was found. R5-D07 supports domain repositories, but do not narrow/remove concrete test/public surface without compatibility approval. |
 | M05 peer-gateway -> M12/M13 | Intentional composition/runtime orchestration; callbacks provide readiness/delivery/scheduling. Candidate for explicit composition boundary only if R7.1 scope calls for it. |
@@ -93,7 +93,7 @@ Same-owner resolved imports (for full traceability): M14 session -> M14 contract
 |---|---|---|
 | A — configuration contracts | `config/configuration.ts`, `app/create-app.ts`, `infrastructure/socket/pserver-connector.ts`, `modules/pserver/contracts.ts`, protocol config. M01/M02 consume canonical contracts; no M01 -> infrastructure import. | Complete at tested base HEAD recorded in R7.1.A report; preserve config shapes and legacy connector type exports. Focused config and compatibility coverage added. |
 | B — protocol transport port | `modules/pserver/contracts.ts`, `modules/pserver/pserver-protocol.ts`, `infrastructure/socket/pserver-transport.ts`, connector facade. M04 owns port; M03 adapter implements structurally; no M04 -> infrastructure edge. | Completed in R7.1.B report; exact port and legacy type exports retained, protocol behavior covered by fake-transport tests. |
-| C — integration-client boundary | `shared/transport/connectable-client.ts`, `connectable-message-client.ts`, M08 clients, integration tests. Shared public API may depend on neutral interface; app/infrastructure implementation depends inward on interface; shared must not re-export implementations. | Existing consumers import old barrel. Retain compatibility entrypoint or staged deprecation; tests for both legacy public paths and concrete clients; no client behavior changes. |
+| C — integration-client boundary | `shared/transport/connectable-client.ts`, `connectable-message-client.ts`, `infrastructure/integration-clients/{index,http-message-client,socket-message-client}.ts`, integration tests. M08 clients consume the neutral interface; maintained callers use M08 index; old shared path remains a single explicit compatibility exception. | Completed in R7.1.C report; canonical/legacy runtime identity and type compatibility covered, client behavior unchanged. |
 | D — application composition surface | `app/create-app.ts`, HTTP/session/process/catalog contracts and tests. M02 composes M07/M14–M17; API consumers depend on neutral ports; domain use cases must not acquire gateway imports. Keep concrete public handles until explicit compatibility decision. | Catalog test/public upserts make surface narrowing risky. Add type-level compile coverage for overloads and runtime tests for SQLite enabled/disabled, API optional ports; clarify public API policy first. M05 composition remains explicit; avoid broad gateway refactor. |
 | E — dependency enforcement | Add a static graph check only after A–D contracts/allowlist are approved; include type/runtime distinction, NodeNext alias resolution, SCC and boundary rules. No dependency until separately authorized. | Prerequisites: approved ownership exceptions and compatibility inventory. Acceptance: deterministic check over tracked `src`, fixtures for legal type-only and illegal runtime edges, zero unapproved cycles, stable command in CI; run typecheck/build/backend/playground suites. |
 

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, before, test } from 'node:test';
 import { Server, type Socket } from 'socket.io';
-import { HttpMessageClient, SocketMessageClient } from '../src/shared/transport/connectable-client.js';
+import { HttpMessageClient, SocketMessageClient, type ConnectableMessageClient } from '../src/infrastructure/integration-clients/index.js';
+import { HttpMessageClient as LegacyHttpMessageClient, SocketMessageClient as LegacySocketMessageClient } from '../src/shared/transport/connectable-client.js';
+import type { ConnectableMessageClient as LegacyConnectableMessageClient } from '../src/shared/transport/connectable-client.js';
 import type { MessageEnvelope } from '../src/shared/contracts/message.js';
 
 const http = createServer();
@@ -11,6 +13,13 @@ let baseUrl: string;
 let connectionCount = 0;
 let receivedToken: unknown;
 let currentSocket: Socket | undefined;
+
+const canonicalClient: ConnectableMessageClient = new HttpMessageClient('http://example.test');
+const legacyClient: LegacyConnectableMessageClient = canonicalClient;
+const canonicalClientFromLegacy: ConnectableMessageClient = legacyClient;
+const legacyInterfaceFromCanonical: LegacyConnectableMessageClient = canonicalClient;
+void canonicalClientFromLegacy;
+void legacyInterfaceFromCanonical;
 io.of('/session').on('connection', socket => {
   connectionCount += 1;
   receivedToken = socket.handshake.auth.token;
@@ -41,9 +50,11 @@ test('HTTP client sends through the app endpoint and preserves HTTP error behavi
   const originalFetch = globalThis.fetch;
   let requestUrl: URL | undefined;
   let requestHeaders: Headers | undefined;
+  let requestBody: string | undefined;
   globalThis.fetch = async (input, init) => {
     requestUrl = new URL(String(input));
     requestHeaders = new Headers(init?.headers);
+    requestBody = String(init?.body);
     return new Response(JSON.stringify({ id: 'http-message', channel: 'worker', event: 'saved', payload: {}, timestamp: 'now' }), { status: 202 });
   };
   try {
@@ -52,6 +63,8 @@ test('HTTP client sends through the app endpoint and preserves HTTP error behavi
     await client.close();
     assert.equal(requestUrl?.pathname, '/api/messages');
     assert.equal(requestHeaders?.get('x-api-key'), 'secret');
+    assert.equal(requestHeaders?.get('content-type'), 'application/json');
+    assert.equal(requestBody, JSON.stringify({ channel: 'worker', event: 'save', payload: {} }));
     assert.equal(message.id, 'http-message');
 
     globalThis.fetch = async () => new Response('', { status: 502 });
@@ -59,6 +72,11 @@ test('HTTP client sends through the app endpoint and preserves HTTP error behavi
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('legacy barrel preserves canonical client class identities', () => {
+  assert.equal(LegacyHttpMessageClient, HttpMessageClient);
+  assert.equal(LegacySocketMessageClient, SocketMessageClient);
 });
 
 test('Socket.IO client reuses a channel connection, preserves ACK errors and closes it', async () => {

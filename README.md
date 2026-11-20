@@ -49,7 +49,7 @@ Socket.IO namespaces are `/session` and `/worker`. Send and receive the `message
 ### Connectable interface
 
 ```ts
-import { HttpMessageClient, SocketMessageClient } from './src/shared/transport/connectable-client.js';
+import { HttpMessageClient, SocketMessageClient } from './src/infrastructure/integration-clients/index.js';
 
 const http = new HttpMessageClient('http://localhost:3000');
 const socket = new SocketMessageClient('http://localhost:3000');

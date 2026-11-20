@@ -1,4 +1,3 @@
-/** Compatibility exports for the original integration-client import path. */
+/** Legacy compatibility facade; maintained callers should import from infrastructure/integration-clients. */
 export type { ConnectableMessageClient } from './connectable-message-client.js';
-export { HttpMessageClient } from '../../infrastructure/integration-clients/http-message-client.js';
-export { SocketMessageClient } from '../../infrastructure/integration-clients/socket-message-client.js';
+export { HttpMessageClient, SocketMessageClient } from '../../infrastructure/integration-clients/index.js';

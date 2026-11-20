@@ -2,7 +2,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { io } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
-import { HttpMessageClient, SocketMessageClient } from '../src/shared/transport/connectable-client.js';
+import { HttpMessageClient, SocketMessageClient } from '../src/infrastructure/integration-clients/index.js';
 
 const app = createApplication({ dbPath: ':memory:', corsOrigin: '*' });
 let url: string;

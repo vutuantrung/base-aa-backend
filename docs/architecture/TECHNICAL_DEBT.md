@@ -4,7 +4,7 @@ Initial consolidation from historical R6 reports, source reviews and R0–R8 han
 
 | ID | Type | Area / finding | Impact | Proposed step / acceptance evidence |
 |---|---|---|---|---|
-| TD01 | O | M08 shared compatibility barrel imports infrastructure; M09/M10 contracts in shared/type dependencies; concrete app repository types | Dependency clarity | R7.1.C–E: integration-client boundary, app composition review, then separately authorized enforcement; R7.1.A/B removed M01/M04 infrastructure type dependencies |
+| TD01 | O | M08 legacy shared barrel remains an explicit compatibility re-export exception; M09/M10 contracts in shared/type dependencies; concrete app repository types | Dependency clarity | R7.1.D–E: app composition review, then separately authorized enforcement with M08 exception recorded; R7.1.A/B removed M01/M04 infrastructure type dependencies; C added canonical M08 entry point |
 | TD02 | H | M05/M06 identity registered before namespace connection callback (R6.2.C §11) | Aborted handshake may reserve stale identity | R7.2: controlled pause/abort/reconnect same identity test before fix |
 | TD03 | H | M04 stale registration ACK across disconnect/reconnect; resume rejection recovery (R6.2.A, handoff BC02) | Incorrect session readiness | R7.2: generation/late ACK and rejected resume tests, approve recovery policy |
 | TD04 | H | M10 destination changes during async transformation (R6.3.B/C) | Offline or new ambiguity between selection/delivery | R7.2/3: deterministic mid-transform topology tests, define expected error |
@@ -20,7 +20,7 @@ Initial consolidation from historical R6 reports, source reviews and R0–R8 han
 | TD14 | O | M02 shutdown does not coordinate M12/M13 scheduled work; M17 close behavior (R6.1, handoff BC03) | Lost pending work/cleanup failure | R7.6: bounded drain and resource-close tests; timeout policy approval |
 | TD15 | O | Readiness distinct from `/health`; console diagnostics throughout M03–M13 (R6 reports) | Operational ambiguity | R7.6/9: explicit readiness ownership, diagnostic integration as scoped |
 | TD16 | O | `ENABLE_TEST_PEERS` couples APP and demo paths; M12–M15 classification TBD (handoff ES-D02–05) | Isolation/migration risk | R7.7–9: independent test/demo/app runs; preserve TBD until decision |
-| TD17 | O | Compatibility exports/facades, unused MessageBus, unused openDatabase import/tools utils (source inventory) | Maintenance overhead | R7.1/9: verify consumers before removal; no blanket cleanup |
+| TD17 | O | Legacy compatibility exports/facades (including the retained M08 shared client barrel), unused MessageBus, unused openDatabase import/tools utils (source inventory) | Maintenance overhead | R7.1/9: verify consumers before removal; M08 canonical entry point established in C; preserve legacy paths and avoid blanket cleanup |
 | TD18 | V | Native SQLite Node 24 compatibility unverified; Node 22 baseline passes by reports. `.env` not auto-loaded (R6.0, R6.4.C/D) | Deployment/runtime mismatch | R8.3/4 or approved runtime task: clean install/build/start both modes and document env policy |
 | TD19 | V | Original R0–R5 ADR records and api-data.json missing; production PServer and GUI demo unverified | Evidence gap | R8.2/4/5: recover originals if available; distinguish mock vs real verification |
 | TD20 | O | M16 currentAa reads and sorts all records (R6.4.E) | Potential scaling issue, not measured | Evidence-driven future task only: benchmark before optimizing |
