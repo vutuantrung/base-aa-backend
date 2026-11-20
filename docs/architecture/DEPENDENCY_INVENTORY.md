@@ -1,6 +1,6 @@
 # Dependency inventory — R7.1.0
 
-Audit-only static view of tracked TypeScript in `src/`, NodeNext resolution, source baseline `08614077a92946ac2718ac5a3c5c46d5d30467fe`. Based on TypeScript compiler API import/export syntax and compiler settings (`verbatimModuleSyntax` is not enabled; explicit `import type` and type-only named imports erase). 109 resolved internal edges; 53 contain runtime value imports/exports, the remainder are type-only. External package imports excluded from internal graph; no unresolved relative paths, dynamic imports, `require`, or side-effect-only imports found in the scanned tracked source. This is a static syntax inventory, not runtime proof.
+Audit-only static view of tracked TypeScript in `src/`, NodeNext resolution, source baseline `08614077a92946ac2718ac5a3c5c46d5d30467fe`; R7.1.0 inventory commit `0bae390fa871aa4797c4d0b44f3cf083f84fdc8e`, closure `61742f6ee7519612f6b412574a147429e4ab84f7`, environment verification `534419855148800e14180f45d719f0e3d9252080`. Based on TypeScript compiler API import/export syntax and compiler settings (`verbatimModuleSyntax` is not enabled; explicit `import type` and type-only named imports erase). 109 resolved internal edges; 53 contain runtime value imports/exports, the remainder are type-only. External package imports excluded from internal graph; no unresolved relative paths, dynamic imports, `require`, or side-effect-only imports found in the scanned tracked source. This is a static syntax inventory, not runtime proof. Counts are the prior full-graph inventory; R7.1.A updates only its targeted edges.
 
 ## File ownership map
 
@@ -35,8 +35,8 @@ Every resolved cross-owner edge is listed; multiple symbols from one file pair a
 
 | From | To | Kind / symbols and interpretation |
 |---|---|---|
-| M01 configuration | M03 facade (`pserver-connector`) | type-only: `PServerConnectionConfig`, `VmInfo`; config-layer coupling candidate |
-| M02 app/create-app | M03 facade | runtime: `connectToPServer`, config type |
+| M01 configuration | M04 contracts (`modules/pserver/contracts`) | type-only: canonical `PServerConnectionConfig`, `VmInfo`; no infrastructure import |
+| M02 app/create-app | M03 facade; M04 contracts | runtime: `connectToPServer`; type-only canonical config type |
 | M02 app/create-app | M05 HTTP/socket adapters and gateways | runtime: server composition; intentional composition |
 | M02 app/create-app | M09 messaging | runtime: `SendMessage`, `MessageRouter`, `RouteRegistry`, route types |
 | M02 app/create-app | M10/M11 | runtime M11 `TransformationRegistry` |
@@ -45,7 +45,8 @@ Every resolved cross-owner edge is listed; multiple symbols from one file pair a
 | M02 lifecycle/main | M01/M18 and example | runtime and type: config, diagnostics, optional demo transform |
 | M03 facade | M03 transport | runtime: `createPServerTransport` |
 | M03 facade | M04 | runtime: protocol factory/events/capability type |
-| M04 protocol | M03 transport | type-only: concrete `PServerTransport`; candidate port extraction |
+| M04 protocol | M03 transport | type-only: concrete `PServerTransport`; R7.1.B port extraction remains |
+| M04 protocol | M04 contracts | type-only: canonical `VmInfo` in public `PServerProtocolConfig` |
 | M04 protocol | M10 contracts | type-only: peer message/ACK |
 | M05 peer-gateway | M06, M10, M12, M13 | runtime orchestration, stores, workflows, delivery services |
 | M05 snapshot adapters | M12/M13 | type-only snapshot DTO dependencies |
@@ -68,7 +69,8 @@ Same-owner resolved imports (for full traceability): M14 session -> M14 contract
 
 - File-level SCCs: no non-trivial SCCs in runtime graph or all-import graph (all SCCs are singleton; self-imports absent). Graph is source-level static resolution.
 - Module-level runtime SCCs: none. Module-level all-import SCCs: M03↔M04 (connector facade runtime imports protocol; protocol type-imports concrete transport file) and M10↔M11 (service runtime imports transformation; transformation type-imports peer contracts). These are aggregation cycles, not file cycles.
-- Other M01/M03 coupling is one-way type-only; M04-to-M03 file edge is type-only. `import type`/type-only named imports erase; ordinary imports containing values are retained, even if some bindings happen to only be used in type positions. No compiler guarantee of DI acyclicity follows from this graph.
+- R7.1.A targeted delta: M01 no longer imports M03/infrastructure; M01 and M02 use M04 canonical config/value contracts. M03 connector preserves legacy type exports; M04 protocol config uses canonical `VmInfo`. The M04-to-M03 transport type edge remains for R7.1.B. This is a targeted edge update, not a fresh full-graph audit; prior full graph counts above remain the R7.1.0 inventory baseline.
+- `import type`/type-only named imports erase; ordinary imports containing values are retained, even if some bindings happen to only be used in type positions. No compiler guarantee of DI acyclicity follows from this graph.
 - Logical/runtime composition: M02 assembles shared app resources and concrete repositories. `createApplication` exposes concrete `SqliteSessionRepository`, `SqliteProcessUsageRepository`, and `SqliteAaCatalogRepository` handles through overloads; the broad overload returns `ApplicationInstance`. HTTP APIs consume neutral interfaces. Catalog upserts have no production use-case caller; tests use public `app.catalog` concrete methods and instantiate the concrete repository directly.
 - `createApplication` uses a late-bound `router` closure: sender is built before router, then router is assigned before listeners/start. This resolves a construction dependency but is still a runtime composition cycle not inferable solely from static imports. M05 peer gateway constructs M12/M13 stores/workflows and supplies transport callbacks; this is an infrastructure composition edge, not inherently a violation. Injected callbacks are absent from graph semantics.
 
@@ -76,7 +78,7 @@ Same-owner resolved imports (for full traceability): M14 session -> M14 contract
 
 | Finding | Classification / evidence |
 |---|---|
-| M01 config -> M03 connector types | Violation candidate against R4-D03/R5-D01; type-only but config owns transport-facing config shape. Extract neutral config/value contracts only with compatibility plan. |
+| M01 config -> M03 connector types | Resolved in R7.1.A: canonical PServer config/value types live in M04 contracts; M03 connector re-exports legacy types. M04 -> M03 concrete transport type remains for step B. |
 | M04 protocol -> M03 concrete transport | Candidate against R5-D02; current dependency is type-only and on concrete transport shape. Protocol declares gateway capability itself; a minimal protocol transport port could invert direction. |
 | M08 shared compatibility barrel -> infra | Compatibility debt under R5-D08; `tests/integration*.test.ts` import clients from this path. Preserve/re-export strategy before moving public import path. |
 | M10/M11 reciprocal relationship | M10 service runtime executes M11; M11 only type-imports M10 contracts. Legitimate contract use, but physical shared folder and aggregated SCC hide direction. R5-D01/07 suggest separating neutral contracts if desired. |
@@ -89,7 +91,7 @@ Same-owner resolved imports (for full traceability): M14 session -> M14 contract
 
 | Step | Files / allowed direction | Compatibility risk, prerequisite and acceptance |
 |---|---|---|
-| A — configuration contracts | `config/configuration.ts`, `infrastructure/socket/pserver-connector.ts`, neutral config contract location. Config/value contract -> consumed by M03; no M01 -> infrastructure import. | Preserve `ResolvedConfiguration` and createApplication config shapes. First inventory API imports; tests for defaults, env parsing, connector construction and public type imports; typecheck/build. |
+| A — configuration contracts | `config/configuration.ts`, `app/create-app.ts`, `infrastructure/socket/pserver-connector.ts`, `modules/pserver/contracts.ts`, protocol config. M01/M02 consume canonical contracts; no M01 -> infrastructure import. | Complete at tested base HEAD recorded in R7.1.A report; preserve config shapes and legacy connector type exports. Focused config and compatibility coverage added. |
 | B — protocol transport port | `modules/pserver/pserver-protocol.ts`, `infrastructure/socket/pserver-transport.ts`, connector facade. M03 implements/structurally satisfies M04-owned or neutral event transport port; no M04 -> infrastructure file edge. | Preserve event/ACK/timeout behavior. Tests for protocol connect/resume/dispatch/peer delivery through fake port, plus existing protocol/session tests; port extraction prerequisite to enforcement. |
 | C — integration-client boundary | `shared/transport/connectable-client.ts`, `connectable-message-client.ts`, M08 clients, integration tests. Shared public API may depend on neutral interface; app/infrastructure implementation depends inward on interface; shared must not re-export implementations. | Existing consumers import old barrel. Retain compatibility entrypoint or staged deprecation; tests for both legacy public paths and concrete clients; no client behavior changes. |
 | D — application composition surface | `app/create-app.ts`, HTTP/session/process/catalog contracts and tests. M02 composes M07/M14–M17; API consumers depend on neutral ports; domain use cases must not acquire gateway imports. Keep concrete public handles until explicit compatibility decision. | Catalog test/public upserts make surface narrowing risky. Add type-level compile coverage for overloads and runtime tests for SQLite enabled/disabled, API optional ports; clarify public API policy first. M05 composition remains explicit; avoid broad gateway refactor. |

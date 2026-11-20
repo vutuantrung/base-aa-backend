@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
-import { connectToPServer, type PServerConnectionConfig } from '../infrastructure/socket/pserver-connector.js';
+import { connectToPServer } from '../infrastructure/socket/pserver-connector.js';
+import type { PServerConnectionConfig } from '../modules/pserver/contracts.js';
 import { TransformationRegistry } from '../modules/peer-messaging/transformation-registry.js';
 import { SqliteAaCatalogRepository } from '../modules/aa-catalog/sqlite-catalog.js';
 import { openDatabase } from '../infrastructure/database/sqlite.js';

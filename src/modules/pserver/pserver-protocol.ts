@@ -1,11 +1,12 @@
 import type { PeerMessage, PeerMessageAck } from '../peer-messaging/contracts.js';
 import type { PServerTransport } from '../../infrastructure/socket/pserver-transport.js';
+import type { VmInfo } from './contracts.js';
 
 export const SESSION_CONNECT_EVENT = 'automation_vm:session:connect';
 export const DISPATCH_EVENT = 'activity:task:dispatch';
 
 export interface PServerProtocolConfig {
-  vmInfo: { udid: string; sdk: string; model: string; abi: string; forSearch: boolean; platforms: string[] };
+  vmInfo: VmInfo;
 }
 
 export interface PServerGatewayCapabilities {

@@ -1,4 +1,4 @@
-import type { PServerConnectionConfig, VmInfo } from '../infrastructure/socket/pserver-connector.js';
+import type { PServerConnectionConfig, VmInfo } from '../modules/pserver/contracts.js';
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 

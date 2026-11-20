@@ -1,24 +1,10 @@
 import { createPServerTransport } from './pserver-transport.js';
 import { createPServerProtocol, DISPATCH_EVENT, SESSION_CONNECT_EVENT, type PServerGatewayCapabilities } from '../../modules/pserver/pserver-protocol.js';
+import type { PServerConnectionConfig } from '../../modules/pserver/contracts.js';
+
+export type { PServerConnectionConfig, VmInfo } from '../../modules/pserver/contracts.js';
 
 export { DISPATCH_EVENT, SESSION_CONNECT_EVENT };
-
-export interface VmInfo {
-  udid: string;
-  sdk: string;
-  model: string;
-  abi: string;
-  forSearch: boolean;
-  platforms: string[];
-}
-
-export interface PServerConnectionConfig {
-  url: string;
-  /** Socket.IO engine path (NOT namespace). The example uses '/ws'. */
-  path?: string;
-  vmInfo: VmInfo;
-  apiKey?: string;
-}
 
 /** Compatibility composition facade for the PServer transport and protocol. */
 export function connectToPServer(config: PServerConnectionConfig, gateway: PServerGatewayCapabilities) {
