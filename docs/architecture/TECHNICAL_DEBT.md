@@ -1,0 +1,29 @@
+# AAB — Technical debt registry
+
+Initial consolidation from historical R6 reports, source reviews and R0–R8 handoff. All OPEN unless explicitly resolved; proposed checkpoint is not approval to change behavior. O = observed behavior / documented source; H = hypothesis requiring reproduction; V = verification gap. Evidence refers to root reports and relevant files in MODULE_BOUNDARIES. Validate targeted findings against current source before fixes; close only with recorded test evidence.
+
+| ID | Type | Area / finding | Impact | Proposed step / acceptance evidence |
+|---|---|---|---|---|
+| TD01 | O | M08 shared compatibility barrel imports infrastructure; M09/M10 contracts in shared/type dependencies; concrete app repository types | Dependency clarity | R7.1: static graph with type/runtime distinction, no prohibited cycles, compatible public surface |
+| TD02 | H | M05/M06 identity registered before namespace connection callback (R6.2.C §11) | Aborted handshake may reserve stale identity | R7.2: controlled pause/abort/reconnect same identity test before fix |
+| TD03 | H | M04 stale registration ACK across disconnect/reconnect; resume rejection recovery (R6.2.A, handoff BC02) | Incorrect session readiness | R7.2: generation/late ACK and rejected resume tests, approve recovery policy |
+| TD04 | H | M10 destination changes during async transformation (R6.3.B/C) | Offline or new ambiguity between selection/delivery | R7.2/3: deterministic mid-transform topology tests, define expected error |
+| TD05 | O | M05/M04 peer ingress requires ACK callback (R6.3.B, R6.4.A) | No-ACK messages skipped | R7.3: characterize ingress with/without ACK; explicit approval before change |
+| TD06 | O | M11 mutable registered rule refs, existing output validation/blank version semantics (R6.3.C) | Mutation/contract ambiguity | R7.3: characterize resolve-once and metadata invariants; no silent validation tightening |
+| TD07 | O | M07 absent session/usage ports return empty 200/201; catalog unmounted 404; `/extension` gate differs (R6.4.C–E) | Inconsistent optional capability API | R7.3: agree error semantics and cover auth-first/disabled/absent states |
+| TD08 | O | M15 direct input allows negative PID/fractional memory; create spreads extra fields (R6.4.D) | Row vs immediate shape mismatch | R7.3: characterize runtime extra id overwrite (H), decide validation/return contract |
+| TD09 | O | M12/M13 raw dispatch branches in peer-gateway | Transport coupled to business operation selection | R7.4: explicit authenticated handlers; preserve precedence and nonrecursive outbound |
+| TD10 | O | M12/M13 exclusive receipt writes but no fsync/outbox/retry/idempotency; deferred work in memory (R6.4.A/B) | Crash after receipt may lose delivery | R7.5: agreed durability/receipt contract, crash/replay tests if approved |
+| TD11 | O | M13 status sidecar write failure independent of live notification; non-atomic writes (R6.4.B) | History diverges from live status | R7.5: define consistency/recovery; failure injection, preserve actual delivery outcome |
+| TD12 | O | M16 unvalidated stored JSON, orphan children allowed, raw IDs (R6.4.E) | Invalid/orphan records | R7.3/5: explicit schema/relationship policy, compatibility and migration review |
+| TD13 | O | M09 concurrent fan-out best effort, partial delivery possible (R6.3.A) | Partial side effects | R7.5: document failure semantics; no implicit retry |
+| TD14 | O | M02 shutdown does not coordinate M12/M13 scheduled work; M17 close behavior (R6.1, handoff BC03) | Lost pending work/cleanup failure | R7.6: bounded drain and resource-close tests; timeout policy approval |
+| TD15 | O | Readiness distinct from `/health`; console diagnostics throughout M03–M13 (R6 reports) | Operational ambiguity | R7.6/9: explicit readiness ownership, diagnostic integration as scoped |
+| TD16 | O | `ENABLE_TEST_PEERS` couples APP and demo paths; M12–M15 classification TBD (handoff ES-D02–05) | Isolation/migration risk | R7.7–9: independent test/demo/app runs; preserve TBD until decision |
+| TD17 | O | Compatibility exports/facades, unused MessageBus, unused openDatabase import/tools utils (source inventory) | Maintenance overhead | R7.1/9: verify consumers before removal; no blanket cleanup |
+| TD18 | V | Native SQLite Node 24 compatibility unverified; Node 22 baseline passes by reports. `.env` not auto-loaded (R6.0, R6.4.C/D) | Deployment/runtime mismatch | R8.3/4 or approved runtime task: clean install/build/start both modes and document env policy |
+| TD19 | V | Original R0–R5 ADR records and api-data.json missing; production PServer and GUI demo unverified | Evidence gap | R8.2/4/5: recover originals if available; distinguish mock vs real verification |
+| TD20 | O | M16 currentAa reads and sorts all records (R6.4.E) | Potential scaling issue, not measured | Evidence-driven future task only: benchmark before optimizing |
+| TD21 | O | Similar M12/M13 snapshot adapters; direct synchronous notification exceptions (R6.4.A/B) | Duplication/exception handling risk | R7 review only when justified; preserve stale requester and delivery semantics |
+
+Do not reopen historical reports for unrelated IDs. Update status with evidence, commit/base SHA and tests in affected rows only.

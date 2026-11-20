@@ -1,0 +1,3 @@
+# Install agent context
+
+Extract this archive into a staging folder, then copy AGENTS.md, docs/architecture/ and prompts/ into the repository root. Review the AGENTS.md diff before replacing: this version preserves the GitHub baseline coding rules but may not include your local edits. Merge rather than overwrite local changes. INSTALL.md need not be committed. Existing historical reports and source files stay in place. Run the supplied closure prompt in Codex after copying. No tests were run by the bundle author; closure validates the prepared documents and fresh regression results. Do not treat installation as implementation acceptance.
