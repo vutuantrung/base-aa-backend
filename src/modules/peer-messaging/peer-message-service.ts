@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { incomingPeerMessageSchema, type IncomingPeerMessage, type PeerMessage, type PeerId } from './contracts.js';
+import { incomingPeerMessageSchema, type IncomingPeerMessage, type PeerMessage, type PeerMessageAck, type PeerId } from './contracts.js';
 import { TransformationRegistry } from './transformation-registry.js';
 
 export class PeerMessageError extends Error {
@@ -70,5 +70,23 @@ export class PeerMessageService {
         error instanceof Error ? error.message : 'Unable to deliver message');
     }
     return message;
+  }
+}
+
+/** Maps generic M10 processing to the existing peer:message ACK and diagnostics contract. */
+export async function processPeerMessageForAck(
+  service: Pick<PeerMessageService, 'process'>,
+  value: unknown,
+  authenticatedFrom: PeerId,
+  authenticatedInstanceId?: string
+): Promise<PeerMessageAck> {
+  try {
+    const message = await service.process(value, authenticatedFrom, authenticatedInstanceId);
+    console.log(`[AAB] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
+    return { ok: true, data: message };
+  } catch (error) {
+    const code = error instanceof PeerMessageError ? error.code : 'TRANSFORMATION_FAILED';
+    console.error(`[AAB] MESSAGE ERROR from=${authenticatedFrom} instance=${authenticatedInstanceId ?? '-'} code=${code}`, error);
+    return { ok: false, code, error: error instanceof Error ? error.message : 'Internal message error' };
   }
 }

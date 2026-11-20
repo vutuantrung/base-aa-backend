@@ -68,3 +68,30 @@ test('offline destination rejects before transformation', async () => {
     error instanceof PeerMessageError && error.code === 'DESTINATION_OFFLINE');
   assert.equal(transformed, false);
 });
+
+test('destination is rechecked after an asynchronous transformation', async () => {
+  let connected = true;
+  let delivered = false;
+  const registry = new TransformationRegistry();
+  registry.register({ id: 'async', from: '*', to: '*', payloadType: '*', priority: 1,
+    transformer: { async transform(message) {
+      await Promise.resolve();
+      connected = false;
+      return message.payload;
+    } } });
+  const service = new PeerMessageService(registry, {
+    isConnected: () => connected,
+    async deliver() { delivered = true; }
+  });
+  await assert.rejects(service.process(input, 'pserver'), (error: unknown) =>
+    error instanceof PeerMessageError && error.code === 'DESTINATION_OFFLINE');
+  assert.equal(delivered, false);
+});
+
+test('authenticated EServer instance is copied to source metadata', async () => {
+  const service = new PeerMessageService(new TransformationRegistry(), {
+    isConnected: () => true, async deliver() {}
+  });
+  const result = await service.process({ ...input, from: 'eserver', to: 'aab' }, 'eserver', 'instance-auth');
+  assert.equal(result.sourceInstanceId, 'instance-auth');
+});

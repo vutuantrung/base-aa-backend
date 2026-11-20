@@ -4,15 +4,14 @@ import { JsonTaskFileStore, taskSchema } from '../../modules/peer-messaging/task
 import { JsonResourceSelectionStore, resourceSelectionSchema, type StoredSelection } from '../../modules/peer-messaging/resource-selection-store.js';
 import type { Server } from 'socket.io';
 import { type PeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
-import { PeerMessageService, PeerMessageError } from '../../modules/peer-messaging/peer-message-service.js';
+import { PeerMessageService, processPeerMessageForAck } from '../../modules/peer-messaging/peer-message-service.js';
+import { PeerDestinationPolicy, type PServerPeerTransport } from '../../modules/peer-messaging/peer-destination-policy.js';
 import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
 import { PeerDirectory } from '../../modules/peer-messaging/peer-directory.js';
 import { createSocketPeerGateway, type PeerSocketConnection } from './socket-peer-gateway.js';
+import { SocketPeerMessageDelivery } from './socket-peer-message-delivery.js';
 
-export interface ExternalPeerTransport {
-  isConnected(): boolean;
-  deliver(message: PeerMessage): Promise<void>;
-}
+export interface ExternalPeerTransport extends PServerPeerTransport {}
 
 /**
  * EServer instances have separate authenticated sockets keyed by instanceId.
@@ -21,7 +20,7 @@ export interface ExternalPeerTransport {
 export function attachPeerGateway(io: Server, apiKey: string | undefined, transformations: TransformationRegistry) {
   const directory = new PeerDirectory();
   const connections = createSocketPeerGateway(io, apiKey, directory);
-  let pserverTransport: ExternalPeerTransport | undefined;
+  const destinationPolicy = new PeerDestinationPolicy(directory, new SocketPeerMessageDelivery(connections));
   const taskStore = new JsonTaskFileStore();
   const selectionStore = new JsonResourceSelectionStore();
 
@@ -45,42 +44,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     });
   }
 
-  function resolveTarget(message: IncomingPeerMessage): PeerSocketConnection | undefined {
-    if (message.to === 'eserver') {
-      if (message.toInstanceId) return getConnection('eserver', message.toInstanceId);
-      const instances = directory.listInstances('eserver');
-      if (instances.length === 1) return connections.getConnection(instances[0]?.connectionId ?? '');
-      return undefined;
-    }
-    if (message.to === 'sserver' || message.to === 'aaui') return getConnection(message.to);
-    return undefined;
-  }
-
-  const service = new PeerMessageService(transformations, {
-
-    isConnected(peer: PeerId, toInstanceId?: string) {
-      if (peer === 'aab') return true;
-      if (peer === 'pserver') return pserverTransport?.isConnected() ?? false;
-      if (peer === 'eserver') return directory.has('eserver', toInstanceId);
-      return peer === 'sserver' || peer === 'aaui' ? directory.has(peer) : false;
-    },
-    validateDestination(message: IncomingPeerMessage): void {
-      if (message.to === 'eserver' && !message.toInstanceId && directory.listInstances('eserver').length > 1)
-        throw new PeerMessageError('AMBIGUOUS_DESTINATION', 'Multiple EServer instances connected; toInstanceId is required');
-    },
-    async deliver(message: PeerMessage): Promise<void> {
-      if (message.to === 'pserver') {
-        if (!pserverTransport?.isConnected()) throw new Error('PServer is offline');
-        await pserverTransport.deliver(message);
-      } else {
-        const target = resolveTarget(message);
-        if (!target) throw new Error(`Destination ${message.to} is offline`);
-        const response = await target.emitWithAck<{ ok?: boolean }>('peer:message', message, 5000);
-        if (!response?.ok) throw new Error(`Destination ${message.to} rejected message`);
-      }
-      console.log(`[AAB] FORWARD id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} toInstance=${message.toInstanceId ?? '-'} type=${message.payload.type}`);
-    }
-  });
+  const service = new PeerMessageService(transformations, destinationPolicy);
 
   function publishTaskEvent(
     task: z.infer<typeof taskSchema>, status: 'received' | 'forwarded' | 'forwardFailed',
@@ -196,7 +160,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     setImmediate(() => {
       void (async () => {
         try {
-          if (!pserverTransport?.isConnected()) throw new Error('PServer is offline');
+          if (!destinationPolicy.isPServerConnected()) throw new Error('PServer is offline');
           const outbound: IncomingPeerMessage = { ...parsed.data, id: messageId };
           await service.process(outbound, 'eserver', instanceId);
           publishResultEvent(task, 'forwarded', instanceId);
@@ -312,15 +276,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.result') {
       return receiveTaskResult(value, instanceId);
     }
-    try {
-      const message = await service.process(value, authenticatedFrom, instanceId);
-      console.log(`[AAB] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
-      return { ok: true, data: message };
-    } catch (error) {
-      const code = error instanceof PeerMessageError ? error.code : 'TRANSFORMATION_FAILED';
-      console.error(`[AAB] MESSAGE ERROR from=${authenticatedFrom} instance=${instanceId ?? '-'} code=${code}`, error);
-      return { ok: false, code, error: error instanceof Error ? error.message : 'Internal message error' };
-    }
+    return processPeerMessageForAck(service, value, authenticatedFrom, instanceId);
   }
 
   async function sendTaskSnapshot(connection: PeerSocketConnection): Promise<void> {
@@ -383,7 +339,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   });
 
   return {
-    registerPServerTransport(transport: ExternalPeerTransport): void { pserverTransport = transport; },
+    registerPServerTransport(transport: ExternalPeerTransport): void { destinationPolicy.registerPServerTransport(transport); },
     receiveFromPServer(value: unknown): Promise<PeerMessageAck> { return handleMessage(value, 'pserver'); }
   };
 }
