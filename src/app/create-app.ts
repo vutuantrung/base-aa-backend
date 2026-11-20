@@ -3,6 +3,7 @@ import { connectToPServer, type PServerConnectionConfig } from '../infrastructur
 import { TransformationRegistry } from '../modules/peer-messaging/transformation-registry.js';
 import { SqliteAaCatalogRepository } from '../modules/aa-catalog/sqlite-catalog.js';
 import { openDatabase } from '../infrastructure/database/sqlite.js';
+import { openPersistence } from '../infrastructure/database/persistence.js';
 import { SqliteSessionRepository } from '../modules/session/session.js';
 import { SqliteProcessUsageRepository } from '../modules/process-usage/process-usage.js';
 import { SendMessage } from '../modules/messaging/messaging.js';
@@ -14,7 +15,7 @@ import { attachSocketServer } from '../infrastructure/socket/socket-server.js';
 import { SocketOutboundAdapter } from '../infrastructure/socket/socket-outbound-adapter.js';
 import type { Server as HttpServer } from 'node:http';
 
-type ApplicationInstance = {
+export type ApplicationInstance = {
   httpServer: HttpServer; router: MessageRouter; routes: RouteRegistry; transformations: TransformationRegistry;
   sender: SendMessage; sessions: SqliteSessionRepository | undefined; usage: SqliteProcessUsageRepository | undefined;
   catalog: SqliteAaCatalogRepository | undefined; pserverConnector: ReturnType<typeof connectToPServer> | undefined;
@@ -38,7 +39,8 @@ export function createApplication(config: ApplicationConfig & { enableSqlite: fa
 export function createApplication(config: ApplicationConfig): ApplicationInstance;
 export function createApplication(config: ApplicationConfig): ApplicationInstance {
   const sqliteEnabled = config.enableSqlite ?? true;
-  const db = sqliteEnabled ? openDatabase(config.dbPath) : undefined;
+  const persistence = openPersistence(config.dbPath, sqliteEnabled);
+  const db = persistence.database;
   const routes = new RouteRegistry(config.routes ?? defaultRoutes());
   const transformations = new TransformationRegistry();
   // HTTP server needs sender, and sender needs outbound socket hub: a narrow late-binding closure
@@ -67,7 +69,7 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
       pserverConnector?.close();
       await sockets.close();
       if (httpServer.listening) await new Promise<void>((resolve, reject) => httpServer.close(err => err ? reject(err) : resolve()));
-      db?.close();
+      persistence.close();
     }
   };
 }
