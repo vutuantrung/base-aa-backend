@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
-import { JsonTaskFileStore, taskSchema } from '../../modules/peer-messaging/task-file-store.js';
+import { JsonTaskFileStore } from '../../modules/task-workflow/task-file-store.js';
+import { TaskWorkflow } from '../../modules/task-workflow/task-workflow.js';
 import { JsonResourceSelectionStore, resourceSelectionSchema, type StoredSelection } from '../../modules/peer-messaging/resource-selection-store.js';
 import type { Server } from 'socket.io';
 import { type PeerId, type PeerMessage, type PeerMessageAck, type IncomingPeerMessage, incomingPeerMessageSchema } from '../../modules/peer-messaging/contracts.js';
@@ -10,6 +10,7 @@ import type { TransformationRegistry } from '../../modules/peer-messaging/transf
 import { PeerDirectory } from '../../modules/peer-messaging/peer-directory.js';
 import { createSocketPeerGateway, type PeerSocketConnection } from './socket-peer-gateway.js';
 import { SocketPeerMessageDelivery } from './socket-peer-message-delivery.js';
+import { sendTaskHistorySnapshot } from './task-history-snapshot.js';
 
 export interface ExternalPeerTransport extends PServerPeerTransport {}
 
@@ -45,143 +46,17 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   }
 
   const service = new PeerMessageService(transformations, destinationPolicy);
-
-  function publishTaskEvent(
-    task: z.infer<typeof taskSchema>, status: 'received' | 'forwarded' | 'forwardFailed',
-    targetId?: string, reason?: string
-  ): void {
-    getConnection('aaui')?.emit('task:lifecycle', {
-      task, status, instanceId: targetId ?? null,
-      event: `task.${status}`, timestamp: Date.now(),
-      ...(reason ? { reason } : {})
-    });
-  }
-
-  /**
-   * Receipt ACK is strictly an AAB acceptance/persistence acknowledgment.
-   * EServer delivery is attempted asynchronously and reported independently.
-   */
-  async function receiveTask(value: unknown): Promise<PeerMessageAck> {
-    const parsed = incomingPeerMessageSchema.safeParse(value);
-    if (!parsed.success || parsed.data.from !== 'pserver' || parsed.data.to !== 'eserver' ||
-        parsed.data.payload.type !== 'demo.task.request') {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid PServer task envelope' };
-    }
-    const validated = taskSchema.safeParse(parsed.data.payload.data);
-    if (!validated.success || validated.data.status !== 'inProgress') {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid inProgress task payload' };
-    }
-    const task = validated.data;
-    const messageId = parsed.data.id ?? randomUUID();
-    const instances = directory.listInstances('eserver');
-    const targetId = parsed.data.toInstanceId ?? (instances.length === 1 ? instances[0]?.instanceId : undefined);
-    try {
-      // File persistence is the durability boundary for the receipt ACK.
-      await taskStore.save(task);
-    } catch (error) {
-      console.error('[AAB] TASK PERSIST FAILED', task.id, error);
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB' };
-    }
-
-    publishTaskEvent(task, 'received', targetId);
-    console.log('[AAB] TASK RECEIVED', task.id, 'target=', targetId ?? 'unresolved');
-
-    // Do not await the EServer here: PServer already has an accepted task.
-    setImmediate(() => {
-      void (async () => {
-        try {
-          if (!targetId) throw new Error('No unique EServer destination; specify toInstanceId');
-          const target = getConnection('eserver', targetId);
-          if (!target?.connected) throw new Error('EServer is offline');
-          const outbound: IncomingPeerMessage = {
-            ...parsed.data, id: messageId, toInstanceId: targetId,
-          };
-          // Use existing validation/transformation/ACK forwarding logic.
-          await service.process(outbound, 'pserver');
-          publishTaskEvent(task, 'forwarded', targetId);
-          console.log('[AAB] TASK FORWARDED', task.id, 'to', targetId);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          publishTaskEvent(task, 'forwardFailed', targetId, reason);
-          console.error('[AAB] TASK FORWARD FAILED', task.id, reason);
-        }
-      })();
-    });
-
-    const envelope: PeerMessage = {
-      ...parsed.data, ...(targetId ? { toInstanceId: targetId } : {}),
-      id: messageId,
-      timestamp: Date.now(),
-      payload: structuredClone(parsed.data.payload)
-    };
-    return { ok: true, status: 'received', data: envelope };
-  }
-
-  function publishResultEvent(
-    task: z.infer<typeof taskSchema>,
-    status: 'received' | 'forwarded' | 'forwardFailed',
-    instanceId: string | undefined,
-    reason?: string
-  ): void {
-    getConnection('aaui')?.emit('task:result:lifecycle', {
-      task, status, instanceId: instanceId ?? null,
-      event: `task.result.${status}`, timestamp: Date.now(),
-      ...(reason ? { reason } : {})
-    });
-  }
-
-  /**
-   * F09 mirrors F08 in the opposite direction.
-   * AAB acknowledges only durable receipt, not PServer delivery.
-   */
-  async function receiveTaskResult(value: unknown, instanceId: string | undefined): Promise<PeerMessageAck> {
-    const parsed = incomingPeerMessageSchema.safeParse(value);
-    if (!parsed.success || parsed.data.from !== 'eserver' || parsed.data.to !== 'pserver' ||
-        parsed.data.payload.type !== 'demo.task.result') {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid EServer task result envelope' };
-    }
-    const validated = taskSchema.safeParse(parsed.data.payload.data);
-    if (!validated.success || validated.data.status !== 'finished') {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid finished task result payload' };
-    }
-    const task = validated.data;
-    const messageId = parsed.data.id ?? randomUUID();
-    try {
-      // Persist and validate against the original F08 task before acknowledging EServer.
-      await taskStore.saveResult(task);
-    } catch (error) {
-      console.error('[AAB] TASK RESULT PERSIST FAILED', task.id, error);
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB' };
-    }
-
-    publishResultEvent(task, 'received', instanceId);
-    console.log('[AAB] TASK RESULT RECEIVED', task.id, 'from', instanceId ?? 'eserver');
-
-    setImmediate(() => {
-      void (async () => {
-        try {
-          if (!destinationPolicy.isPServerConnected()) throw new Error('PServer is offline');
-          const outbound: IncomingPeerMessage = { ...parsed.data, id: messageId };
-          await service.process(outbound, 'eserver', instanceId);
-          publishResultEvent(task, 'forwarded', instanceId);
-          console.log('[AAB] TASK RESULT FORWARDED', task.id, 'to PServer');
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          publishResultEvent(task, 'forwardFailed', instanceId, reason);
-          console.error('[AAB] TASK RESULT FORWARD FAILED', task.id, reason);
-        }
-      })();
-    });
-
-    const envelope: PeerMessage = {
-      ...parsed.data,
-      id: messageId,
-      sourceInstanceId: instanceId,
-      timestamp: Date.now(),
-      payload: structuredClone(parsed.data.payload)
-    };
-    return { ok: true, status: 'received', data: envelope };
-  }
+  const taskWorkflow = new TaskWorkflow({
+    store: taskStore,
+    listEServerInstances: () => directory.listInstances('eserver'),
+    isEServerConnectionReady: instanceId => getConnection('eserver', instanceId)?.connected ?? false,
+    isPServerConnected: () => destinationPolicy.isPServerConnected(),
+    processMessage: (value, authenticatedFrom, authenticatedInstanceId) =>
+      service.process(value, authenticatedFrom, authenticatedInstanceId),
+    defer: work => { setImmediate(() => { void work(); }); },
+    publishTaskLifecycle: notification => getConnection('aaui')?.emit('task:lifecycle', notification),
+    publishTaskResultLifecycle: notification => getConnection('aaui')?.emit('task:result:lifecycle', notification)
+  });
 
   function publishSelection(record: StoredSelection): void {
     getConnection('aaui')?.emit('resource-selection:updated', record);
@@ -270,37 +145,17 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     }
     if (authenticatedFrom === 'pserver' && value && typeof value === 'object' &&
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.request') {
-      return receiveTask(value);
+      return taskWorkflow.receiveTask(value);
     }
     if (authenticatedFrom === 'eserver' && value && typeof value === 'object' &&
         (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.result') {
-      return receiveTaskResult(value, instanceId);
+      return taskWorkflow.receiveTaskResult(value, instanceId);
     }
     return processPeerMessageForAck(service, value, authenticatedFrom, instanceId);
   }
 
   async function sendTaskSnapshot(connection: PeerSocketConnection): Promise<void> {
-    if (!isCurrentAaui(connection)) return;
-    try {
-      const tasks = await taskStore.listRecent(50);
-      if (!connection.connected || !isCurrentAaui(connection)) return;
-      connection.emit('task:lifecycle:snapshot', {
-        timestamp: Date.now(),
-        tasks: tasks.map(task => ({
-          task,
-          status: task.status === 'finished' ? 'finished' : 'received',
-          event: 'task.snapshot'
-        }))
-      });
-    } catch (error) {
-      console.error('[AAB] TASK SNAPSHOT ERROR', error);
-      if (connection.connected && isCurrentAaui(connection)) {
-        connection.emit('task:lifecycle:snapshot', {
-          timestamp: Date.now(), tasks: [],
-          error: 'Unable to load persisted task history'
-        });
-      }
-    }
+    await sendTaskHistorySnapshot(connection, () => isCurrentAaui(connection), taskWorkflow);
   }
 
   connections.onConnection(connection => {
