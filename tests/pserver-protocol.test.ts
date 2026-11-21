@@ -83,6 +83,14 @@ test('protocol exposes transport connection before session readiness and registe
   assert.equal(protocol.connected, false);
   assert.equal(gateway.registeredTransport?.isConnected(), false);
   assert.equal(protocol.sessionId, undefined);
+  assert.ok(gateway.registeredTransport);
+  await assert.rejects(gateway.registeredTransport.deliver(peerMessage), { message: 'PServer session is not registered' });
+  const preReadyMessage = { from: 'pserver', to: 'aaui', payload: { type: 'demo.test', data: {} } };
+  let preReadyAck: PeerMessageAck | undefined;
+  transport.fire('peer:message', preReadyMessage, (value: PeerMessageAck) => { preReadyAck = value; });
+  await tick();
+  assert.deepEqual(preReadyAck, { ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
+  assert.deepEqual(gateway.received, []);
   firstAck.resolve({ ok: true, session: { id: 'session-1', vm_udid: 'test-vm' } });
   await tick();
   assert.equal(protocol.connected, true);
@@ -109,17 +117,17 @@ test('late ACK after disconnect mutates session state while public readiness sta
   assert.equal(transport.connected, false);
   assert.equal(protocol.connected, false);
   assert.equal(gateway.registeredTransport?.isConnected(), false);
-  assert.equal(protocol.sessionId, 'late-session');
+  assert.equal(protocol.sessionId, undefined);
   assert.ok(gateway.registeredTransport);
-  await gateway.registeredTransport.deliver(peerMessage);
-  assert.equal(transport.emissions[1]?.event, 'peer:message');
+  await assert.rejects(gateway.registeredTransport.deliver(peerMessage), { message: 'PServer session is not registered' });
+  assert.deepEqual(transport.emissions.map(emission => emission.event), [SESSION_CONNECT_EVENT]);
 
   const incoming = { from: 'pserver', to: 'aaui', payload: { type: 'demo.test', data: {} } };
   let acknowledgement: PeerMessageAck | undefined;
   transport.fire('peer:message', incoming, (value: PeerMessageAck) => { acknowledgement = value; });
   await tick();
-  assert.deepEqual(gateway.received, [incoming]);
-  assert.deepEqual(acknowledgement, { ok: false, code: 'INVALID_MESSAGE', error: 'test acknowledgement' });
+  assert.deepEqual(gateway.received, []);
+  assert.deepEqual(acknowledgement, { ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
 });
 
 test('ACK from prior connection can mark a newer transport session-ready before its ACK', async () => {
@@ -144,42 +152,141 @@ test('ACK from prior connection can mark a newer transport session-ready before 
   await tick();
 
   assert.equal(transport.connected, true);
-  assert.equal(protocol.connected, true);
-  assert.equal(gateway.registeredTransport?.isConnected(), true);
-  assert.equal(protocol.sessionId, 'session-from-connect-1');
-  await gateway.registeredTransport?.deliver(peerMessage);
-  assert.equal(transport.emissions[2]?.event, 'peer:message');
-  assert.equal(transport.emissions[2]?.timeoutMs, 5000);
+  assert.equal(protocol.connected, false);
+  assert.equal(gateway.registeredTransport?.isConnected(), false);
+  assert.equal(protocol.sessionId, undefined);
+  assert.ok(gateway.registeredTransport);
+  await assert.rejects(gateway.registeredTransport.deliver(peerMessage), { message: 'PServer session is not registered' });
+  assert.deepEqual(transport.emissions.map(emission => emission.event), [SESSION_CONNECT_EVENT, SESSION_CONNECT_EVENT]);
+  let acknowledgement: PeerMessageAck | undefined;
+  transport.fire('peer:message', { from: 'pserver' }, (value: PeerMessageAck) => { acknowledgement = value; });
+  await tick();
+  assert.deepEqual(acknowledgement, { ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
+  assert.deepEqual(gateway.received, []);
 
   secondAck.resolve({ ok: true, session: { id: 'session-from-connect-2', vm_udid: 'test-vm' } });
   await tick();
   assert.equal(protocol.sessionId, 'session-from-connect-2');
   assert.equal(protocol.connected, true);
+  assert.equal(gateway.registeredTransport?.isConnected(), true);
 });
 
-test('out-of-order registration ACKs allow an older session ID to overwrite the newer ID', async () => {
+test('out-of-order registration ACKs cannot overwrite the current session ID or dispatch validation', async () => {
   const transport = new FakeTransport();
   const firstAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
   const secondAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
   transport.sessionAcks.push(firstAck.promise, secondAck.promise);
-  const protocol = createPServerProtocol(config, transport, makeGateway().gateway);
+  const gateway = makeGateway();
+  const protocol = createPServerProtocol(config, transport, gateway.gateway);
+  const logs: unknown[][] = [];
+  const warnings: unknown[][] = [];
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+
+  try {
+    transport.connect();
+    transport.fire('connect');
+    transport.close();
+    transport.fire('disconnect', 'transport close');
+    transport.connect();
+    transport.fire('connect');
+
+    secondAck.resolve({ ok: true, session: { id: 'newer-session', vm_udid: 'test-vm' } });
+    await tick();
+    assert.equal(protocol.sessionId, 'newer-session');
+    assert.equal(protocol.connected, true);
+
+    transport.fire(DISPATCH_EVENT, { session_id: 'newer-session', vm_udid: 'test-vm' });
+    transport.fire(DISPATCH_EVENT, { session_id: 'older-session', vm_udid: 'test-vm' });
+    await tick();
+    assert.ok(logs.some(args => args[0] === '[AAB] ACTIVITY_TASK VALIDATED'));
+    assert.ok(warnings.some(args => args[0] === '[AAB] ACTIVITY_TASK Session mismatch'));
+
+    firstAck.resolve({ ok: true, session: { id: 'older-session', vm_udid: 'test-vm' } });
+    await tick();
+    assert.equal(protocol.sessionId, 'newer-session');
+    assert.equal(protocol.connected, true);
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+});
+
+test('stale missing, negative, and rejected ACKs cannot change a newer pending attempt', async () => {
+  for (const staleOutcome of ['missing', 'negative', 'rejected']) {
+    const transport = new FakeTransport();
+    const firstAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } } | undefined>();
+    const secondAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+    transport.sessionAcks.push(firstAck.promise, secondAck.promise);
+    const protocol = createPServerProtocol(config, transport, makeGateway().gateway);
+    const errors: unknown[][] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    try {
+      transport.connect();
+      transport.fire('connect');
+      transport.close();
+      transport.fire('disconnect', 'transport close');
+      transport.connect();
+      transport.fire('connect');
+
+      if (staleOutcome === 'missing') firstAck.resolve(undefined);
+      if (staleOutcome === 'negative') firstAck.resolve({ ok: false, session: { id: 'stale-rejected', vm_udid: 'test-vm' } });
+      if (staleOutcome === 'rejected') firstAck.reject(new Error('stale registration failure'));
+      await tick();
+      assert.equal(protocol.sessionId, undefined);
+      assert.equal(protocol.connected, false);
+      assert.deepEqual(errors, []);
+
+      secondAck.resolve({ ok: true, session: { id: 'current-session', vm_udid: 'test-vm' } });
+      await tick();
+      assert.equal(protocol.sessionId, 'current-session');
+      assert.equal(protocol.connected, true);
+    } finally {
+      console.error = originalError;
+    }
+  }
+});
+
+test('close invalidates a pending ACK even when transport emits no disconnect event', async () => {
+  const transport = new FakeTransport();
+  const pendingAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  transport.sessionAcks.push(pendingAck.promise);
+  const gateway = makeGateway();
+  const protocol = createPServerProtocol(config, transport, gateway.gateway);
 
   transport.connect();
   transport.fire('connect');
-  transport.close();
-  transport.fire('disconnect', 'transport close');
-  transport.connect();
-  transport.fire('connect');
+  protocol.close();
+  assert.equal(transport.connected, false);
+  assert.equal(protocol.connected, false);
+  assert.equal(gateway.registeredTransport?.isConnected(), false);
 
-  secondAck.resolve({ ok: true, session: { id: 'newer-session', vm_udid: 'test-vm' } });
+  pendingAck.resolve({ ok: true, session: { id: 'closed-session', vm_udid: 'test-vm' } });
   await tick();
-  assert.equal(protocol.sessionId, 'newer-session');
-  assert.equal(protocol.connected, true);
+  assert.equal(protocol.sessionId, undefined);
+  assert.equal(protocol.connected, false);
+  assert.equal(gateway.registeredTransport?.isConnected(), false);
+  assert.ok(gateway.registeredTransport);
+  await assert.rejects(gateway.registeredTransport.deliver(peerMessage), { message: 'PServer session is not registered' });
 
-  firstAck.resolve({ ok: true, session: { id: 'older-session', vm_udid: 'test-vm' } });
-  await tick();
-  assert.equal(protocol.sessionId, 'older-session');
-  assert.equal(protocol.connected, true);
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  const incoming = { from: 'pserver', to: 'aaui', payload: { type: 'demo.test', data: {} } };
+  let acknowledgement: PeerMessageAck | undefined;
+  try {
+    transport.fire(DISPATCH_EVENT, { session_id: 'closed-session', vm_udid: 'test-vm' });
+    transport.fire('peer:message', incoming, (value: PeerMessageAck) => { acknowledgement = value; });
+    await tick();
+    assert.deepEqual(gateway.received, []);
+    assert.deepEqual(acknowledgement, { ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
+    assert.ok(warnings.some(args => args[0] === '[AAB] ACTIVITY_TASK Session not ready'));
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test('missing, negative, and rejected resume ACKs retain the established session ID', async () => {

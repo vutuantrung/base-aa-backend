@@ -17,22 +17,26 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
   const { vmInfo } = config;
   let sessionId: string | undefined;
   let sessionReady = false;
+  let registrationGeneration = 0;
+  const isSessionReady = () => transport.connected && sessionReady;
 
   gateway.registerPServerTransport({
-    isConnected: () => transport.connected && sessionReady,
+    isConnected: isSessionReady,
     async deliver(message) {
-      if (!sessionReady) throw new Error('PServer session is not registered');
+      if (!isSessionReady()) throw new Error('PServer session is not registered');
       const result = await transport.emitWithAck<{ ok?: boolean }>('peer:message', message, 5000);
       if (!result?.ok) throw new Error('PServer rejected message');
     }
   });
 
   transport.on('connect', () => {
+    const generation = ++registrationGeneration;
     sessionReady = false;
     console.log(`[AAB] CONNECT to PServer socket transport connected`);
     const payload = sessionId ? { session_id: sessionId } : vmInfo;
     console.log('[AAB] SESSION CONNECT Sending:', payload);
     void transport.emitWithAck<SessionAck>(SESSION_CONNECT_EVENT, payload, 10_000).then(ack => {
+      if (generation !== registrationGeneration) return;
       if (!ack?.ok || !ack.session?.id) {
         console.error('[AAB] SESSION ERROR', ack);
         return;
@@ -41,13 +45,14 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
       sessionReady = true;
       console.log('[AAB] SESSION READY', { session_id: sessionId, vm_udid: ack.session.vm_udid });
     }, error => {
+      if (generation !== registrationGeneration) return;
       console.error('[AAB] SESSION TIMEOUT No server acknowledgement:', error instanceof Error ? error.message : error);
     });
   });
 
   transport.on(DISPATCH_EVENT, data => {
     console.log('[AAB] ACTIVITY_TASK RECEIVED', data);
-    if (!sessionReady || !sessionId) {
+    if (!isSessionReady() || !sessionId) {
       console.warn('[AAB] ACTIVITY_TASK Session not ready');
       return;
     }
@@ -72,7 +77,7 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
     const ack = typeof acknowledgement === 'function'
       ? acknowledgement as (result: PeerMessageAck) => void
       : undefined;
-    if (!sessionReady) {
+    if (!isSessionReady()) {
       ack?.({ ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
       return;
     }
@@ -84,14 +89,19 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
     console.error('[AAB] PServer connection error:', error instanceof Error ? error.message : error);
   });
   transport.on('disconnect', reason => {
+    registrationGeneration += 1;
     sessionReady = false;
     console.log(`[AAB] DISCONNECT from PServer reason=${String(reason)}`);
   });
 
   return {
     connect: () => transport.connect(),
-    close: () => transport.close(),
-    get connected() { return transport.connected && sessionReady; },
+    close: () => {
+      registrationGeneration += 1;
+      sessionReady = false;
+      transport.close();
+    },
+    get connected() { return isSessionReady(); },
     get sessionId() { return sessionId; }
   };
 }
