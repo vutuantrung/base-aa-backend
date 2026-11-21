@@ -9,6 +9,7 @@ class FakeTransport implements PServerTransport {
   connected = false;
   readonly events = new Map<string, TransportEventHandler>();
   readonly emissions: Array<{ event: string; payload: unknown; timeoutMs: number }> = [];
+  readonly sessionAcks: Array<Promise<{ ok?: boolean; session?: { id?: string; vm_udid?: string } } | undefined>> = [];
   registration: { ok?: boolean; session?: { id?: string; vm_udid?: string } } | undefined = {
     ok: true, session: { id: 'session-1', vm_udid: 'test-vm' }
   };
@@ -22,13 +23,27 @@ class FakeTransport implements PServerTransport {
 
   async emitWithAck<T>(event: string, payload: unknown, timeoutMs: number): Promise<T> {
     this.emissions.push({ event, payload, timeoutMs });
-    if (event === SESSION_CONNECT_EVENT && this.registrationError) throw this.registrationError;
+    if (event === SESSION_CONNECT_EVENT) {
+      if (this.registrationError) throw this.registrationError;
+      const deferredAck = this.sessionAcks.shift();
+      if (deferredAck) return await deferredAck as T;
+    }
     return (event === SESSION_CONNECT_EVENT ? this.registration : this.peerAck) as T;
   }
 
   connect(): void { this.connected = true; }
   close(): void { this.connected = false; }
   fire(event: string, ...arguments_: unknown[]): void { this.events.get(event)?.(...arguments_); }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 function makeGateway() {
@@ -58,6 +73,8 @@ const canonicalHandler: TransportEventHandler = legacyHandler;
 
 test('protocol exposes transport connection before session readiness and registers on connect', async () => {
   const transport = new FakeTransport();
+  const firstAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  transport.sessionAcks.push(firstAck.promise);
   const gateway = makeGateway();
   const protocol = createPServerProtocol(config, transport, gateway.gateway);
   transport.connect();
@@ -65,12 +82,168 @@ test('protocol exposes transport connection before session readiness and registe
   assert.equal(transport.connected, true);
   assert.equal(protocol.connected, false);
   assert.equal(gateway.registeredTransport?.isConnected(), false);
+  assert.equal(protocol.sessionId, undefined);
+  firstAck.resolve({ ok: true, session: { id: 'session-1', vm_udid: 'test-vm' } });
   await tick();
   assert.equal(protocol.connected, true);
   assert.equal(protocol.sessionId, 'session-1');
   assert.equal(transport.emissions[0]?.event, SESSION_CONNECT_EVENT);
   assert.deepEqual(transport.emissions[0]?.payload, config.vmInfo);
   assert.equal(transport.emissions[0]?.timeoutMs, 10_000);
+});
+
+test('late ACK after disconnect mutates session state while public readiness stays false', async () => {
+  const transport = new FakeTransport();
+  const firstAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  transport.sessionAcks.push(firstAck.promise);
+  const gateway = makeGateway();
+  const protocol = createPServerProtocol(config, transport, gateway.gateway);
+
+  transport.connect();
+  transport.fire('connect');
+  transport.close();
+  transport.fire('disconnect', 'transport close');
+  firstAck.resolve({ ok: true, session: { id: 'late-session', vm_udid: 'test-vm' } });
+  await tick();
+
+  assert.equal(transport.connected, false);
+  assert.equal(protocol.connected, false);
+  assert.equal(gateway.registeredTransport?.isConnected(), false);
+  assert.equal(protocol.sessionId, 'late-session');
+  assert.ok(gateway.registeredTransport);
+  await gateway.registeredTransport.deliver(peerMessage);
+  assert.equal(transport.emissions[1]?.event, 'peer:message');
+
+  const incoming = { from: 'pserver', to: 'aaui', payload: { type: 'demo.test', data: {} } };
+  let acknowledgement: PeerMessageAck | undefined;
+  transport.fire('peer:message', incoming, (value: PeerMessageAck) => { acknowledgement = value; });
+  await tick();
+  assert.deepEqual(gateway.received, [incoming]);
+  assert.deepEqual(acknowledgement, { ok: false, code: 'INVALID_MESSAGE', error: 'test acknowledgement' });
+});
+
+test('ACK from prior connection can mark a newer transport session-ready before its ACK', async () => {
+  const transport = new FakeTransport();
+  const firstAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  const secondAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  transport.sessionAcks.push(firstAck.promise, secondAck.promise);
+  const gateway = makeGateway();
+  const protocol = createPServerProtocol(config, transport, gateway.gateway);
+
+  transport.connect();
+  transport.fire('connect');
+  transport.close();
+  transport.fire('disconnect', 'transport close');
+  transport.connect();
+  transport.fire('connect');
+
+  assert.deepEqual(transport.emissions.map(emission => emission.payload), [config.vmInfo, config.vmInfo]);
+  assert.equal(protocol.connected, false);
+  assert.equal(gateway.registeredTransport?.isConnected(), false);
+  firstAck.resolve({ ok: true, session: { id: 'session-from-connect-1', vm_udid: 'test-vm' } });
+  await tick();
+
+  assert.equal(transport.connected, true);
+  assert.equal(protocol.connected, true);
+  assert.equal(gateway.registeredTransport?.isConnected(), true);
+  assert.equal(protocol.sessionId, 'session-from-connect-1');
+  await gateway.registeredTransport?.deliver(peerMessage);
+  assert.equal(transport.emissions[2]?.event, 'peer:message');
+  assert.equal(transport.emissions[2]?.timeoutMs, 5000);
+
+  secondAck.resolve({ ok: true, session: { id: 'session-from-connect-2', vm_udid: 'test-vm' } });
+  await tick();
+  assert.equal(protocol.sessionId, 'session-from-connect-2');
+  assert.equal(protocol.connected, true);
+});
+
+test('out-of-order registration ACKs allow an older session ID to overwrite the newer ID', async () => {
+  const transport = new FakeTransport();
+  const firstAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  const secondAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+  transport.sessionAcks.push(firstAck.promise, secondAck.promise);
+  const protocol = createPServerProtocol(config, transport, makeGateway().gateway);
+
+  transport.connect();
+  transport.fire('connect');
+  transport.close();
+  transport.fire('disconnect', 'transport close');
+  transport.connect();
+  transport.fire('connect');
+
+  secondAck.resolve({ ok: true, session: { id: 'newer-session', vm_udid: 'test-vm' } });
+  await tick();
+  assert.equal(protocol.sessionId, 'newer-session');
+  assert.equal(protocol.connected, true);
+
+  firstAck.resolve({ ok: true, session: { id: 'older-session', vm_udid: 'test-vm' } });
+  await tick();
+  assert.equal(protocol.sessionId, 'older-session');
+  assert.equal(protocol.connected, true);
+});
+
+test('missing, negative, and rejected resume ACKs retain the established session ID', async () => {
+  const resumeOutcomes = [
+    { kind: 'missing' as const },
+    { kind: 'negative' as const },
+    { kind: 'rejected' as const }
+  ];
+
+  for (const outcome of resumeOutcomes) {
+    const transport = new FakeTransport();
+    const initialAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+    const resumeAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } } | undefined>();
+    const nextAck = deferred<{ ok?: boolean; session?: { id?: string; vm_udid?: string } }>();
+    transport.sessionAcks.push(initialAck.promise, resumeAck.promise, nextAck.promise);
+    const gateway = makeGateway();
+    const protocol = createPServerProtocol(config, transport, gateway.gateway);
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      transport.connect();
+      transport.fire('connect');
+      initialAck.resolve({ ok: true, session: { id: 'established-session', vm_udid: 'test-vm' } });
+      await tick();
+      assert.equal(protocol.connected, true);
+
+      transport.close();
+      transport.fire('disconnect', 'transport close');
+      transport.connect();
+      transport.fire('connect');
+      assert.deepEqual(transport.emissions[1], {
+        event: SESSION_CONNECT_EVENT,
+        payload: { session_id: 'established-session' },
+        timeoutMs: 10_000
+      });
+
+      if (outcome.kind === 'missing') resumeAck.resolve(undefined);
+      if (outcome.kind === 'negative') resumeAck.resolve({ ok: false, session: { id: 'rejected-session', vm_udid: 'test-vm' } });
+      if (outcome.kind === 'rejected') resumeAck.reject(new Error('resume failed'));
+      await tick();
+
+      assert.equal(transport.connected, true);
+      assert.equal(protocol.connected, false);
+      assert.equal(gateway.registeredTransport?.isConnected(), false);
+      assert.equal(protocol.sessionId, 'established-session');
+      await assert.rejects(gateway.registeredTransport?.deliver(peerMessage), { message: 'PServer session is not registered' });
+
+      transport.close();
+      transport.fire('disconnect', 'transport close');
+      transport.connect();
+      transport.fire('connect');
+      assert.deepEqual(transport.emissions[2], {
+        event: SESSION_CONNECT_EVENT,
+        payload: { session_id: 'established-session' },
+        timeoutMs: 10_000
+      });
+      nextAck.resolve({ ok: true, session: { id: 'established-session', vm_udid: 'test-vm' } });
+      await tick();
+      assert.equal(protocol.connected, true);
+      assert.equal(protocol.sessionId, 'established-session');
+    } finally {
+      console.error = originalError;
+    }
+  }
 });
 
 test('protocol delegates connect and close to its transport', () => {
