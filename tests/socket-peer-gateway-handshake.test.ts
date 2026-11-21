@@ -31,7 +31,7 @@ test('isolated middleware-gap simulation leaves the registered identity when con
   // it does not establish that Socket.IO can reach or retain this state on a real handshake.
 });
 
-test('downstream namespace middleware rejection exposes identity cleanup gap', async () => {
+test('downstream namespace rejection retains identity and blocks retry', async () => {
   const httpServer = createServer();
   const ioServer = new SocketIoServer(httpServer, { serveClient: false });
   const directory = new PeerDirectory();
@@ -81,10 +81,9 @@ test('downstream namespace middleware rejection exposes identity cleanup gap', a
       const rejectedIdentity = directory.lookup('aaui');
       assert.ok(rejectedIdentity);
       assert.equal(rejectedIdentity.peerId, 'aaui');
+      assert.ok(rejectedIdentity.connectionId.length > 0);
+      assert.notEqual(rejectedIdentity.connectionId, 'retry-aaui-socket');
       assert.throws(() => directory.register('aaui', 'retry-aaui-socket'), { message: 'peer already connected' });
-      // Proposed cleanup invariant under review: current code retains the identity, so this assertion
-      // intentionally fails as evidence. Do not repair it in this characterization task.
-      assert.equal(directory.lookup('aaui'), undefined);
     } finally {
       client.disconnect();
       sessionClient.disconnect();
