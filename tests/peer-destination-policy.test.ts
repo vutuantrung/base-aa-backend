@@ -46,9 +46,11 @@ function createHeldTransformScenario(directory = new PeerDirectory()) {
   });
   const transformationResult = deferred<PeerMessage['payload']>();
   const transformStarted = deferred<void>();
+  let transformCalled = false;
   const registry = new TransformationRegistry();
   registry.register({ id: 'hold-transform', from: '*', to: 'eserver', payloadType: '*', priority: 1,
     transformer: { async transform(message) {
+      transformCalled = true;
       transformStarted.resolve(undefined);
       return transformationResult.promise;
     } } });
@@ -56,7 +58,8 @@ function createHeldTransformScenario(directory = new PeerDirectory()) {
     service: new PeerMessageService(registry, policy),
     delivered,
     transformStarted: transformStarted.promise,
-    releaseTransform: transformationResult.resolve
+    releaseTransform: transformationResult.resolve,
+    get transformCalled() { return transformCalled; }
   };
 }
 
@@ -191,27 +194,86 @@ test('same logical EServer replacement is resolved to the latest physical connec
   assert.equal(scenario.delivered[0]?.message.toInstanceId, 'worker-1');
 });
 
-test('untargeted EServer ambiguity created during transform maps to DELIVERY_FAILED', async () => {
+test('untargeted EServer remains bound to its initial sole instance when topology becomes ambiguous', async () => {
   const directory = new PeerDirectory();
   directory.register('eserver', 'socket-one', 'worker-1');
+  const scenario = createHeldTransformScenario(directory);
+  const operation = processPeerMessageForAck(scenario.service, message('eserver'), 'aaui');
+  await scenario.transformStarted;
+  directory.register('eserver', 'socket-two', 'worker-2');
+  scenario.releaseTransform(transformedPayload);
+  const acknowledgement = await operation;
+
+  assert.equal(acknowledgement.ok, true);
+  assert.equal(scenario.delivered.length, 1);
+  assert.equal(scenario.delivered[0]?.connectionId, 'socket-one');
+  assert.equal('toInstanceId' in (scenario.delivered[0]?.message ?? {}), false);
+  if (acknowledgement.ok) assert.equal('toInstanceId' in acknowledgement.data, false);
+});
+
+test('untargeted message does not retarget when its bound instance is replaced by another sole instance', async () => {
+  const directory = new PeerDirectory();
+  const original = directory.register('eserver', 'socket-old', 'worker-1');
   const scenario = createHeldTransformScenario(directory);
   const originalError = console.error;
   console.error = () => {};
   try {
     const operation = processPeerMessageForAck(scenario.service, message('eserver'), 'aaui');
     await scenario.transformStarted;
-    directory.register('eserver', 'socket-two', 'worker-2');
+    assert.equal(directory.remove(original), true);
+    directory.register('eserver', 'socket-new', 'worker-2');
     scenario.releaseTransform(transformedPayload);
     const acknowledgement = await operation;
 
     assert.deepEqual(acknowledgement, {
-      ok: false, code: 'DELIVERY_FAILED', error: 'Destination eserver is offline'
+      ok: false, code: 'DESTINATION_OFFLINE', error: 'Destination eserver is offline'
     });
     assert.deepEqual(scenario.delivered, []);
   } finally {
     console.error = originalError;
   }
+});
 
+test('process reports a bound instance replacement as DESTINATION_OFFLINE', async () => {
+  const directory = new PeerDirectory();
+  const original = directory.register('eserver', 'socket-old', 'worker-1');
+  const scenario = createHeldTransformScenario(directory);
+  const operation = scenario.service.process(message('eserver'), 'aaui');
+  await scenario.transformStarted;
+  assert.equal(directory.remove(original), true);
+  directory.register('eserver', 'socket-new', 'worker-2');
+  scenario.releaseTransform(transformedPayload);
+
+  await assert.rejects(operation, (error: unknown) =>
+    error instanceof PeerMessageError && error.code === 'DESTINATION_OFFLINE');
+  assert.deepEqual(scenario.delivered, []);
+});
+
+test('untargeted message keeps the original envelope when its bound instance reconnects on a new socket', async () => {
+  const directory = new PeerDirectory();
+  const original = directory.register('eserver', 'socket-old', 'worker-1');
+  const scenario = createHeldTransformScenario(directory);
+  const operation = processPeerMessageForAck(scenario.service, message('eserver', {
+    id: '33333333-3333-4333-8333-333333333333'
+  }), 'aaui');
+  await scenario.transformStarted;
+  assert.equal(directory.remove(original), true);
+  directory.register('eserver', 'socket-new', 'worker-1');
+  scenario.releaseTransform(transformedPayload);
+  const acknowledgement = await operation;
+
+  assert.equal(acknowledgement.ok, true);
+  assert.equal(scenario.delivered.length, 1);
+  assert.equal(scenario.delivered[0]?.connectionId, 'socket-new');
+  assert.equal(scenario.delivered[0]?.message.id, '33333333-3333-4333-8333-333333333333');
+  assert.equal('toInstanceId' in (scenario.delivered[0]?.message ?? {}), false);
+  if (acknowledgement.ok) {
+    assert.equal(acknowledgement.data.id, '33333333-3333-4333-8333-333333333333');
+    assert.equal('toInstanceId' in acknowledgement.data, false);
+  }
+});
+
+test('ambiguous or offline untargeted destination fails before transformation', async () => {
   const alreadyAmbiguous = new PeerDirectory();
   alreadyAmbiguous.register('eserver', 'socket-one', 'worker-1');
   alreadyAmbiguous.register('eserver', 'socket-two', 'worker-2');
@@ -229,22 +291,66 @@ test('untargeted EServer ambiguity created during transform maps to DELIVERY_FAI
     code: 'AMBIGUOUS_DESTINATION',
     error: 'Multiple EServer instances connected; toInstanceId is required'
   });
+  assert.equal(beforeTransform.transformCalled, false);
   assert.deepEqual(beforeTransform.delivered, []);
+
+  const offline = createHeldTransformScenario(new PeerDirectory());
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const offlineAck = await processPeerMessageForAck(offline.service, message('eserver'), 'aaui');
+    assert.deepEqual(offlineAck, {
+      ok: false, code: 'DESTINATION_OFFLINE', error: 'Destination eserver is offline'
+    });
+    assert.equal(offline.transformCalled, false);
+    assert.deepEqual(offline.delivered, []);
+  } finally {
+    console.error = originalError;
+  }
 });
 
-test('untargeted message follows a different sole EServer after topology replacement', async () => {
+test('actual socket delivery rejection remains DELIVERY_FAILED', async () => {
   const directory = new PeerDirectory();
-  const original = directory.register('eserver', 'socket-old', 'worker-1');
-  const scenario = createHeldTransformScenario(directory);
-  const operation = processPeerMessageForAck(scenario.service, message('eserver'), 'aaui');
-  await scenario.transformStarted;
-  assert.equal(directory.remove(original), true);
-  directory.register('eserver', 'socket-new', 'worker-2');
-  scenario.releaseTransform(transformedPayload);
-  const acknowledgement = await operation;
+  directory.register('eserver', 'socket-one', 'worker-1');
+  const policy = new PeerDestinationPolicy(directory, {
+    async deliver() { throw new Error('socket write failed'); }
+  });
+  const service = new PeerMessageService(new TransformationRegistry(), policy);
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const acknowledgement = await processPeerMessageForAck(service, message('eserver', {
+      toInstanceId: 'worker-1'
+    }), 'aaui');
+    assert.deepEqual(acknowledgement, {
+      ok: false, code: 'DELIVERY_FAILED', error: 'socket write failed'
+    });
+  } finally {
+    console.error = originalError;
+  }
+});
 
-  assert.equal(acknowledgement.ok, true);
-  assert.equal(scenario.delivered.length, 1);
-  assert.equal(scenario.delivered[0]?.connectionId, 'socket-new');
-  assert.equal(scenario.delivered[0]?.message.toInstanceId, undefined);
+test('check-to-send socket failure remains DELIVERY_FAILED if identity disappears after lookup', async () => {
+  const directory = new PeerDirectory();
+  const original = directory.register('eserver', 'socket-one', 'worker-1');
+  const policy = new PeerDestinationPolicy(directory, {
+    async deliver(_peerId, _connectionId, outbound) {
+      assert.equal(outbound.toInstanceId, 'worker-1');
+      assert.equal(directory.remove(original), true);
+      throw new Error('socket disconnected during send');
+    }
+  });
+  const service = new PeerMessageService(new TransformationRegistry(), policy);
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const acknowledgement = await processPeerMessageForAck(service, message('eserver', {
+      toInstanceId: 'worker-1'
+    }), 'aaui');
+    assert.deepEqual(acknowledgement, {
+      ok: false, code: 'DELIVERY_FAILED', error: 'socket disconnected during send'
+    });
+  } finally {
+    console.error = originalError;
+  }
 });

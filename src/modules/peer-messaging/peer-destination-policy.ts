@@ -1,6 +1,19 @@
 import type { IncomingPeerMessage, PeerId, PeerMessage } from './contracts.js';
-import { PeerMessageError, type PeerDelivery } from './peer-message-service.js';
+import { PeerMessageError, type PeerDelivery, type PeerDeliveryContext } from './peer-message-service.js';
 import type { DirectoryPeerId, PeerIdentity } from './peer-directory.js';
+
+const boundEServerInstance = Symbol('bound-eserver-instance');
+
+interface EServerDeliveryContext extends PeerDeliveryContext {
+  readonly [boundEServerInstance]: true;
+  readonly instanceId: string;
+}
+
+function isEServerDeliveryContext(context: PeerDeliveryContext | undefined): context is EServerDeliveryContext {
+  return context !== undefined &&
+    boundEServerInstance in context && context[boundEServerInstance] === true &&
+    'instanceId' in context && typeof context.instanceId === 'string';
+}
 
 export interface PeerDirectoryCapabilities {
   has(peerId: DirectoryPeerId, instanceId?: string): boolean;
@@ -34,10 +47,15 @@ export class PeerDestinationPolicy implements PeerDelivery {
     return this.pserverTransport?.isConnected() ?? false;
   }
 
-  isConnected(peer: PeerId, toInstanceId?: string): boolean {
+  isConnected(peer: PeerId, toInstanceId?: string, context?: PeerDeliveryContext): boolean {
     if (peer === 'aab') return true;
     if (peer === 'pserver') return this.pserverTransport?.isConnected() ?? false;
-    if (peer === 'eserver') return this.directory.has(peer, toInstanceId);
+    if (peer === 'eserver') {
+      const boundContext = this.asEServerContext(context);
+      return boundContext
+        ? this.directory.lookup('eserver', boundContext.instanceId) !== undefined
+        : this.directory.has(peer, toInstanceId);
+    }
     return this.directory.has(peer);
   }
 
@@ -47,7 +65,17 @@ export class PeerDestinationPolicy implements PeerDelivery {
     }
   }
 
-  async deliver(message: PeerMessage): Promise<void> {
+  bindDestination(message: IncomingPeerMessage): PeerDeliveryContext | undefined {
+    if (message.to !== 'eserver') return undefined;
+    if (message.toInstanceId) return { [boundEServerInstance]: true, instanceId: message.toInstanceId };
+    const soleInstance = this.directory.listInstances('eserver')[0];
+    if (!soleInstance) return undefined;
+    if (!soleInstance.instanceId)
+      throw new PeerMessageError('DESTINATION_OFFLINE', 'Destination eserver is offline');
+    return { [boundEServerInstance]: true, instanceId: soleInstance.instanceId };
+  }
+
+  async deliver(message: PeerMessage, context?: PeerDeliveryContext): Promise<void> {
     if (message.to === 'pserver') {
       const transport = this.pserverTransport;
       if (!transport?.isConnected()) throw new Error('PServer is offline');
@@ -55,7 +83,9 @@ export class PeerDestinationPolicy implements PeerDelivery {
     } else if (message.to !== 'aab') {
       let identity: PeerIdentity | undefined;
       if (message.to === 'eserver') {
-        if (message.toInstanceId) identity = this.directory.lookup('eserver', message.toInstanceId);
+        const boundContext = this.asEServerContext(context);
+        if (boundContext) identity = this.directory.lookup('eserver', boundContext.instanceId);
+        else if (message.toInstanceId) identity = this.directory.lookup('eserver', message.toInstanceId);
         else {
           const instances = this.directory.listInstances('eserver');
           if (instances.length === 1) identity = instances[0];
@@ -63,9 +93,17 @@ export class PeerDestinationPolicy implements PeerDelivery {
       } else {
         identity = this.directory.lookup(message.to);
       }
-      if (!identity) throw new Error(`Destination ${message.to} is offline`);
+      if (!identity) {
+        if (message.to === 'eserver' && this.asEServerContext(context))
+          throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${message.to} is offline`);
+        throw new Error(`Destination ${message.to} is offline`);
+      }
       await this.socketDelivery.deliver(message.to, identity.connectionId, message);
     }
     console.log(`[AAB] FORWARD id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} toInstance=${message.toInstanceId ?? '-'} type=${message.payload.type}`);
+  }
+
+  private asEServerContext(context: PeerDeliveryContext | undefined): EServerDeliveryContext | undefined {
+    return isEServerDeliveryContext(context) ? context : undefined;
   }
 }

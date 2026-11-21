@@ -10,11 +10,15 @@ export class PeerMessageError extends Error {
 }
 
 export interface PeerDelivery {
-  isConnected(peer: PeerId, toInstanceId?: string): boolean;
+  isConnected(peer: PeerId, toInstanceId?: string, context?: PeerDeliveryContext): boolean;
   validateDestination?(message: IncomingPeerMessage): void;
-  deliver(message: PeerMessage): Promise<void>;
+  bindDestination?(message: IncomingPeerMessage): PeerDeliveryContext | undefined;
+  deliver(message: PeerMessage, context?: PeerDeliveryContext): Promise<void>;
   beforeDeliver?(message: PeerMessage): Promise<void>;
 }
+
+/** Opaque, per-message routing state; never copied into the public message envelope. */
+export type PeerDeliveryContext = object;
 
 export class PeerMessageService {
   constructor(readonly transformations: TransformationRegistry, private readonly delivery: PeerDelivery) {}
@@ -27,7 +31,8 @@ export class PeerMessageService {
     if (input.toInstanceId && input.to !== 'eserver')
       throw new PeerMessageError('INVALID_MESSAGE', 'toInstanceId is currently supported only for EServer');
     this.delivery.validateDestination?.(input);
-    if (input.to !== 'aab' && !this.delivery.isConnected(input.to, input.toInstanceId))
+    const deliveryContext = this.delivery.bindDestination?.(input);
+    if (input.to !== 'aab' && !this.delivery.isConnected(input.to, input.toInstanceId, deliveryContext))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${input.to} is offline`);
 
     const original: PeerMessage = {
@@ -55,12 +60,18 @@ export class PeerMessageService {
     };
     if (message.to === 'aab') return message;
     // Validate again after asynchronous transformations (destination may have disconnected).
-    if (!this.delivery.isConnected(message.to, message.toInstanceId))
+    if (!this.delivery.isConnected(message.to, message.toInstanceId, deliveryContext))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${message.to} is offline`);
     try {
       await this.delivery.beforeDeliver?.(message);
-      await this.delivery.deliver(message);
     } catch (error) {
+      throw new PeerMessageError('DELIVERY_FAILED',
+        error instanceof Error ? error.message : 'Unable to deliver message');
+    }
+    try {
+      await this.delivery.deliver(message, deliveryContext);
+    } catch (error) {
+      if (deliveryContext && error instanceof PeerMessageError && error.code === 'DESTINATION_OFFLINE') throw error;
       throw new PeerMessageError('DELIVERY_FAILED',
         error instanceof Error ? error.message : 'Unable to deliver message');
     }
