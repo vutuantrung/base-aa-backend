@@ -426,11 +426,21 @@ test('protocol returns the pre-ready inbound ACK and does not ingest the message
   const transport = new FakeTransport();
   const gateway = makeGateway();
   createPServerProtocol(config, transport, gateway.gateway);
+  const receivedLogs: unknown[][] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => { receivedLogs.push(args); };
   let acknowledgement: PeerMessageAck | undefined;
-  transport.fire('peer:message', { payload: 'ignored' }, (value: PeerMessageAck) => { acknowledgement = value; });
-  await tick();
-  assert.deepEqual(acknowledgement, { ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
+  try {
+    transport.fire('peer:message', { payload: 'ignored without ACK' });
+    await tick();
+    transport.fire('peer:message', { payload: 'ignored with ACK' }, (value: PeerMessageAck) => { acknowledgement = value; });
+    await tick();
+  } finally {
+    console.log = originalLog;
+  }
+  assert.deepEqual(receivedLogs, []);
   assert.deepEqual(gateway.received, []);
+  assert.deepEqual(acknowledgement, { ok: false, code: 'UNSUPPORTED_DESTINATION', error: 'PServer session not ready' });
 });
 
 test('protocol reports missing or negative registration ACK without becoming ready', async () => {

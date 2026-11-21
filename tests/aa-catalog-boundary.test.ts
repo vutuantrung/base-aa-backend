@@ -273,6 +273,8 @@ test('catalog route is absent without capability and SQLite gate retains exact a
   }
   const noTrailingSlash = await fetch(`${disabled}/api/extension`, { headers: { 'x-api-key': 'catalog-key' } });
   assert.equal(noTrailingSlash.status, 404);
+  assert.match(noTrailingSlash.headers.get('content-type') ?? '', /^text\/html/);
+  assert.match(await noTrailingSlash.text(), /Cannot GET \/api\/extension/);
 });
 
 test('application catalogs use isolated databases and are absent when SQLite is disabled', async () => {
