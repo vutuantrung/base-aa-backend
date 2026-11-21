@@ -1,6 +1,6 @@
 # Dependency inventory — R7.1.0
 
-Audit-only static view of tracked TypeScript in `src/`, NodeNext resolution, source baseline `08614077a92946ac2718ac5a3c5c46d5d30467fe`; R7.1.0 inventory commit `0bae390fa871aa4797c4d0b44f3cf083f84fdc8e`, closure `61742f6ee7519612f6b412574a147429e4ab84f7`, environment verification `534419855148800e14180f45d719f0e3d9252080`. Based on TypeScript compiler API import/export syntax and compiler settings (`verbatimModuleSyntax` is not enabled; explicit `import type` and type-only named imports erase). 109 resolved internal edges; 53 contain runtime value imports/exports, the remainder are type-only. External package imports excluded from internal graph; no unresolved relative paths, dynamic imports, `require`, or side-effect-only imports found in the scanned tracked source. This is a static syntax inventory, not runtime proof. Counts are the prior full-graph inventory; R7.1.A updates only its targeted edges.
+Historical R7.1.0 audit of tracked TypeScript in `src/`, NodeNext resolution, source baseline `08614077a92946ac2718ac5a3c5c46d5d30467fe`; inventory commit `0bae390fa871aa4797c4d0b44f3cf083f84fdc8e`, closure `61742f6ee7519612f6b412574a147429e4ab84f7`, environment verification `534419855148800e14180f45d719f0e3d9252080`. Its 109 resolved internal edges / 53 runtime-containing edges are historical R7.1.0 metrics, not current graph counts. Fresh executable R7.1.E metrics are recorded below. The static graph is not runtime proof.
 
 ## File ownership map
 
@@ -16,7 +16,7 @@ Audit-only static view of tracked TypeScript in `src/`, NodeNext resolution, sou
 | M08 | `infrastructure/integration-clients/{index,http-message-client,socket-message-client}.ts` |
 | M09 | `modules/messaging/{message-router,messaging,route-registry}.ts` |
 | M10 | `modules/peer-messaging/{contracts,peer-destination-policy,peer-message-service,transformation-registry}.ts` (transformation registry is logically M11) |
-| M11 | `modules/peer-messaging/transformation-registry.ts` (shared physical folder with M10) |
+| M11 | `modules/peer-messaging/transformation-registry.ts` (shared physical folder with M10; owned by M11) |
 | M12 | `modules/task-workflow/{task-file-store,task-workflow}.ts` |
 | M13 | `modules/resource-selection/{resource-selection-store,resource-selection-workflow}.ts` |
 | M14 | `modules/session/{contracts,session}.ts` |
@@ -99,3 +99,12 @@ Same-owner resolved imports (for full traceability): M14 session -> M14 contract
 | E — dependency enforcement | Add a static graph check only after A–D contracts/allowlist are approved; include type/runtime distinction, NodeNext alias resolution, SCC and boundary rules. No dependency until separately authorized. | Prerequisites: approved ownership exceptions and compatibility inventory. Acceptance: deterministic check over tracked `src`, fixtures for legal type-only and illegal runtime edges, zero unapproved cycles, stable command in CI; run typecheck/build/backend/playground suites. |
 
 R7.2–R7.9 behavior/runtime/test/demo work remains deferred; preserve M12–M15 TBD. No implementation is authorized by this audit.
+
+
+## R7.1.E executable enforcement (fresh at base `1c47c1a3b30f8038143c8c569c7ec120fec91dba`)
+
+`npm run check:architecture` runs `scripts/check-architecture.ts` over `git ls-files` tracked `src/**/*.ts`, with NodeNext resolution from `tsconfig.json`. The explicit per-file ownership map classifies every tracked file once; new files require an explicit entry. `transformation-registry.ts` is M11. Current scan: **52 files; 113 resolved edges (51 runtime, 62 type-only)**. Runtime file SCCs: **0**. Module runtime SCC: **M10↔M12↔M13** (reported for review, not blanket-failed). Module all-import SCC: **M06↔M10↔M11↔M12↔M13**; M10↔M11 is through M11's type-only M10 contract edge and is not a runtime SCC.
+
+Enforced rules: any-kind M01/M04 -> infrastructure edges are prohibited; exact neutral shared contracts `shared/contracts/message.ts` and `shared/transport/connectable-message-client.ts` may not import infrastructure; M08 uses those neutral contracts type-only; all shared -> infrastructure edges fail except the exact runtime named re-export of `HttpMessageClient` and `SocketMessageClient` from `shared/transport/connectable-client.ts` to `infrastructure/integration-clients/index.ts`. M02 concrete composition and M05 workflow composition remain allowed. Unresolved relative specifiers, local imports resolving outside the tracked graph, unmapped files, dynamic `import()` and `require()` fail with diagnostics.
+
+No CI workflow exists in this repository, so CI invocation is pending workflow adoption. See [R7.1.E report](../../R7_1_E_DEPENDENCY_ENFORCEMENT_REPORT.md) for the rule matrix, tests, current SCCs and limitations.
