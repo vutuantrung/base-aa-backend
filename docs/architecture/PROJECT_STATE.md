@@ -7,7 +7,8 @@
 - R7.1.D.2 compatibility verification is committed at `1c47c1a3b30f8038143c8c569c7ec120fec91dba`. Node 22.23.5: typecheck/build passed; backend 149/149; playground 32/32; diff check passed. SQLite driver available; authorized loopback tests passed. No production defect found. See [D.2 report](../../R7_1_D_2_APPLICATION_SURFACE_COMPATIBILITY_REPORT.md).
 - D.2 is committed; its report and compatibility tests are historical checkpoint evidence. External-consumer risk remains unknown.
 - R7.1.E is committed at `64c2c354ccd3e0e9f86ed37c8996fcb2c13249c5` (`updated 11210931`). The executable checker, focused fixtures, package command, and architecture documentation are committed. E verification on Node 22.23.5 passed: checker, typecheck/build, backend 159/159, playground 32/32, diff check. See [R7.1.E report](../../R7_1_E_DEPENDENCY_ENFORCEMENT_REPORT.md).
-- R7.1 closure architecture review at the same committed HEAD recommends **conditionally closed**: the M10/M12/M13 module runtime SCC is explained by retained facades and shared schemas, with zero file runtime SCCs; syntactic runtime classification can overstate compiler-elided ordinary imports, and no compatible CI workflow exists. See [closure review](../../R7_1_CLOSURE_ARCHITECTURE_REVIEW_REPORT.md). This task adds only documentation; tracked source/tests remain clean. The working tree is dirty with `PROJECT_STATE.md`, `DEPENDENCY_INVENTORY.md`, `TECHNICAL_DEBT.md`, and the new closure report; the untracked task prompt is preserved. No commit/push or R7.2 transition.
+- R7.1 closure architecture review at the same committed HEAD recommends **conditionally closed**: the M10/M12/M13 module runtime SCC is explained by retained facades and shared schemas, with zero file runtime SCCs; syntactic runtime classification can overstate compiler-elided ordinary imports, and no compatible CI workflow exists. See [closure review](../../R7_1_CLOSURE_ARCHITECTURE_REVIEW_REPORT.md). Closure review is committed at R7.2 base `d14a5929a6016f05d23e7f9954231da364483382`.
+- R7.2.0 reliability risk inventory is audit-only at base `d14a5929a6016f05d23e7f9954231da364483382`. TD02–TD04 were inspected; no races were reproduced and no source/tests changed. See [risk inventory](R7_2_RELIABILITY_RISK_INVENTORY.md) and [audit report](../../R7_2_0_RELIABILITY_RISK_INVENTORY_REPORT.md). R7.2 implementation has not started; stop for review.
 - Unresolved: M12–M15 APP/DEMO TBD; production PServer, Node 24 native SQLite and GUI demo unverified; bounded shutdown drain remains unverified; architecture checker CI integration is pending and its syntactic runtime-classification limit is recorded in the closure review. Original R0–R5 decision records and `api-data.json` are absent from inspected tree; do not repeat this discovery.
 
 ## Read on demand
@@ -18,6 +19,7 @@
 | Decisions and evidence limits | [ARCHITECTURE_DECISIONS.md](ARCHITECTURE_DECISIONS.md) — find decision ID |
 | Known risks and work sequencing | [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — find R7 step or debt ID |
 | M02 public surface and consumer evidence | [APPLICATION_SURFACE_INVENTORY.md](APPLICATION_SURFACE_INVENTORY.md) |
+| R7.2 connection/session risks | [R7_2_RELIABILITY_RISK_INVENTORY.md](R7_2_RELIABILITY_RISK_INVENTORY.md) |
 | Historical implementation evidence | Root R6 reports referenced in relevant rows; open only when needed |
 
 ## Checkpoint protocol
