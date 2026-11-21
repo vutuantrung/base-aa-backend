@@ -15,6 +15,43 @@ import { sendResourceSelectionSnapshot } from './resource-selection-snapshot.js'
 
 export interface ExternalPeerTransport extends PServerPeerTransport {}
 
+export interface PeerMessageHandlerCapabilities {
+  receiveResourceSelection(value: unknown): Promise<PeerMessageAck>;
+  receiveTaskRequest(value: unknown): Promise<PeerMessageAck>;
+  receiveTaskResult(value: unknown, authenticatedInstanceId?: string): Promise<PeerMessageAck>;
+  processGenericMessage(
+    value: unknown,
+    authenticatedFrom: PeerId,
+    authenticatedInstanceId?: string
+  ): Promise<PeerMessageAck>;
+}
+
+/** M05 composes authenticated operation routing before delegating validation to each owner. */
+export function createPeerMessageHandler(capabilities: PeerMessageHandlerCapabilities) {
+  return async (value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessageAck> => {
+    const operationType = getRawPayloadType(value);
+
+    if (authenticatedFrom === 'aaui' && operationType === 'demo.resource-selection') {
+      return await capabilities.receiveResourceSelection(value);
+    }
+    if (authenticatedFrom === 'pserver' && operationType === 'demo.task.request') {
+      return await capabilities.receiveTaskRequest(value);
+    }
+    if (authenticatedFrom === 'eserver' && operationType === 'demo.task.result') {
+      return await capabilities.receiveTaskResult(value, authenticatedInstanceId);
+    }
+    return await capabilities.processGenericMessage(value, authenticatedFrom, authenticatedInstanceId);
+  };
+}
+
+function getRawPayloadType(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return undefined;
+  const payload: unknown = Reflect.get(value, 'payload');
+  if (payload === null || payload === undefined) return undefined;
+  const payloadContainer: object = Object(payload);
+  return Reflect.get(payloadContainer, 'type');
+}
+
 /**
  * EServer instances have separate authenticated sockets keyed by instanceId.
  * SServer and AAUI retain their single-connection behavior.
@@ -73,21 +110,14 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     await sendResourceSelectionSnapshot(connection, () => isCurrentAaui(connection), selectionWorkflow);
   }
 
-  async function handleMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
-    if (authenticatedFrom === 'aaui' && value && typeof value === 'object' &&
-        (value as { payload?: { type?: unknown } }).payload?.type === 'demo.resource-selection') {
-      return selectionWorkflow.receiveSelection(value);
-    }
-    if (authenticatedFrom === 'pserver' && value && typeof value === 'object' &&
-        (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.request') {
-      return taskWorkflow.receiveTask(value);
-    }
-    if (authenticatedFrom === 'eserver' && value && typeof value === 'object' &&
-        (value as { payload?: { type?: unknown } }).payload?.type === 'demo.task.result') {
-      return taskWorkflow.receiveTaskResult(value, instanceId);
-    }
-    return processPeerMessageForAck(service, value, authenticatedFrom, instanceId);
-  }
+  const handleMessage = createPeerMessageHandler({
+    receiveResourceSelection: value => selectionWorkflow.receiveSelection(value),
+    receiveTaskRequest: value => taskWorkflow.receiveTask(value),
+    receiveTaskResult: (value, authenticatedInstanceId) =>
+      taskWorkflow.receiveTaskResult(value, authenticatedInstanceId),
+    processGenericMessage: (value, authenticatedFrom, authenticatedInstanceId) =>
+      processPeerMessageForAck(service, value, authenticatedFrom, authenticatedInstanceId)
+  });
 
   async function sendTaskSnapshot(connection: PeerSocketConnection): Promise<void> {
     await sendTaskHistorySnapshot(connection, () => isCurrentAaui(connection), taskWorkflow);
