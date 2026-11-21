@@ -36,10 +36,18 @@ test('downstream namespace middleware rejection exposes identity cleanup gap', a
   const ioServer = new SocketIoServer(httpServer, { serveClient: false });
   const directory = new PeerDirectory();
   createSocketPeerGateway(ioServer, 'local-key', directory);
+  ioServer.of('/session').on('connection', () => {});
 
   // Socket.IO runs namespace middleware in registration order. This controlled later middleware
   // rejects after createSocketPeerGateway has registered M06 identity, before `connection` fires.
-  ioServer.of('/peers').use((_socket, next) => next(new Error('controlled downstream rejection')));
+  let socketDisconnectFired = false;
+  let transportCloseFired = false;
+  ioServer.of('/peers').use((socket, next) => {
+    socket.once('disconnect', () => { socketDisconnectFired = true; });
+    socket.once('disconnecting', () => { socketDisconnectFired = true; });
+    socket.client.conn.once('close', () => { transportCloseFired = true; });
+    next(new Error('controlled downstream rejection'));
+  });
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -51,13 +59,25 @@ test('downstream namespace middleware rejection exposes identity cleanup gap', a
     });
     const address = httpServer.address();
     assert.ok(address && typeof address === 'object');
+    const sessionClient = createSocketClient(`http://127.0.0.1:${address.port}/session`, {
+      transports: ['websocket'], reconnection: false
+    });
+    await new Promise<void>((resolve, reject) => {
+      sessionClient.once('connect', resolve);
+      sessionClient.once('connect_error', reject);
+    });
     const client = createSocketClient(`http://127.0.0.1:${address.port}/peers`, {
       transports: ['websocket'], reconnection: false,
       auth: { peerId: 'aaui', token: 'local-key' }
     });
     try {
+      assert.equal(client.io, sessionClient.io);
       const connectionError = await new Promise<Error>(resolve => client.once('connect_error', resolve));
       assert.equal(connectionError.message, 'controlled downstream rejection');
+      assert.equal(client.io.engine.readyState, 'open');
+      assert.equal(sessionClient.connected, true);
+      assert.equal(socketDisconnectFired, false);
+      assert.equal(transportCloseFired, false);
       const rejectedIdentity = directory.lookup('aaui');
       assert.ok(rejectedIdentity);
       assert.equal(rejectedIdentity.peerId, 'aaui');
@@ -67,6 +87,7 @@ test('downstream namespace middleware rejection exposes identity cleanup gap', a
       assert.equal(directory.lookup('aaui'), undefined);
     } finally {
       client.disconnect();
+      sessionClient.disconnect();
     }
   } finally {
     await new Promise<void>(resolve => ioServer.close(() => resolve()));
