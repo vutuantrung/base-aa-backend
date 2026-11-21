@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ResourceSelectionWorkflow, type ResourceSelectionWorkflowCapabilities } from '../src/modules/resource-selection/resource-selection-workflow.js';
-import type { ResourceSelection, StoredSelection } from '../src/modules/resource-selection/resource-selection-store.js';
+import { JsonResourceSelectionStore, type ResourceSelection, type StoredSelection } from '../src/modules/resource-selection/resource-selection-store.js';
 import type { PeerMessage } from '../src/modules/peer-messaging/contracts.js';
 
 const originalSelection = { browserProfileId: ' profile-1 ', proxyId: ' proxy-2 ', accountId: ' account-3 ' };
@@ -143,6 +146,38 @@ test('failed delivery remains forwardFailed when status sidecar update also fail
   assert.deepEqual(setup.writes[0], { id: record.id, status: 'forwardFailed', reason: 'wire rejected' });
   assert.equal(setup.notifications.at(1)?.deliveryStatus, 'forwardFailed');
   assert.equal(setup.notifications.at(1)?.deliveryError, 'wire rejected');
+});
+
+test('redelivery of the same selection message creates a distinct receipt and deferred attempt', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'aab-selection-redelivery-'));
+  try {
+    const store = new JsonResourceSelectionStore(directory);
+    const schedules: Array<() => Promise<void>> = [];
+    const notifications: StoredSelection[] = [];
+    const capabilities: ResourceSelectionWorkflowCapabilities = {
+      store,
+      async processMessage() { return processedMessage; },
+      defer(work) { schedules.push(work); },
+      publishUpdated(record) { notifications.push(record); }
+    };
+    const workflow = new ResourceSelectionWorkflow(capabilities);
+    const redelivered = message(originalSelection, { id: peerMessageId });
+
+    const first = await workflow.receiveSelection(redelivered);
+    const second = await workflow.receiveSelection(redelivered);
+    const receipts = await store.listRecent(50);
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(receipts.length, 2);
+    assert.notEqual(receipts[0]?.id, receipts[1]?.id);
+    assert.deepEqual(receipts.map(receipt => receipt.selection), [record.selection, record.selection]);
+    assert.deepEqual(receipts.map(receipt => receipt.deliveryStatus), ['pending', 'pending']);
+    assert.equal(schedules.length, 2);
+    assert.deepEqual(notifications.map(notification => notification.deliveryStatus), ['pending', 'pending']);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('empty delivery failure reason is omitted from notification but passed to store fallback', async () => {

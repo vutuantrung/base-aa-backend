@@ -114,3 +114,34 @@ test('delivery errors reject publish after concurrent delivery starts', async ()
   await assert.rejects(router.publish({ channel: 'session', event: 'x', payload: {} }), /delivery failed/);
   assert.deepEqual(started, ['http', 'socket']);
 });
+
+test('a sibling fan-out delivery may complete after publish rejects', async () => {
+  let finishSocketDelivery: (() => void) | undefined;
+  let socketDelivered: (() => void) | undefined;
+  const socketDeliveryCompleted = new Promise<void>(resolve => { socketDelivered = resolve; });
+  const deliveries: string[] = [];
+  const failingHttp: OutboundTransportAdapter = {
+    transport: 'http', async deliver() { throw new Error('HTTP destination failed'); }
+  };
+  const heldSocket: OutboundTransportAdapter = {
+    transport: 'socket',
+    async deliver() {
+      await new Promise<void>(resolve => { finishSocketDelivery = resolve; });
+      deliveries.push('socket');
+      socketDelivered?.();
+    }
+  };
+  const router = new MessageRouter(new RouteRegistry([
+    { id: 'partial', source: 'session', event: 'x', destinations: [
+      { transport: 'http', endpointId: 'failing' }, { transport: 'socket', channel: 'session' }
+    ] }
+  ]), [failingHttp, heldSocket]);
+
+  const publishing = router.publish({ channel: 'session', event: 'x', payload: {} });
+  await assert.rejects(publishing, /HTTP destination failed/);
+  assert.deepEqual(deliveries, []);
+  assert.equal(finishSocketDelivery !== undefined, true);
+  finishSocketDelivery?.();
+  await socketDeliveryCompleted;
+  assert.deepEqual(deliveries, ['socket']);
+});

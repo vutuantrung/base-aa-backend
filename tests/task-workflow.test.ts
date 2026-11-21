@@ -186,6 +186,29 @@ test('F08 persistence rejection has no receipt notification or forwarding', asyn
   assert.equal(setup.deferred.length, 0);
 });
 
+test('F08 duplicate task ID rejects the second receipt without replacing or rescheduling the first', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'aab-workflow-f08-duplicate-'));
+  try {
+    const store = new JsonTaskFileStore(directory);
+    const original = task(`task-${randomUUID()}`);
+    const setup = harness({ store });
+
+    const firstReceipt = await setup.workflow.receiveTask(taskRequest(original));
+    const duplicateReceipt = await setup.workflow.receiveTask(taskRequest({ ...original, config: 'changed retry' }));
+
+    assert.equal(firstReceipt.ok, true);
+    if (firstReceipt.ok) assert.equal(firstReceipt.status, 'received');
+    assert.deepEqual(duplicateReceipt, {
+      ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB'
+    });
+    assert.deepEqual(await store.read(original.id), original);
+    assert.deepEqual(setup.taskEvents.map(event => event.status), ['received']);
+    assert.equal(setup.deferred.length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('F09 validates original correlation, writes compatible result file exclusively and propagates authenticated instance', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'aab-workflow-f09-'));
   try {
