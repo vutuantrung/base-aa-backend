@@ -65,6 +65,21 @@ test('SQLite repository preserves existing CPU and memory constraints', () => {
   }
 });
 
+test('runtime caller-supplied id overwrites the immediate create result but not the stored generated id', () => {
+  const database = openDatabase(':memory:');
+  try {
+    const repository = new SqliteProcessUsageRepository(database);
+    const valueWithRuntimeId = { pid: 7, cpu: 0.5, memory: 1, id: 900 };
+
+    const immediate = repository.create(valueWithRuntimeId);
+
+    assert.deepEqual(immediate, { id: 900, pid: 7, cpu: 0.5, memory: 1 });
+    assert.deepEqual(repository.list(), [{ id: 1, pid: 7, cpu: 0.5, memory: 1 }]);
+  } finally {
+    database.close();
+  }
+});
+
 test('process-usage rows persist after the SQLite database is closed and reopened', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'aab-process-usage-'));
   const path = join(directory, 'usage.sqlite');

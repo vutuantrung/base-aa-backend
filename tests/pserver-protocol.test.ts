@@ -492,10 +492,18 @@ test('ready inbound peer message without ACK callback does not reach gateway', a
   const transport = new FakeTransport();
   const gateway = makeGateway();
   createPServerProtocol(config, transport, gateway.gateway);
+  const receivedLogs: unknown[][] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => { receivedLogs.push(args); };
   transport.connect();
   transport.fire('connect');
-  await tick();
-  transport.fire('peer:message', { payload: 'ignored without ACK' });
-  await tick();
+  try {
+    await tick();
+    transport.fire('peer:message', { payload: 'ignored without ACK' });
+    await tick();
+  } finally {
+    console.log = originalLog;
+  }
+  assert.ok(receivedLogs.some(args => args[0] === '[AAB] RECEIVE PServer peer:message'));
   assert.deepEqual(gateway.received, []);
 });

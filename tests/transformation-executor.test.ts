@@ -36,6 +36,35 @@ test('registry validates registration, unregisters by ID, and resolves wildcards
   assert.deepEqual(registry.resolve(original).map(entry => entry.id), ['a-tie', 'z-tie']);
 });
 
+test('registry keeps the registered rule object by reference and observes later field and transformer mutations', async () => {
+  const registry = new TransformationRegistry();
+  const calls: string[] = [];
+  const mutableRule = rule('mutable', message => {
+    calls.push('original-transformer');
+    return message.payload;
+  }, 10);
+  const secondRule = rule('second', message => {
+    calls.push('second');
+    return message.payload;
+  }, 5);
+  registry.register(mutableRule);
+  registry.register(secondRule);
+
+  mutableRule.from = 'pserver';
+  mutableRule.to = 'aaui';
+  mutableRule.payloadType = 'original.type';
+  mutableRule.priority = 1;
+  mutableRule.transformer.transform = message => {
+    calls.push('mutated-transformer');
+    return message.payload;
+  };
+
+  assert.deepEqual(registry.resolve(original).map(entry => entry.id), ['mutable', 'second']);
+  const result = await executeTransformations(registry, original);
+  assert.deepEqual(calls, ['mutated-transformer', 'second']);
+  assert.deepEqual(result.processedBy, ['mutable', 'second']);
+});
+
 test('matching uses original envelope fields even after an earlier transform changes payload type', async () => {
   const registry = new TransformationRegistry();
   const executed: string[] = [];

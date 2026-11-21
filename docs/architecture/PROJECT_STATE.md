@@ -1,23 +1,20 @@
 # AAB — Current checkpoint
 
-- Repository `vutuantrung/base-aa-backend`; branch `main`; reviewed R7.2 source HEAD `dce8537cff84d0968589fafa9e55dac8c52c518b` (`fix(r7.2.c): enforce logical instance affinity during async transformation`). R7.2 closure review verification ran against this committed source. Local documentation changes for the review are uncommitted; the pre-existing untracked `prompts/R7_2_CLOSURE_REVIEW_CODEX_PROMPT.md` is preserved.
-- **R7.2 recommendation: CONDITIONALLY CLOSED, pending reviewer approval.** TD02 remains OPEN under Option B; all-aborts identity cleanup is still required and no supported complete namespace-scoped rollback boundary is established. Its controlled downstream `/peers` rejection remains a passing current-behavior characterization, not a fix. Spontaneous abort reachability in the current production middleware composition is unverified.
-- TD03 is partially remediated: M04 generation guards ignore stale ACKs and readiness gates protocol operations on both transport connectivity and current session readiness. Retained-session-ID behavior after a failed resume is preserved. Real PServer timing, remote resume semantics and already-started delivery cancellation remain outside evidence.
-- TD04 implements approved logical EServer instance affinity: bind before async transformations, allow physical socket replacement only for that instance, preserve untargeted wire envelopes, and distinguish offline/ambiguous topology from delivery errors. Deterministic tests pass; real socket timing and the non-atomic lookup-to-send interval remain unproven.
-- Fresh Node 22.23.5 verification: focused reliability suite 43/43; architecture check passed (52 files, 113 edges; zero file runtime SCCs; M10↔M12↔M13 module runtime SCC reported); typecheck/build passed; backend 177/177; playground 32/32; diff check passed. See [R7.2 closure review](../../R7_2_CLOSURE_REVIEW_REPORT.md) for exact commands and execution notes.
-- R7.3 is **not started**. Recommendation is that it may proceed as a separately authorized phase after review: TD02’s unresolved boundary is isolated to M05/M06 admission cleanup; TD03 limits are explicitly retained; no R7.2 change alters M12/M13 workflows or public message contracts. This is not authorization to begin.
-- Future task granularity: one phase-level task by default; split high-risk phases into two checkpoints and critical phases into two or three meaningful checkpoints only when evidence requires it. Avoid micro-task decomposition unless a concrete blocker requires it.
-- R7.1 remains conditionally closed at its committed checkpoint; the M10/M12/M13 module SCC and checker limitations remain recorded deferred work. See [R7.1 closure review](../../R7_1_CLOSURE_ARCHITECTURE_REVIEW_REPORT.md), [dependency inventory](DEPENDENCY_INVENTORY.md), and [application-surface inventory](APPLICATION_SURFACE_INVENTORY.md).
+- Repository `vutuantrung/base-aa-backend`, branch `main`; R7.3.A source baseline `986967fcae9176e87e53c792b07e9e68374ad74e`. R7.2 has reviewer approval as **CONDITIONALLY CLOSED**. The R7.3.A tests and documentation below are local, uncommitted changes based on this committed HEAD; the supplied untracked prompt is preserved. No production source changed.
+- R7.2 status remains: TD02 **OPEN** under Option B (all-aborts identity cleanup; spontaneous single-middleware abort remains unverified); TD03 **PARTIALLY REMEDIATED** (real PServer timing/resume contract and already-started delivery remain outside evidence); TD04 **remediated under deterministic characterization**, with real topology timing and non-atomic lookup-to-send limits. See [R7.2 closure review](../../R7_2_CLOSURE_REVIEW_REPORT.md).
+- **R7.3.A — compatibility decision baseline in progress.** TD05–TD08 source and test characterization is documented in [decision report](../../R7_3_A_CONTRACT_COMPATIBILITY_DECISIONS_REPORT.md). Decisions R7.3-D01 through D04 are **PENDING**; no disputed policy or production behavior is implemented. TD12 catalog schema/data changes remain deferred to R7.5.
+- Fresh Node 22.23.5 verification after changes: focused relevant suite **50/50**, architecture check PASS (52 files, 113 edges; zero file runtime SCCs; M10↔M12↔M13 module runtime SCC reported), typecheck PASS, build PASS, backend **180/180**, playground **32/32**, and diff check PASS. See the R7.3.A report for exact commands and initial sandbox/fixture rerun notes.
+- Next gate: architectural review of pending D01–D04. **Do not begin R7.3.B or R7.4** until decisions are approved. No commit/push.
+- R7.1 remains conditionally closed; its module SCC and checker limitations remain deferred. See [R7.1 closure review](../../R7_1_CLOSURE_ARCHITECTURE_REVIEW_REPORT.md).
 
 ## Read on demand
 | Need | File / section |
 |---|---|
 | Runtime topology, flows, roadmap | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Ownership, files, dependency directions | [MODULE_BOUNDARIES.md](MODULE_BOUNDARIES.md) — find module ID |
-| Decisions and evidence limits | [ARCHITECTURE_DECISIONS.md](ARCHITECTURE_DECISIONS.md) — find decision ID |
-| Known risks and work sequencing | [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) — find debt ID |
-| R7.2 connection/session risks | [R7_2_RELIABILITY_RISK_INVENTORY.md](R7_2_RELIABILITY_RISK_INVENTORY.md) |
-| Historical implementation evidence | Root reports linked from relevant debt rows; open only when needed |
+| Ownership and implementation paths | [MODULE_BOUNDARIES.md](MODULE_BOUNDARIES.md) |
+| Prior architectural constraints | [ARCHITECTURE_DECISIONS.md](ARCHITECTURE_DECISIONS.md) |
+| Known risks and sequencing | [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) |
+| R7.2 reliability evidence | [R7_2_RELIABILITY_RISK_INVENTORY.md](R7_2_RELIABILITY_RISK_INVENTORY.md) |
 
 ## Checkpoint protocol
-Check HEAD/status first. If docs-only descendants of reviewed source baseline, no broad source re-audit is required; if relevant source changed, inspect the delta and update affected facts. A local uncommitted change must record base HEAD + changed paths and test status, not a future commit hash. Preserve unrelated changes. Closure must record actual validation outcomes and exceptions. Do not commit/push or advance phases without authorization.
+Check HEAD/status first. Preserve unrelated work. Record the committed source baseline and dirty paths; never invent a future SHA. Use current source/tests over summaries, and keep pending decisions explicit. Do not commit/push or advance phases without authorization.

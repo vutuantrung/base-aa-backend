@@ -43,3 +43,50 @@ test('PServer cannot connect inbound; AAB must initiate its connection', async (
     } finally { socket.disconnect(); }
   }
 });
+
+test('peer message ingress without an ACK callback is skipped; ACK-bearing ingress is processed', async () => {
+  const processed: string[] = [];
+  const ruleId = 'r73-a-peer-ingress-ack-characterization';
+  app.transformations.register({
+    id: ruleId,
+    from: 'aaui',
+    to: 'aab',
+    payloadType: 'r73.a.ingress',
+    priority: 1,
+    transformer: {
+      transform(message) {
+        processed.push(message.id ?? 'missing-id');
+        return message.payload;
+      }
+    }
+  });
+
+  const socket = io(`${base}/peers`, { transports: ['websocket'], reconnection: false,
+    auth: { peerId: 'aaui', token: 'dev-key' } });
+  const noAckId = 'b733a000-0000-4000-8000-000000000001';
+  const withAckId = 'b733a000-0000-4000-8000-000000000002';
+  const incoming = (id: string) => ({
+    version: '1.0', kind: 'event', from: 'aaui', to: 'aab', channel: 'worker', event: 'message',
+    id, payload: { type: 'r73.a.ingress', version: '1.0', data: {} }
+  });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('connect', resolve);
+      socket.once('connect_error', reject);
+    });
+    socket.emit('peer:message', incoming(noAckId));
+    await socket.timeout(2000).emitWithAck('peer:ping', { barrier: true });
+    assert.deepEqual(processed, []);
+
+    const acknowledgement = await socket.timeout(2000).emitWithAck('peer:message', incoming(withAckId)) as {
+      ok: boolean; data?: { id?: string }
+    };
+    assert.equal(acknowledgement.ok, true);
+    assert.equal(acknowledgement.data?.id, withAckId);
+    assert.deepEqual(processed, [withAckId]);
+  } finally {
+    socket.disconnect();
+    app.transformations.unregister(ruleId);
+  }
+});

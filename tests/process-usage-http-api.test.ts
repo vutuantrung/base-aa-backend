@@ -82,7 +82,7 @@ test('POST process-usage validates HTTP fields, strips unknown keys and preserve
   const baseUrl = await startServer(fake.repository);
 
   for (const value of [
-    { pid: 3, cpu: 0.125, memory: 0, ignored: 'stripped' },
+    { pid: 3, cpu: 0.125, memory: 0, ignored: 'stripped', id: 900 },
     { pid: 3, cpu: 0, memory: 2 }
   ]) {
     const response = await fetch(`${baseUrl}/api/process-usage`, {
