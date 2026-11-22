@@ -38,8 +38,9 @@ but are not replayed or migrated automatically.
 - Startup validates format version/checksum and filename/key agreement. Incomplete temps
   are excluded from receipt visibility and quarantined; a temp identical to a valid
   canonical record is resolved as duplicate evidence. Corrupt or conflicting artifacts
-  are quarantined and block the affected key. No automatic legacy backfill, migration or
-  legacy replay.
+  are quarantined and block the affected key from ACK lookup, listing and scheduling. A
+  stale in-memory record whose canonical file disappears also blocks that key. No automatic
+  legacy backfill, migration or legacy replay.
 - A process-level `.writer.lock` is created exclusively. In-process keyed mutation and
   capacity operations are serialized. A stale lock is not removed automatically; verify
   the process and directory before operator removal. This is not a distributed lock.
@@ -83,6 +84,15 @@ age/attempt exhaustion becomes terminal `failed`. Capacity checks occur before c
 capacity failure returns the existing `DELIVERY_FAILED` code with a stable non-sensitive
 message. No terminal or quarantined record/key is silently deleted to make room. Disk and
 permission failures do not return `received` without a confirmed canonical record.
+
+In the composed M12/M13 application, concurrency 4 is shared across both outbox runners.
+Policy overrides may lower attempts, age, scan batch and concurrency; retry delays cannot be
+shortened and scans cannot run more often than the approved one-second interval. The single
+capacity limit was ambiguous across the two separately configured state directories, so the
+application divides it evenly: each directory is limited to 5,000 records or 128 MiB. The
+aggregate composed limit remains 10,000 records or 256 MiB. Standalone stores retain the
+10,000/256 MiB defaults. Temporary replacement files are transient disk overhead and are
+outside the retained-state accounting; deployments need additional free-space headroom.
 
 ## P04 — Idempotency, conflicts and retention (D03=B)
 
@@ -149,3 +159,19 @@ dedupe and process-restart record interpretation. Loopback tests use local peer 
 No real remote receiver semantics, production deployment filesystem, cross-process
 concurrency stress, SIGKILL crash matrix, OS crash or power-loss behavior is established.
 Do not claim exactly-once processing or universal durable storage.
+
+## R7.5.C accepted scope and R7.6 lifecycle boundary
+
+R7.5.C was reviewer-accepted and conditionally closed for its scoped Linux process-crash
+contract at commit `9c3cb2bec19dcc2cf9d31ce505bd84dc7a90a539`; see the [C report](../../R7_5_C_FAILURE_RESTART_VERIFICATION_REPORT.md).
+The evidence is child-process `SIGKILL` on Linux `/tmp` (`tmpfs`), not power loss or a
+deployment filesystem. C03 remains: concurrent duplicate prepare/transform can execute twice;
+transformers must be side-effect-free or idempotent for safe use. The process attempt limit is
+four; M12/M13 retain fixed per-directory quotas of 5,000 records/128 MiB each (10,000/256 MiB
+aggregate), no automatic GC, and fail-closed stale-lock recovery. TD10/TD11 are conditionally
+remediated for this scope; TD12/TD13 are unchanged and TD14 remains open.
+
+Lifecycle, readiness and bounded shutdown policy belong to R7.6. The R7.6.A [baseline](R7_6_LIFECYCLE_DECISION_BASELINE.md)
+and [D01–D06 proposals](R7_6_LIFECYCLE_POLICY.md) are pending owner approval. This reliability
+policy does not approve a drain order, readiness endpoint, shutdown deadline, or changed ingress
+response.

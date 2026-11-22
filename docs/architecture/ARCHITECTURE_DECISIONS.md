@@ -68,6 +68,24 @@ and [durability baseline](R7_5_DURABILITY_DECISION_BASELINE.md). The earlier
 [policy-gate report](../../R7_5_B_POLICY_GATE_REPORT.md) records the former pending state;
 the explicit approval and implementation supersede that gate.
 
+R7.5.C was reviewer-accepted and conditionally closed for the scoped Linux process-crash
+contract at commit `9c3cb2bec19dcc2cf9d31ce505bd84dc7a90a539`. See the committed
+[C report](../../R7_5_C_FAILURE_RESTART_VERIFICATION_REPORT.md). C03 remains a usage risk:
+same-key prepare/transform can run more than once, so transformers should be side-effect-free
+or idempotent. This status does not claim power-loss durability, receiver deduplication or
+exactly-once effects.
+
+## R7.6 lifecycle decisions — pending
+
+R7.6.A records current resource ownership, readiness, failure behavior and a proposed
+dependency-aware shutdown sequence in the [lifecycle baseline](R7_6_LIFECYCLE_DECISION_BASELINE.md).
+The [D01–D06 package](R7_6_LIFECYCLE_POLICY.md) is proposal only; lifecycle state/API,
+readiness endpoint/admission behavior, drain set, deadline/escalation, cleanup aggregation and
+diagnostics remain pending owner approval. No R7.6.B behavior is authorized. Existing R4-D05
+coordinated lifecycle, R4-D06 separate readiness, R4-D07 bounded graceful drain, R4-D08
+instance isolation, and R5-D08 compatibility remain constraints, not proof of current
+conformance.
+
 ## Interpretation and unresolved matters
 - Architecture targets are not current conformance claims. R4-D03 acyclic dependencies and R4-D07 bounded graceful drain require R7 verification/implementation. R5 contract names in handoff are illustrative, not mandatory exports.
 - APP/DEMO/TBD: 14 APP and 4 TBD runtime modules per handoff. Keep M12–M15 functionality until explicit classification. Target app/test/demo separation: app must not import test/demo, test and demo independent; current `testing/` playground stays until R7.7–9. Generic Messaging retained APP; mock generation DEMO, receiving/forwarding APP.
