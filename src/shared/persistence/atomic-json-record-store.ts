@@ -26,6 +26,7 @@ export interface ReliabilityLimits {
 
 export interface AtomicJsonRecordStoreHooks {
   readonly beforeOperation?: (operation: 'write' | 'file-sync' | 'file-close' | 'hard-link' | 'rename', path: string) => Promise<void>;
+  readonly afterOperation?: (operation: 'write' | 'file-sync' | 'file-close' | 'hard-link' | 'rename', path: string) => Promise<void>;
   readonly syncDirectory?: (directory: string, context: string) => Promise<void>;
 }
 
@@ -74,7 +75,11 @@ const allowedTransitions: Record<ReliableDeliveryState, readonly ReliableDeliver
   uncertain: []
 };
 
-const processWriters = new Map<string, { handle: Awaited<ReturnType<typeof open>>; references: number }>();
+const processWriters = new Map<string, {
+  handle: Awaited<ReturnType<typeof open>>;
+  references: number;
+  preserveLock: boolean;
+}>();
 const processKeyQueues = new Map<string, Promise<void>>();
 
 function digest(value: string): string {
@@ -112,6 +117,7 @@ export function createReliableRecord<TPayload, TAck>(
 export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStore<TPayload, TAck> {
   private readonly directory: string;
   private readonly quarantineDirectory: string;
+  private readonly limits: ReliabilityLimits;
   private readonly records = new Map<string, ReliableRecord<TPayload, TAck>>();
   private readonly recordSizes = new Map<string, number>();
   private readonly blockedHashes = new Set<string>();
@@ -125,11 +131,15 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
     directory: string,
     private readonly isPayload: (value: unknown) => value is TPayload,
     private readonly isAck: (value: unknown) => value is TAck,
-    private readonly limits: ReliabilityLimits = DEFAULT_RELIABILITY_LIMITS,
+    limits: ReliabilityLimits = DEFAULT_RELIABILITY_LIMITS,
     private readonly hooks: AtomicJsonRecordStoreHooks = {}
   ) {
     this.directory = resolve(directory);
     this.quarantineDirectory = join(this.directory, '.quarantine');
+    if (!Number.isSafeInteger(limits.maxRecords) || limits.maxRecords <= 0 || limits.maxRecords > DEFAULT_RELIABILITY_LIMITS.maxRecords ||
+        !Number.isSafeInteger(limits.maxBytes) || limits.maxBytes <= 0 || limits.maxBytes > DEFAULT_RELIABILITY_LIMITS.maxBytes)
+      throw new RangeError('Reliability capacity overrides may only retain or lower approved record and byte limits');
+    this.limits = Object.freeze({ ...limits });
   }
 
   async initialize(): Promise<void> {
@@ -141,21 +151,23 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
     if (this.closed) throw new Error('Reliability record store is closed');
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     try {
-      const activeWriter = processWriters.get(this.directory);
-      if (activeWriter) activeWriter.references += 1;
-      else {
-        const handle = await open(join(this.directory, '.writer.lock'), 'wx', 0o600);
-        try {
-          await handle.writeFile(JSON.stringify({ pid: process.pid, startedAt: Date.now() }));
-          await handle.sync();
-          processWriters.set(this.directory, { handle, references: 1 });
-        } catch (error) {
-          await handle.close();
-          await unlink(join(this.directory, '.writer.lock')).catch(() => undefined);
-          throw error;
+      await this.withKeyLock('__writer__', async () => {
+        const activeWriter = processWriters.get(this.directory);
+        if (activeWriter) activeWriter.references += 1;
+        else {
+          const handle = await open(join(this.directory, '.writer.lock'), 'wx', 0o600);
+          try {
+            await handle.writeFile(JSON.stringify({ pid: process.pid, startedAt: Date.now() }));
+            await handle.sync();
+            processWriters.set(this.directory, { handle, references: 1, preserveLock: false });
+          } catch (error) {
+            await handle.close();
+            await unlink(join(this.directory, '.writer.lock')).catch(() => undefined);
+            throw error;
+          }
         }
-      }
-      this.writerKey = this.directory;
+        this.writerKey = this.directory;
+      });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new ReliabilityWriterLockError(this.directory);
       throw error;
@@ -190,9 +202,12 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
     if (!value || typeof value !== 'object') return false;
     const record = value as Partial<ReliableRecord<TPayload, TAck>>;
     if (record.formatVersion !== 1 || typeof record.key !== 'string' || typeof record.fingerprint !== 'string' ||
-        typeof record.createdAt !== 'number' || typeof record.updatedAt !== 'number' ||
+        typeof record.createdAt !== 'number' || !Number.isFinite(record.createdAt) ||
+        typeof record.updatedAt !== 'number' || !Number.isFinite(record.updatedAt) ||
         !['queued', 'attempting', 'retryable', 'delivered', 'failed', 'uncertain'].includes(String(record.state)) ||
-        !Number.isInteger(record.attempts) || !this.isPayload(record.payload) || !this.isAck(record.ack) ||
+        typeof record.attempts !== 'number' || !Number.isSafeInteger(record.attempts) || record.attempts < 0 ||
+        ('nextAttemptAt' in record && (typeof record.nextAttemptAt !== 'number' || !Number.isFinite(record.nextAttemptAt))) ||
+        !this.isPayload(record.payload) || !this.isAck(record.ack) ||
         typeof record.checksum !== 'string') return false;
     const { checksum, ...withoutChecksum } = record as ReliableRecord<TPayload, TAck>;
     return checksumFor(withoutChecksum) === checksum;
@@ -200,19 +215,30 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
 
   async get(key: string): Promise<ReliableRecord<TPayload, TAck> | undefined> {
     await this.initialize();
+    if (this.blockedHashes.has(digest(key))) return undefined;
     const canonical = await this.readCanonical(key);
-    if (canonical) this.records.set(key, canonical);
+    if (canonical) {
+      this.records.set(key, canonical);
+      this.recordSizes.set(key, Buffer.byteLength(JSON.stringify(canonical, null, 2)) + 1);
+    } else if (this.records.has(key)) {
+      this.records.delete(key);
+      this.recordSizes.delete(key);
+      this.blockedHashes.add(digest(key));
+    }
     return canonical;
   }
 
   async list(): Promise<ReliableRecord<TPayload, TAck>[]> {
     await this.initialize();
     await this.reloadCanonicalRecords();
-    return [...this.records.values()].sort((left, right) => left.createdAt - right.createdAt || left.key.localeCompare(right.key));
+    return [...this.records.values()]
+      .filter(record => !this.blockedHashes.has(digest(record.key)))
+      .sort((left, right) => left.createdAt - right.createdAt || left.key.localeCompare(right.key));
   }
 
   private async reloadCanonicalRecords(): Promise<void> {
     const files = await readdir(this.directory);
+    const observedKeys = new Set<string>();
     for (const name of files.filter(item => /^[0-9a-f]{64}\.json$/.test(item))) {
       const path = join(this.directory, name);
       try {
@@ -222,13 +248,23 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
           throw new Error('record schema, filename, or checksum invalid');
         this.records.set(parsed.key, parsed);
         this.recordSizes.set(parsed.key, Buffer.byteLength(raw));
+        observedKeys.add(parsed.key);
       } catch (error) {
         await this.quarantine(path, error instanceof Error ? error.message : 'invalid record');
       }
     }
+    for (const key of this.records.keys()) {
+      if (observedKeys.has(key)) continue;
+      this.records.delete(key);
+      this.recordSizes.delete(key);
+      this.blockedHashes.add(digest(key));
+    }
+    await this.loadQuarantineKeys();
   }
 
   private async loadQuarantineKeys(): Promise<void> {
+    this.quarantinedRecords = 0;
+    this.quarantinedBytes = 0;
     const files = await readdir(this.quarantineDirectory);
     for (const name of files) {
       this.quarantinedRecords += 1;
@@ -262,9 +298,17 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
     await this.initialize();
     return this.withKeyLock('__capacity__', () => this.withKeyLock(record.key, async () => {
       if (this.blockedHashes.has(digest(record.key))) throw new ReliabilityCommitUncertainError();
-      const existing = this.records.get(record.key) ?? await this.readCanonical(record.key);
+      const cached = this.records.get(record.key);
+      const existing = await this.readCanonical(record.key);
       if (existing) return { record: existing, created: false };
+      if (cached) {
+        this.records.delete(record.key);
+        this.recordSizes.delete(record.key);
+        this.blockedHashes.add(digest(record.key));
+        throw new ReliabilityCommitUncertainError();
+      }
       await this.reloadCanonicalRecords();
+      if (this.blockedHashes.has(digest(record.key))) throw new ReliabilityCommitUncertainError();
       const serialized = `${JSON.stringify(record, null, 2)}\n`;
       const size = Buffer.byteLength(serialized);
       if (this.records.size + this.quarantinedRecords >= this.limits.maxRecords ||
@@ -277,6 +321,7 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
         // link() creates the canonical name atomically and fails with EEXIST; rename() would overwrite.
         await this.hooks.beforeOperation?.('hard-link', temporary);
         await link(temporary, target);
+        await this.hooks.afterOperation?.('hard-link', temporary);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
           const winner = await this.readCanonical(record.key);
@@ -328,17 +373,24 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
       if (!current) throw new Error(`Reliability record not found: ${key}`);
       if (state !== current.state && !allowedTransitions[current.state].includes(state))
         throw new Error(`Invalid reliability transition ${current.state} -> ${state}`);
+      const nextAttempts = changes.attempts ?? current.attempts;
+      if (!Number.isSafeInteger(nextAttempts) || nextAttempts < current.attempts)
+        throw new Error('Reliability attempt count cannot decrease or become invalid');
       const { checksum: _checksum, ...base } = current;
       const nextBase = {
         ...base,
         updatedAt: Date.now(), state,
-        attempts: changes.attempts ?? current.attempts,
+        attempts: nextAttempts,
         ...(changes.clearNextAttempt ? {} : changes.nextAttemptAt === undefined
           ? ('nextAttemptAt' in current ? { nextAttemptAt: current.nextAttemptAt } : {})
           : { nextAttemptAt: changes.nextAttemptAt }),
         ...(changes.lastError === undefined ? ('lastError' in current ? { lastError: current.lastError } : {}) : { lastError: changes.lastError })
       };
       const updated = createReliableRecord(nextBase);
+      const updatedSize = Buffer.byteLength(`${JSON.stringify(updated, null, 2)}\n`);
+      const currentSize = this.recordSizes.get(key) ?? Buffer.byteLength(`${JSON.stringify(current, null, 2)}\n`);
+      if (this.totalBytes() - currentSize + updatedSize + this.quarantinedBytes > this.limits.maxBytes)
+        throw new ReliabilityCapacityError();
       await this.replaceCanonical(updated);
       try { await this.syncDirectory('record update'); }
       catch (error) {
@@ -374,6 +426,7 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
     try {
       await this.hooks.beforeOperation?.('rename', temporary);
       await rename(temporary, target);
+      await this.hooks.afterOperation?.('rename', temporary);
     } catch (error) {
       await this.quarantine(temporary, 'atomic state replacement failed');
       throw error;
@@ -391,10 +444,13 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
     try {
       await this.hooks.beforeOperation?.('write', path);
       await handle.writeFile(serialized);
+      await this.hooks.afterOperation?.('write', path);
       await this.hooks.beforeOperation?.('file-sync', path);
       await handle.sync();
+      await this.hooks.afterOperation?.('file-sync', path);
       await handle.close();
       await this.hooks.beforeOperation?.('file-close', path);
+      await this.hooks.afterOperation?.('file-close', path);
     } catch (error) {
       await handle.close().catch(() => undefined);
       await this.quarantine(path, 'temporary record write, sync, or close failed');
@@ -407,13 +463,20 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
   }
 
   private async readCanonical(key: string): Promise<ReliableRecord<TPayload, TAck> | undefined> {
+    const path = this.recordPath(key);
+    let raw: string;
     try {
-      const value: unknown = JSON.parse(await readFile(this.recordPath(key), 'utf8'));
-      return this.isReliableRecord(value) ? value : undefined;
+      raw = await readFile(path, 'utf8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw error;
     }
+    let value: unknown;
+    try { value = JSON.parse(raw); }
+    catch { await this.quarantine(path, 'canonical record is not valid JSON'); return undefined; }
+    if (this.isReliableRecord(value) && digest(value.key) === digest(key)) return value;
+    await this.quarantine(path, 'record schema, filename, or checksum invalid');
+    return undefined;
   }
 
   private async withKeyLock<T>(key: string, action: () => Promise<T>): Promise<T> {
@@ -494,21 +557,24 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
   }
 
   private async releaseWriter(preserveLock = false): Promise<void> {
-    if (!this.writerKey) return;
-    const activeWriter = processWriters.get(this.writerKey);
-    if (!activeWriter) return;
-    activeWriter.references -= 1;
-    if (activeWriter.references > 0) return;
-    await activeWriter.handle.close();
-    processWriters.delete(this.writerKey);
-    if (preserveLock) {
-      console.error('[AAB] RELIABILITY WRITER LOCK PRESERVED', this.directory);
+    const writerKey = this.writerKey;
+    if (!writerKey) return;
+    await this.withKeyLock('__writer__', async () => {
+      const activeWriter = processWriters.get(writerKey);
       this.writerKey = undefined;
-      return;
-    }
-    try { await unlink(join(this.directory, '.writer.lock')); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    await this.syncDirectory('writer lock removal');
-    this.writerKey = undefined;
+      if (!activeWriter) return;
+      if (preserveLock) activeWriter.preserveLock = true;
+      activeWriter.references -= 1;
+      if (activeWriter.references > 0) return;
+      await activeWriter.handle.close();
+      processWriters.delete(writerKey);
+      if (activeWriter.preserveLock) {
+        console.error('[AAB] RELIABILITY WRITER LOCK PRESERVED', this.directory);
+        return;
+      }
+      try { await unlink(join(this.directory, '.writer.lock')); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      await this.syncDirectory('writer lock removal');
+    });
   }
 }

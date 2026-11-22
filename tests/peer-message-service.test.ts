@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PeerMessageService, PeerMessageError } from '../src/modules/peer-messaging/peer-message-service.js';
 import { TransformationRegistry } from '../src/modules/peer-messaging/transformation-registry.js';
 import type { PeerMessage } from '../src/modules/peer-messaging/contracts.js';
+import { AtomicJsonRecordStore, createReliableRecord } from '../src/shared/persistence/atomic-json-record-store.js';
 
 const input = { version: '1.0', kind: 'request', from: 'pserver', to: 'eserver',
   channel: 'worker', event: 'message',
@@ -38,6 +42,47 @@ test('unmatched types forward without modification', async () => {
   assert.equal(result.processing?.transformed, false);
   assert.deepEqual(result.payload, input.payload);
   assert.equal(received?.id, result.id);
+});
+
+test('prepared delivery preserves R7.3 transformer output rules for generic and durable paths', async () => {
+  const received: PeerMessage[] = [];
+  const registry = new TransformationRegistry();
+  registry.register({ id: 'legacy-output', from: '*', to: '*', payloadType: '*', priority: 1,
+    transformer: { transform(message) {
+      return Object.assign({}, message.payload, { version: '', data: null, extension: 'preserved' });
+    } } });
+  const service = new PeerMessageService(registry, {
+    isConnected: () => true,
+    async deliver(message) { received.push(message); }
+  });
+
+  const directory = await mkdtemp(join(tmpdir(), 'prepared-peer-message-'));
+  let store = new AtomicJsonRecordStore<{ outbound: PeerMessage }, { ok: true }>(directory,
+    (value): value is { outbound: PeerMessage } => Boolean(value && typeof value === 'object' && 'outbound' in value),
+    (value): value is { ok: true } => Boolean(value && typeof value === 'object' && Reflect.get(value, 'ok') === true));
+  try {
+    const generic = await service.process(input, 'pserver');
+    const prepared = await service.prepareForDurableDelivery(input, 'pserver');
+    await store.create(createReliableRecord({ key: 'M13:persisted-transform-output', fingerprint: 'stable',
+      createdAt: Date.now(), updatedAt: Date.now(), state: 'queued', attempts: 0,
+      payload: { outbound: prepared }, ack: { ok: true } }));
+    await store.close();
+    store = new AtomicJsonRecordStore(directory,
+      (value): value is { outbound: PeerMessage } => Boolean(value && typeof value === 'object' && 'outbound' in value),
+      (value): value is { ok: true } => Boolean(value && typeof value === 'object' && Reflect.get(value, 'ok') === true));
+    const persisted = await store.get('M13:persisted-transform-output');
+    assert.ok(persisted);
+    await service.deliverPreparedMessage(persisted.payload.outbound);
+
+    assert.equal(generic.payload.version, '');
+    assert.equal(generic.payload.data, null);
+    assert.equal(Reflect.get(generic.payload, 'extension'), 'preserved');
+    assert.equal(received.length, 2);
+    assert.deepEqual(received.map(message => message.payload), [generic.payload, prepared.payload]);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('forged FROM is rejected before delivery', async () => {

@@ -88,7 +88,7 @@ export class TaskWorkflow {
     const messageId = parsed.data.id ?? randomUUID();
     const ackTime = this.now();
     const ackEnvelope: PeerMessage = {
-      ...parsed.data, id: messageId,
+      ...parsed.data, ...(targetId ? { toInstanceId: targetId } : {}), id: messageId,
       timestamp: ackTime, payload: structuredClone(parsed.data.payload)
     };
     const prepareValue = {

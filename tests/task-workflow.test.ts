@@ -42,6 +42,8 @@ function harness(options: {
   eServerReady?: boolean;
   pServerReady?: boolean;
   processMessage?: TaskWorkflowCapabilities['processMessage'];
+  prepareForDurableDelivery?: TaskWorkflowCapabilities['prepareForDurableDelivery'];
+  deliverPreparedMessage?: TaskWorkflowCapabilities['deliverPreparedMessage'];
   outbox?: TaskWorkflowCapabilities['outbox'];
 } = {}) {
   const deferred: Array<() => Promise<void>> = [];
@@ -69,11 +71,16 @@ function harness(options: {
       if (options.processMessage) return options.processMessage(value, from, instanceId);
       return processedMessage;
     },
+    ...(options.prepareForDurableDelivery ? { prepareForDurableDelivery: options.prepareForDurableDelivery } : {}),
+    ...(options.deliverPreparedMessage ? { deliverPreparedMessage: options.deliverPreparedMessage } : {}),
     defer: work => { deferred.push(work); },
     publishTaskLifecycle: notification => { taskEvents.push(notification); },
     publishTaskResultLifecycle: notification => { resultEvents.push(notification); }
   };
-  return { workflow: new TaskWorkflow(capabilities), deferred, taskEvents, resultEvents, processed, outbox };
+  return {
+    workflow: new TaskWorkflow(capabilities), deferred, taskEvents, resultEvents, processed, outbox,
+    setInstances(instances: Array<{ instanceId?: string }>) { options.instances = instances; }
+  };
 }
 
 test('invalid F08/F09 envelopes and task payloads return exact ACKs without side effects', async () => {
@@ -164,7 +171,7 @@ test('F08 falls back to the sole registered EServer when no target is supplied',
   const receipt = await setup.workflow.receiveTask(taskRequest());
   assert.equal(receipt.ok, true);
   if (!receipt.ok) return;
-  assert.equal('toInstanceId' in receipt.data, false);
+  assert.equal(receipt.data.toInstanceId, 'sole-worker');
   await setup.deferred[0]?.();
   assert.equal(setup.processed[0]?.from, 'pserver');
   const delivered = setup.processed[0]?.value;
@@ -175,6 +182,19 @@ test('F08 falls back to the sole registered EServer when no target is supplied',
   assert.ok(deliveredPayload && typeof deliveredPayload === 'object');
   assert.deepEqual(Reflect.get(deliveredPayload, 'data'), task());
   assert.equal(setup.taskEvents.at(1)?.status, 'forwarded');
+});
+
+test('F08 captured sole-instance identity remains in the exact duplicate ACK after topology changes', async () => {
+  const setup = harness({ instances: [{ instanceId: 'captured-worker' }] });
+  const original = task('task-captured-target');
+  const first = await setup.workflow.receiveTask(taskRequest(original));
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  setup.setInstances([{ instanceId: 'different-worker' }]);
+  const duplicate = await setup.workflow.receiveTask(taskRequest(original));
+  assert.deepEqual(duplicate, first);
+  if (duplicate.ok) assert.equal(duplicate.data.toInstanceId, 'captured-worker');
+  assert.equal(setup.deferred.length, 1);
 });
 
 test('F08 persists unresolved target receipts as terminal failure and queues captured offline targets', async () => {
@@ -225,7 +245,7 @@ test('F08 duplicate task ID replays the exact receipt ACK without replacing or r
     assert.equal(firstReceipt.ok, true);
     if (firstReceipt.ok) assert.equal(firstReceipt.status, 'received');
     assert.deepEqual(duplicateReceipt, firstReceipt);
-    if (firstReceipt.ok && 'data' in firstReceipt) assert.equal('toInstanceId' in firstReceipt.data, false);
+    if (firstReceipt.ok && 'data' in firstReceipt) assert.equal(firstReceipt.data.toInstanceId, 'worker');
     assert.deepEqual(await store.read(original.id), original);
     assert.deepEqual(setup.taskEvents.map(event => event.status), ['received']);
     assert.equal(setup.deferred.length, 1);
@@ -251,6 +271,37 @@ test('F08 duplicate task ID replays the exact receipt ACK without replacing or r
     await store.reliability.close();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('concurrent same-key F08 arrivals may both transform before commit but only one receipt and send are published', async () => {
+  let transformCount = 0;
+  let enteredResolve!: () => void;
+  const bothEntered = new Promise<void>(resolve => { enteredResolve = resolve; });
+  let releaseResolve!: () => void;
+  const release = new Promise<void>(resolve => { releaseResolve = resolve; });
+  const setup = harness({
+    instances: [{ instanceId: 'worker' }],
+    async prepareForDurableDelivery() {
+      transformCount += 1;
+      if (transformCount === 2) enteredResolve();
+      await release;
+      return processedMessage;
+    }
+  });
+  const original = task('task-concurrent-prepare');
+  const first = setup.workflow.receiveTask(taskRequest(original));
+  const second = setup.workflow.receiveTask(taskRequest(original));
+  await bothEntered;
+  releaseResolve();
+  const receipts = await Promise.all([first, second]);
+
+  assert.equal(transformCount, 2);
+  assert.deepEqual(receipts[0], receipts[1]);
+  assert.equal(setup.taskEvents.filter(event => event.status === 'received').length, 1);
+  assert.equal(setup.deferred.length, 1);
+  await setup.deferred[0]?.();
+  assert.equal(setup.processed.length, 1);
+  assert.equal((await setup.outbox.list()).length, 1);
 });
 
 test('F09 validates original correlation, writes compatible result file exclusively and propagates authenticated instance', async () => {

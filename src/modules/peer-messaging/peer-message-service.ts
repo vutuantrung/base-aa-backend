@@ -42,9 +42,16 @@ export class PeerMessageService {
 
   async deliverPreparedMessage(message: PeerMessage, retainedContext?: PeerDeliveryContext): Promise<void> {
     const { timestamp: _timestamp, processing: _processing, sourceInstanceId: _sourceInstanceId, ...inputValue } = message;
-    const parsed = incomingPeerMessageSchema.safeParse(inputValue);
+    const payload = message.payload;
+    if (!payload || typeof payload !== 'object' ||
+        typeof Reflect.get(payload, 'type') !== 'string' || !Reflect.get(payload, 'type').trim() ||
+        typeof Reflect.get(payload, 'version') !== 'string' || Reflect.get(payload, 'data') === undefined)
+      throw new PeerMessageError('INVALID_MESSAGE', 'Invalid prepared message payload', 'failed');
+    // Validate only the original envelope contract here. Transformer output follows the
+    // R7.3 D02 rules and may contain blank versions, null data, or additional fields.
+    const parsed = incomingPeerMessageSchema.safeParse({ ...inputValue, payload: { type: 'prepared', version: '1.0', data: null } });
     if (!parsed.success) throw new PeerMessageError('INVALID_MESSAGE', 'Invalid prepared message envelope', 'failed');
-    const input = parsed.data;
+    const input = { ...parsed.data, payload: message.payload };
     if (!retainedContext) this.delivery.validateDestination?.(input);
     const deliveryContext = retainedContext ?? this.delivery.bindDestination?.(input);
     if (input.to !== 'aab' && !this.delivery.isConnected(input.to, input.toInstanceId, deliveryContext))

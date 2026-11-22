@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -14,12 +14,12 @@ import { MemoryReliableRecordStore } from './helpers/memory-reliable-store.js';
 interface Payload { readonly message: string }
 interface Ack { readonly ok: true; readonly id: string }
 
-function createDiskStore(directory: string, maxRecords = 10, hooks: AtomicJsonRecordStoreHooks = {}) {
+function createDiskStore(directory: string, maxRecords = 10, hooks: AtomicJsonRecordStoreHooks = {}, maxBytes = 1_000_000) {
   return new AtomicJsonRecordStore<Payload, Ack>(
     directory,
     (value): value is Payload => Boolean(value && typeof value === 'object' && 'message' in value),
     (value): value is Ack => Boolean(value && typeof value === 'object' && 'ok' in value && value.ok === true),
-    { maxRecords, maxBytes: 1_000_000 },
+    { maxRecords, maxBytes },
     hooks
   );
 }
@@ -57,6 +57,31 @@ test('atomic outbox creation is exclusive, mode-restricted, capacity-bounded and
     assert.deepEqual(duplicate.record.ack, { ok: true, id: 'receipt-1' });
   } finally {
     await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('same-process store instances share writer reference ownership and recount quarantine capacity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-shared-process-writer-'));
+  let failed = false;
+  const first = createDiskStore(directory, 1, {
+    async beforeOperation(operation) {
+      if (!failed && operation === 'write') { failed = true; throw new Error('injected quarantine capacity evidence'); }
+    }
+  });
+  const second = createDiskStore(directory, 1);
+  try {
+    await Promise.all([first.initialize(), second.initialize()]);
+    await assert.rejects(first.create(record('F08:quarantined-capacity')), /injected quarantine capacity evidence/);
+    await assert.rejects(second.create(record('F09:capacity-after-quarantine')), ReliabilityCapacityError);
+    await first.close();
+    await stat(join(directory, '.writer.lock'));
+    await second.close();
+    const reopened = createDiskStore(directory);
+    await reopened.initialize();
+    await reopened.close();
+  } finally {
+    await Promise.all([first.close(), second.close()]);
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -112,6 +137,35 @@ test('startup quarantines duplicate temp links without hiding canonical records 
     assert.equal((await store.create(record('F09:task-temp'))).created, false);
     await assert.rejects(store.create(record(blockedKey)));
   } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a valid but conflicting temp artifact blocks the canonical key from ACK and replay', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-conflicting-temp-'));
+  const firstStore = createDiskStore(directory);
+  const canonical = record('F09:conflicting-temp', 'canonical-ack');
+  await firstStore.create(canonical);
+  await firstStore.close();
+  const canonicalName = (await readdir(directory)).find(name => /^[0-9a-f]{64}\.json$/.test(name));
+  assert.ok(canonicalName);
+  await writeFile(join(directory, `${canonicalName}.conflict.tmp`), `${JSON.stringify(record(canonical.key, 'other-ack'), null, 2)}\n`, { mode: 0o600 });
+
+  const store = createDiskStore(directory);
+  const scheduled: Array<() => Promise<void>> = [];
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true, async deliver() { assert.fail('Blocked key must not replay'); },
+    onState() {}, defer(work) { scheduled.push(work); }
+  });
+  try {
+    assert.equal(await store.get(canonical.key), undefined);
+    assert.equal((await store.list()).length, 0);
+    await assert.rejects(store.create(record(canonical.key, 'new-ack')), ReliabilityCommitUncertainError);
+    await runner.start();
+    assert.equal(scheduled.length, 0);
+  } finally {
+    runner.close();
     await store.close();
     await rm(directory, { recursive: true, force: true });
   }
@@ -176,7 +230,9 @@ test('failed canonical state rename retains the prior state and quarantines the 
     await store.create(record('F08:rename-failure'));
     failRename = true;
     await assert.rejects(store.transition('F08:rename-failure', 'attempting', { attempts: 1 }), /injected rename failure/);
-    assert.equal((await store.get('F08:rename-failure'))?.state, 'queued');
+    assert.equal(await store.get('F08:rename-failure'), undefined);
+    assert.equal((await store.list()).length, 0);
+    await assert.rejects(store.create(record('F08:rename-failure')), ReliabilityCommitUncertainError);
     assert.equal((await readdir(join(directory, '.quarantine'))).length, 1);
   } finally {
     await store.close();
@@ -314,7 +370,7 @@ test('24-hour maximum age ends stale queued work without sending', async () => {
   }
 });
 
-test('startup scanning is oldest-first, capped at 100 records and 4 concurrently scheduled attempts', async () => {
+test('startup scanning is oldest-first and caps concurrent attempts at four', async () => {
   const store = new MemoryReliableRecordStore<Payload, Ack>();
   for (let index = 0; index < 105; index += 1) await store.create(record(`F08:batch-${index}`));
   const scheduled: Array<() => Promise<void>> = [];
@@ -329,20 +385,253 @@ test('startup scanning is oldest-first, capped at 100 records and 4 concurrently
   runner.close();
   await store.close();
 
-  const batchStore = new MemoryReliableRecordStore<Payload, Ack>();
-  for (let index = 0; index < 105; index += 1) await batchStore.create(record(`M13:batch-${index}`));
-  const batchScheduled: Array<() => Promise<void>> = [];
-  const batchRunner = new ReliableOutboxRunner(batchStore, {
-    isReady: () => true,
-    async deliver() {},
-    onState() {},
-    defer(work) { batchScheduled.push(work); },
+  assert.throws(() => new ReliableOutboxRunner(store, {
+    isReady: () => true, async deliver() {}, onState() {}, defer() {},
     policy: { ...DEFAULT_RELIABILITY_POLICY, concurrency: 100 }
+  }), /approved retry, age, batch, and concurrency bounds/);
+});
+
+test('two workflow outbox runners share the approved process-wide concurrency ceiling', async () => {
+  const firstStore = new MemoryReliableRecordStore<Payload, Ack>();
+  const secondStore = new MemoryReliableRecordStore<Payload, Ack>();
+  const now = Date.now();
+  for (let index = 0; index < 8; index += 1) {
+    await firstStore.create(createReliableRecord({ key: `M12:aggregate-${index}`, fingerprint: `M12:${index}`,
+      createdAt: now, updatedAt: now, state: 'queued', attempts: 0, payload: { message: 'm12' }, ack: { ok: true, id: 'm12' } }));
+    await secondStore.create(createReliableRecord({ key: `M13:aggregate-${index}`, fingerprint: `M13:${index}`,
+      createdAt: now, updatedAt: now, state: 'queued', attempts: 0, payload: { message: 'm13' }, ack: { ok: true, id: 'm13' } }));
+  }
+  let active = 0;
+  let maximum = 0;
+  let releaseDeliveries!: () => void;
+  const deliveriesReleased = new Promise<void>(resolve => { releaseDeliveries = resolve; });
+  let reachedCeiling!: () => void;
+  const fourActive = new Promise<void>(resolve => { reachedCeiling = resolve; });
+  const scheduledFirst: Array<() => Promise<void>> = [];
+  const scheduledSecond: Array<() => Promise<void>> = [];
+  const makeRunner = (store: MemoryReliableRecordStore<Payload, Ack>, scheduled: Array<() => Promise<void>>) =>
+    new ReliableOutboxRunner(store, {
+      isReady: () => true,
+      async deliver() {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        if (active === DEFAULT_RELIABILITY_POLICY.concurrency) reachedCeiling();
+        await deliveriesReleased;
+        active -= 1;
+      },
+      onState() {}, defer(work) { scheduled.push(work); }
+    });
+  const first = makeRunner(firstStore, scheduledFirst);
+  const second = makeRunner(secondStore, scheduledSecond);
+  try {
+    await Promise.all([first.start(), second.start()]);
+    const work = Promise.all([...scheduledFirst, ...scheduledSecond].map(run => run()));
+    await fourActive;
+    assert.equal(maximum, DEFAULT_RELIABILITY_POLICY.concurrency);
+    releaseDeliveries();
+    await work;
+    assert.equal(maximum, 4);
+  } finally {
+    releaseDeliveries();
+    first.close();
+    second.close();
+    await Promise.all([firstStore.close(), secondStore.close()]);
+  }
+});
+
+test('close racing runner startup preserves the writer lock until startup settles and starts no scanner', async () => {
+  const memory = new MemoryReliableRecordStore<Payload, Ack>();
+  let initializeResolve!: () => void;
+  const initializeGate = new Promise<void>(resolve => { initializeResolve = resolve; });
+  let listCalls = 0;
+  const store = {
+    initialize: () => initializeGate,
+    get: (key: string) => memory.get(key),
+    list: async () => { listCalls += 1; return memory.list(); },
+    create: (value: ReturnType<typeof record>) => memory.create(value),
+    transition: (key: string, state: Parameters<typeof memory.transition>[1], changes?: Parameters<typeof memory.transition>[2]) =>
+      memory.transition(key, state, changes),
+    close: async () => {}
+  };
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true, async deliver() {}, onState() {}, defer() {}
   });
-  await batchRunner.start();
-  assert.equal(batchScheduled.length, DEFAULT_RELIABILITY_POLICY.scanBatchSize);
-  batchRunner.close();
-  await batchStore.close();
+  const starting = runner.start();
+  assert.equal(runner.close(), true);
+  initializeResolve();
+  await starting;
+  assert.equal(listCalls, 0);
+});
+
+test('readiness scans contain transient store read errors without an unhandled rejection', async () => {
+  const memory = new MemoryReliableRecordStore<Payload, Ack>();
+  let failList = false;
+  const store = {
+    initialize: () => memory.initialize(), get: (key: string) => memory.get(key),
+    list: async () => { if (failList) throw new Error('injected scan read failure'); return memory.list(); },
+    create: (value: ReturnType<typeof record>) => memory.create(value),
+    transition: (key: string, state: Parameters<typeof memory.transition>[1], changes?: Parameters<typeof memory.transition>[2]) =>
+      memory.transition(key, state, changes),
+    close: () => memory.close()
+  };
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true, async deliver() {}, onState() {}, defer() {}
+  });
+  try {
+    await runner.start();
+    failList = true;
+    await assert.doesNotReject(runner.wake());
+  } finally {
+    runner.close();
+    await memory.close();
+  }
+});
+
+test('overlapping readiness and periodic-style scans do not duplicate an active key', async () => {
+  const store = new MemoryReliableRecordStore<Payload, Ack>();
+  const now = Date.now();
+  await store.create(createReliableRecord({ key: 'M12:overlapping-scan', fingerprint: 'overlap',
+    createdAt: now, updatedAt: now, state: 'queued', attempts: 0,
+    payload: { message: 'overlap' }, ack: { ok: true, id: 'overlap' } }));
+  const scheduled: Array<() => Promise<void>> = [];
+  let releaseDelivery!: () => void;
+  const deliveryGate = new Promise<void>(resolve => { releaseDelivery = resolve; });
+  let deliveryEntered!: () => void;
+  const entered = new Promise<void>(resolve => { deliveryEntered = resolve; });
+  let sends = 0;
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true,
+    async deliver() { sends += 1; deliveryEntered(); await deliveryGate; },
+    onState() {}, defer(work) { scheduled.push(work); }
+  });
+  try {
+    await runner.start();
+    await Promise.all([runner.wake(), runner.wake()]);
+    assert.equal(scheduled.length, 1);
+    const work = scheduled.shift()?.();
+    await entered;
+    await Promise.all([runner.wake(), runner.wake()]);
+    assert.equal(scheduled.length, 0);
+    assert.equal(sends, 1);
+    releaseDelivery();
+    await work;
+  } finally {
+    releaseDelivery();
+    runner.close();
+    await store.close();
+  }
+});
+
+test('close during an active attempt preserves ownership evidence through the final state mutation', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-active-close-'));
+  const store = createDiskStore(directory);
+  await store.create(record('F08:active-close'));
+  const observer = createDiskStore(directory);
+  await observer.initialize();
+  let releaseDelivery!: () => void;
+  const deliveryGate = new Promise<void>(resolve => { releaseDelivery = resolve; });
+  let deliveryEntered!: () => void;
+  const entered = new Promise<void>(resolve => { deliveryEntered = resolve; });
+  const scheduled: Array<() => Promise<void>> = [];
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true,
+    async deliver() { deliveryEntered(); await deliveryGate; throw new Error('ambiguous after emit'); },
+    onState() {}, defer(work) { scheduled.push(work); }, now: () => 100
+  });
+  try {
+    await runner.start();
+    const work = scheduled.shift()?.();
+    await entered;
+    assert.equal(runner.close(), true);
+    await store.close(true);
+    await observer.close();
+    await assert.rejects(createDiskStore(directory).initialize(), /state directory is locked/);
+    releaseDelivery();
+    await work;
+    assert.equal((await store.get('F08:active-close'))?.state, 'uncertain');
+    await assert.rejects(createDiskStore(directory).initialize(), /state directory is locked/);
+  } finally {
+    releaseDelivery();
+    runner.close();
+    await store.close(true);
+    await observer.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('capacity overrides cannot exceed the approved record or byte bounds', () => {
+  assert.throws(() => createDiskStore('unused', 10_001), /approved record and byte limits/);
+  const memory = new MemoryReliableRecordStore<Payload, Ack>();
+  const options = { isReady: () => true, async deliver() {}, onState() {}, defer() {} };
+  assert.throws(() => new ReliableOutboxRunner(memory, {
+    ...options, policy: { ...DEFAULT_RELIABILITY_POLICY, maxAgeMs: DEFAULT_RELIABILITY_POLICY.maxAgeMs + 1 }
+  }), /approved retry, age, batch, and concurrency bounds/);
+  assert.throws(() => new ReliableOutboxRunner(memory, {
+    ...options, policy: { ...DEFAULT_RELIABILITY_POLICY, retryDelaysMs: [1, 2, 3, 4, 5] }
+  }), /approved retry, age, batch, and concurrency bounds/);
+});
+
+test('a deleted cached canonical key becomes blocked instead of replaying a stale receipt', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-deleted-canonical-'));
+  const store = createDiskStore(directory);
+  try {
+    const original = await store.create(record('F08:deleted-canonical', 'original-ack'));
+    assert.equal(original.created, true);
+    const canonical = (await readdir(directory)).find(name => /^[0-9a-f]{64}\.json$/.test(name));
+    assert.ok(canonical);
+    await unlink(join(directory, canonical));
+    await assert.rejects(store.create(record('F08:deleted-canonical', 'new-ack')), ReliabilityCommitUncertainError);
+    assert.equal((await store.list()).some(item => item.key === 'F08:deleted-canonical'), false);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a corrupt canonical file is quarantined and cannot be replaced as a fresh accepted receipt', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-corrupt-canonical-'));
+  const store = createDiskStore(directory);
+  const key = 'F09:corrupt-canonical';
+  try {
+    await store.create(record(key, 'original-ack'));
+    const canonical = (await readdir(directory)).find(name => /^[0-9a-f]{64}\.json$/.test(name));
+    assert.ok(canonical);
+    await writeFile(join(directory, canonical), '{broken');
+    await assert.rejects(store.create(record(key, 'replacement-ack')), ReliabilityCommitUncertainError);
+    assert.equal((await store.list()).some(item => item.key === key), false);
+    assert.equal((await readdir(join(directory, '.quarantine'))).length, 1);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('attempt metadata cannot move backwards', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-attempt-monotonic-'));
+  const store = createDiskStore(directory);
+  try {
+    await store.create(record('F08:attempt-monotonic'));
+    await store.transition('F08:attempt-monotonic', 'attempting', { attempts: 1 });
+    await assert.rejects(store.transition('F08:attempt-monotonic', 'retryable', { attempts: 0 }), /cannot decrease/);
+    assert.equal((await store.get('F08:attempt-monotonic'))?.attempts, 1);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('state transition growth cannot exceed retained byte capacity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-transition-capacity-'));
+  const store = createDiskStore(directory, 10, {}, 1_200);
+  try {
+    await store.create(record('F08:transition-capacity'));
+    await assert.rejects(store.transition('F08:transition-capacity', 'queued', { lastError: 'x'.repeat(2_000) }), ReliabilityCapacityError);
+    assert.equal((await store.get('F08:transition-capacity'))?.state, 'queued');
+    assert.equal((await store.get('F08:transition-capacity'))?.lastError, undefined);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('peer acceptance followed by failed local delivered-state commit is uncertain and is not replayed', async () => {

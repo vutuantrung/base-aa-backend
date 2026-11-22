@@ -13,6 +13,7 @@ import { SocketPeerMessageDelivery } from './socket-peer-message-delivery.js';
 import { sendTaskHistorySnapshot } from './task-history-snapshot.js';
 import { sendResourceSelectionSnapshot } from './resource-selection-snapshot.js';
 import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
+import { DEFAULT_RELIABILITY_LIMITS } from '../../shared/persistence/atomic-json-record-store.js';
 
 export interface ExternalPeerTransport extends PServerPeerTransport {}
 
@@ -65,8 +66,15 @@ export function attachPeerGateway(
   const directory = new PeerDirectory();
   const connections = createSocketPeerGateway(io, apiKey, directory);
   const destinationPolicy = new PeerDestinationPolicy(directory, new SocketPeerMessageDelivery(connections));
-  const taskStore = new JsonTaskFileStore();
-  const selectionStore = new JsonResourceSelectionStore();
+  // P03 states one capacity bound without defining its scope across the two
+  // independently retained workflow directories. Split it evenly so the
+  // composed application cannot exceed the approved aggregate defaults.
+  const workflowCapacity = {
+    maxRecords: DEFAULT_RELIABILITY_LIMITS.maxRecords / 2,
+    maxBytes: DEFAULT_RELIABILITY_LIMITS.maxBytes / 2
+  };
+  const taskStore = new JsonTaskFileStore(undefined, workflowCapacity);
+  const selectionStore = new JsonResourceSelectionStore(undefined, workflowCapacity);
 
   function getConnection(peerId: 'eserver' | 'sserver' | 'aaui', instanceId?: string): PeerSocketConnection | undefined {
     const identity = directory.lookup(peerId, instanceId);
@@ -179,7 +187,14 @@ export function attachPeerGateway(
 
   return {
     async start(): Promise<void> {
-      await Promise.all([taskWorkflow.start(), selectionWorkflow.start()]);
+      try {
+        await taskWorkflow.start();
+        await selectionWorkflow.start();
+      }
+      catch (error) {
+        await this.close();
+        throw error;
+      }
     },
     async close(): Promise<void> {
       const taskAttemptActive = taskWorkflow.close();
