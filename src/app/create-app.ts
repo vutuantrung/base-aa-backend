@@ -120,18 +120,7 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
           });
         startupPromise = startupPromise.catch(async error => {
           if (lifecycleState === 'starting') lifecycleState = 'failed';
-          coordinator.beginDrain();
-          sockets.peerGateway?.beginDrain();
-          try {
-            const rollbackDeadline = new MonotonicDeadline(shutdownTimeoutMs, () => performance.now());
-            await closeBeforeDeadline(shutdownTimeoutMs, rollbackDeadline, () => ({ ...coordinator.counts(),
-              taskRunnerExecuting: sockets.peerGateway?.workCounts().task.executing ?? 0,
-              selectionRunnerExecuting: sockets.peerGateway?.workCounts().selection.executing ?? 0 }), async () => {
-              await sockets.peerGateway?.waitForIdle();
-              await coordinator.waitForIdle();
-              await cleanupResources();
-            }, () => {});
-          }
+          try { await rollbackAfterStartupFailure(shutdownTimeoutMs, coordinator, sockets.peerGateway, cleanupResources); }
           catch (cleanupError) { throw combineLifecycleErrors(error, [cleanupError], 'Application startup and rollback failed'); }
           throw error;
         });
@@ -139,7 +128,9 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
       },
       close(): Promise<void> {
         if (closePromise) return closePromise;
-        if (lifecycleState === 'failed') return cleanupPromise ?? Promise.resolve();
+        if (lifecycleState === 'failed') {
+          return closeFailedStartup(startupPromise, cleanupPromise);
+        }
         if (lifecycleState === 'stopped') return Promise.resolve();
         lifecycleState = 'draining';
         coordinator.beginDrain();
@@ -210,13 +201,46 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
   }
 }
 
+type RollbackPeerGateway = Pick<NonNullable<ReturnType<typeof attachSocketServer>['peerGateway']>,
+  'beginDrain' | 'waitForIdle' | 'workCounts' | 'close'>;
+
+export function closeFailedStartup(startupPromise: Promise<number> | undefined,
+  cleanupPromise: Promise<void> | undefined): Promise<void> {
+  if (cleanupPromise) return cleanupPromise;
+  if (startupPromise) return startupPromise.then(() => undefined, error => {
+    if (containsShutdownTimeout(error)) throw error;
+  });
+  return cleanupPromise ?? Promise.resolve();
+}
+
+function containsShutdownTimeout(error: unknown): boolean {
+  if (error instanceof ApplicationShutdownTimeoutError) return true;
+  return error instanceof AggregateError && error.errors.some(containsShutdownTimeout);
+}
+
+export async function rollbackAfterStartupFailure(timeoutMs: number, coordinator: ApplicationCoordinator,
+  peerGateway: RollbackPeerGateway | undefined, cleanup: () => Promise<void>): Promise<void> {
+  coordinator.beginDrain();
+  peerGateway?.beginDrain();
+  const deadline = new MonotonicDeadline(timeoutMs, () => performance.now());
+  await closeBeforeDeadline(timeoutMs, deadline, () => ({ ...coordinator.counts(),
+    taskRunnerExecuting: peerGateway?.workCounts().task.executing ?? 0,
+    selectionRunnerExecuting: peerGateway?.workCounts().selection.executing ?? 0 }), async () => {
+    await peerGateway?.waitForIdle();
+    await coordinator.waitForIdle();
+    await peerGateway?.close();
+    await cleanup();
+  }, () => {});
+}
+
 function validateShutdownTimeout(timeoutMs: number): void {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_SHUTDOWN_TIMEOUT_MS)
     throw new RangeError(`Shutdown timeout must be an integer from 1 to ${MAX_SHUTDOWN_TIMEOUT_MS} milliseconds`);
 }
 
-async function startApplicationResources(
-  port: number, httpServer: HttpServer, peerGateway: ReturnType<typeof attachSocketServer>['peerGateway'],
+export async function startApplicationResources(
+  port: number, httpServer: HttpServer,
+  peerGateway: Pick<NonNullable<ReturnType<typeof attachSocketServer>['peerGateway']>, 'start' | 'activate'> | undefined,
   pserverConnector: ReturnType<typeof connectToPServer> | undefined,
   isStarting: () => boolean, markReady: () => void, markRunning: (port: number) => void
 ): Promise<number> {

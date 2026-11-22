@@ -79,6 +79,40 @@ test('detached async descendants cannot use nested admission as a post-cutoff ca
   await assert.rejects(detached(), /APPLICATION_DRAINING/);
 });
 
+test('receipt commit and peer ACK callback complete once after drain deadline rejection', async () => {
+  const coordinator = new ApplicationCoordinator();
+  const enteredCommit = deferred();
+  const releaseCommit = deferred();
+  let persisted = false;
+  let callbackCount = 0;
+  const receipt = coordinator.run('peer', async () => {
+    enteredCommit.resolve();
+    await releaseCommit.promise;
+    persisted = true;
+    callbackCount += 1;
+  });
+  await enteredCommit.promise;
+  coordinator.beginDrain();
+  await assert.rejects(withTimeout(coordinator.waitForIdle(), 'drain deadline elapsed', 20), /drain deadline elapsed/);
+  assert.equal(persisted, false);
+  assert.equal(callbackCount, 0);
+  assert.equal(coordinator.counts().peer, 1);
+  releaseCommit.resolve();
+  await Promise.all([receipt, coordinator.waitForIdle()]);
+  assert.equal(persisted, true);
+  assert.equal(callbackCount, 1);
+  assert.equal(coordinator.counts().peer, 0);
+});
+
+async function withTimeout<T>(promise: Promise<T>, message: string, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<T>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+
 test('M09 keeps fail-fast public rejection and tracks already-started sibling branches', async () => {
   const coordinator = new ApplicationCoordinator();
   const branchStarted = deferred();

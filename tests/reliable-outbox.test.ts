@@ -529,6 +529,71 @@ test('overlapping readiness and periodic-style scans do not duplicate an active 
   }
 });
 
+test('scanner list settlement holds runner ownership until shutdown can safely release it', async () => {
+  const memory = new MemoryReliableRecordStore<Payload, Ack>();
+  const recordValue = record('M12:suspended-scanner');
+  await memory.create(recordValue);
+  let releaseRunner: (() => void) | undefined = () => {};
+  let ownershipReleased = false;
+  const enteredList = deferred();
+  const releaseList = deferred();
+  let suspendList = false;
+  const store = {
+    initialize: () => memory.initialize(), get: (key: string) => memory.get(key),
+    list: async () => {
+      if (suspendList) {
+        enteredList.resolve();
+        await releaseList.promise;
+      }
+      return memory.list();
+    },
+    create: (value: ReturnType<typeof record>) => memory.create(value),
+    transition: (key: string, state: Parameters<typeof memory.transition>[1], changes?: Parameters<typeof memory.transition>[2]) =>
+      memory.transition(key, state, changes),
+    close: () => memory.close(),
+    claimRunner: () => {
+      ownershipReleased = false;
+      return () => { ownershipReleased = true; releaseRunner?.(); releaseRunner = undefined; };
+    }
+  };
+  const scheduled: Array<() => Promise<void>> = [];
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true, async deliver() {}, onState() {}, defer(work) { scheduled.push(work); }
+  });
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    await runner.start(false);
+    suspendList = true;
+    const scan = runner.wake();
+    await withTimeout(enteredList.promise, 'scanner did not enter injected store.list()');
+    runner.close();
+    let idleSettled = false;
+    const idle = runner.waitForIdle().then(() => { idleSettled = true; });
+    await Promise.resolve();
+    assert.equal(idleSettled, false);
+    assert.equal(ownershipReleased, false);
+    releaseList.resolve();
+    await Promise.all([scan, idle]);
+    assert.equal(ownershipReleased, true);
+    assert.equal(scheduled.length, 0, 'closed scanner must not start an attempt after list settles');
+  } finally {
+    releaseList.resolve();
+    runner.close();
+    await runner.waitForIdle();
+    await memory.close();
+    clearInterval(keepAlive);
+  }
+});
+
+async function withTimeout<T>(promise: Promise<T>, message: string, timeoutMs = 2000): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<T>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+
 test('close during an active attempt preserves ownership evidence through the final state mutation', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'reliable-active-close-'));
   const store = createDiskStore(directory);
@@ -563,6 +628,54 @@ test('close during an active attempt preserves ownership evidence through the fi
     await store.close(true);
     await observer.close();
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('deadline rejection preserves writer lease through late delivery commit and releases it afterward', async () => {
+  const memory = new MemoryReliableRecordStore<Payload, Ack>();
+  const createdAt = Date.now();
+  await memory.create(createReliableRecord({ key: 'F08:late-deadline', fingerprint: 'late-deadline', createdAt,
+    updatedAt: createdAt, state: 'queued', attempts: 0, payload: { message: 'late-deadline' },
+    ack: { ok: true, id: 'late-deadline' } }));
+  let leaseHeld = false;
+  const store = {
+    initialize: () => memory.initialize(), get: (key: string) => memory.get(key), list: () => memory.list(),
+    create: (value: ReturnType<typeof record>) => memory.create(value),
+    transition: (key: string, state: Parameters<typeof memory.transition>[1], changes?: Parameters<typeof memory.transition>[2]) =>
+      memory.transition(key, state, changes),
+    close: () => memory.close(),
+    claimRunner: () => { leaseHeld = true; return () => { leaseHeld = false; }; }
+  };
+  const deliveryEntered = deferred();
+  const releaseDelivery = deferred();
+  const scheduled: Array<() => Promise<void>> = [];
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true,
+    async deliver() { deliveryEntered.resolve(); await releaseDelivery.promise; },
+    onState() {}, defer(work) { scheduled.push(work); }
+  });
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    await withTimeout(runner.start(), 'runner startup did not settle');
+    const attempt = scheduled.shift();
+    assert.ok(attempt, 'runner did not schedule the initial attempt');
+    const attemptWork = attempt();
+    await withTimeout(deliveryEntered.promise, 'late delivery did not start');
+    runner.close();
+    const ownerClose = withTimeout(runner.waitForIdle(), 'shutdown owner deadline elapsed', 25);
+    await assert.rejects(ownerClose, /shutdown owner deadline elapsed/);
+    assert.equal(leaseHeld, true);
+    assert.equal((await memory.get('F08:late-deadline'))?.state, 'attempting');
+    releaseDelivery.resolve();
+    await Promise.all([attemptWork, runner.waitForIdle()]);
+    assert.equal((await memory.get('F08:late-deadline'))?.state, 'delivered');
+    assert.equal(leaseHeld, false);
+  } finally {
+    releaseDelivery.resolve();
+    runner.close();
+    await withTimeout(runner.waitForIdle(), 'runner did not become idle after releasing delivery');
+    await memory.close();
+    clearInterval(keepAlive);
   }
 });
 

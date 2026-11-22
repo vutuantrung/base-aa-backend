@@ -363,12 +363,19 @@ test('partial application startup failure releases the store that started succes
   await staleHandle.close();
   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true });
   try {
-    await assert.rejects(app.listen(0), ReliabilityWriterLockError);
+    let startupError: unknown;
+    try { await app.listen(0); }
+    catch (error) { startupError = error; }
+    assert.ok(startupError instanceof Error, 'startup should reject after partial runner acquisition');
+    const startupCause = startupError instanceof AggregateError ? startupError.cause : startupError;
+    assert.ok(startupCause instanceof Error);
+    assert.equal(startupCause.name, 'ReliabilityWriterLockError');
+    await app.close();
     await assert.rejects(access(join(taskDirectory, '.r7.5-outbox', '.writer.lock')), { code: 'ENOENT' });
     await access(staleLock);
     assert.equal(app.httpServer.listening, false);
   } finally {
-    await app.close();
+    await app.close().catch(() => undefined);
     if (priorTaskDirectory === undefined) delete process.env.AAB_TASK_STORE_DIR;
     else process.env.AAB_TASK_STORE_DIR = priorTaskDirectory;
     if (priorSelectionDirectory === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
