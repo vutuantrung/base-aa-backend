@@ -121,7 +121,17 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
         startupPromise = startupPromise.catch(async error => {
           if (lifecycleState === 'starting') lifecycleState = 'failed';
           coordinator.beginDrain();
-          try { await cleanupResources(); }
+          sockets.peerGateway?.beginDrain();
+          try {
+            const rollbackDeadline = new MonotonicDeadline(shutdownTimeoutMs, () => performance.now());
+            await closeBeforeDeadline(shutdownTimeoutMs, rollbackDeadline, () => ({ ...coordinator.counts(),
+              taskRunnerExecuting: sockets.peerGateway?.workCounts().task.executing ?? 0,
+              selectionRunnerExecuting: sockets.peerGateway?.workCounts().selection.executing ?? 0 }), async () => {
+              await sockets.peerGateway?.waitForIdle();
+              await coordinator.waitForIdle();
+              await cleanupResources();
+            }, () => {});
+          }
           catch (cleanupError) { throw combineLifecycleErrors(error, [cleanupError], 'Application startup and rollback failed'); }
           throw error;
         });

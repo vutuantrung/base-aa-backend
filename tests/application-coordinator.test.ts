@@ -14,14 +14,25 @@ function deferred<T = void>() {
 test('admission cutoff rejects new roots while nested admitted calls may finish', async () => {
   const coordinator = new ApplicationCoordinator();
   const release = deferred();
+  const releaseNested = deferred();
+  const nestedStarted = deferred();
   let nested = false;
   const admitted = coordinator.run('http', async () => {
+    const nestedWork = coordinator.run('generic', async () => {
+      nestedStarted.resolve();
+      await releaseNested.promise;
+      nested = true;
+    });
     await release.promise;
-    await coordinator.run('generic', () => { nested = true; });
+    await nestedWork;
   });
+  await nestedStarted.promise;
   coordinator.beginDrain();
   await assert.rejects(coordinator.run('generic', () => undefined), /APPLICATION_DRAINING/);
   release.resolve();
+  await Promise.resolve();
+  assert.equal(coordinator.counts().generic, 1);
+  releaseNested.resolve();
   await admitted;
   assert.equal(nested, true);
   assert.deepEqual(coordinator.counts(), { http: 0, socket: 0, peer: 0, generic: 0, snapshot: 0 });
@@ -32,6 +43,37 @@ test('expired async context cannot detach work past cutoff', async () => {
   let detached!: () => Promise<void>;
   await coordinator.run('socket', async () => {
     detached = () => coordinator.run('generic', () => undefined);
+  });
+  coordinator.beginDrain();
+  await assert.rejects(detached(), /APPLICATION_DRAINING/);
+});
+
+test('detached nested admitted work remains part of coordinator idle tracking', async () => {
+  const coordinator = new ApplicationCoordinator();
+  const nestedStarted = deferred();
+  const releaseNested = deferred();
+  let nested!: Promise<void>;
+  await coordinator.run('http', async () => {
+    nested = coordinator.run('generic', async () => {
+      nestedStarted.resolve();
+      await releaseNested.promise;
+    });
+    await nestedStarted.promise;
+  });
+  const idle = coordinator.waitForIdle();
+  let idleResolved = false;
+  void idle.then(() => { idleResolved = true; });
+  await Promise.resolve();
+  assert.equal(idleResolved, false);
+  releaseNested.resolve();
+  await Promise.all([idle, nested]);
+});
+
+test('detached async descendants cannot use nested admission as a post-cutoff capability', async () => {
+  const coordinator = new ApplicationCoordinator();
+  let detached!: () => Promise<void>;
+  await coordinator.run('http', async () => {
+    detached = () => coordinator.runAdmitted('generic', () => undefined);
   });
   coordinator.beginDrain();
   await assert.rejects(detached(), /APPLICATION_DRAINING/);

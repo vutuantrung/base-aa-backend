@@ -27,6 +27,7 @@ async function close(server: ReturnType<typeof createServer>): Promise<void> {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 }
 
+
 test('one-shot lifecycle shares same-port startup and close results and rejects restart', async () => {
   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false });
   const [firstPort, secondPort] = await Promise.all([app.listen(0), app.listen(0)]);

@@ -42,12 +42,17 @@ export class ApplicationCoordinator implements ApplicationAdmission {
 
   run<T>(workClass: ApplicationWorkClass, operation: () => Promise<T> | T): Promise<T> {
     const inherited = this.context.getStore();
-    if (inherited?.coordinator === this && inherited.active) return Promise.resolve().then(operation);
+    if (inherited?.coordinator === this && inherited.active)
+      return this.runTracked(workClass, operation);
     if (!this.accepting) return Promise.reject(new ApplicationDrainingError());
     return this.runTracked(workClass, operation);
   }
 
+  /** Track fan-out that is synchronously created by an already admitted operation. */
   runAdmitted<T>(workClass: ApplicationWorkClass, operation: () => Promise<T> | T): Promise<T> {
+    const inherited = this.context.getStore();
+    if (inherited?.coordinator !== this || !inherited.active)
+      return Promise.reject(new ApplicationDrainingError());
     return this.runTracked(workClass, operation);
   }
 

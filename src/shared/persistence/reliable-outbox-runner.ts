@@ -77,6 +77,7 @@ export class ReliableOutboxRunner<TPayload, TAck> {
   private started = false;
   private activated = false;
   private startupActive = false;
+  private scansActive = 0;
   private closed = false;
   private readonly slotWaiters = new Set<() => void>();
   private idleWaiters: Array<() => void> = [];
@@ -148,13 +149,19 @@ export class ReliableOutboxRunner<TPayload, TAck> {
 
   private async scan(): Promise<void> {
     if (this.closed || !this.started) return;
-    const now = this.now();
-    const due = (await this.store.list())
-      .filter(record => (record.state === 'queued' || record.state === 'retryable') &&
-        (record.nextAttemptAt === undefined || record.nextAttemptAt <= now) &&
-        !this.scheduled.has(record.key) && !this.active.has(record.key))
-      .slice(0, this.policy.scanBatchSize);
-    for (const record of due) this.schedule(record);
+    this.scansActive += 1;
+    try {
+      const now = this.now();
+      const due = (await this.store.list())
+        .filter(record => (record.state === 'queued' || record.state === 'retryable') &&
+          (record.nextAttemptAt === undefined || record.nextAttemptAt <= now) &&
+          !this.scheduled.has(record.key) && !this.active.has(record.key))
+        .slice(0, this.policy.scanBatchSize);
+      for (const record of due) this.schedule(record);
+    } finally {
+      this.scansActive -= 1;
+      this.resolveIdleIfNeeded();
+    }
   }
 
   private schedule(record: ReliableRecord<TPayload, TAck>): void {
@@ -286,7 +293,7 @@ export class ReliableOutboxRunner<TPayload, TAck> {
   }
 
   async waitForIdle(): Promise<void> {
-    if (this.startupActive || this.executing.size > 0)
+    if (this.hasOutstandingMutators())
       await new Promise<void>(resolve => this.idleWaiters.push(resolve));
     this.releaseRunnerOwnership();
   }
@@ -297,11 +304,15 @@ export class ReliableOutboxRunner<TPayload, TAck> {
   }
 
   private resolveIdleIfNeeded(): void {
-    if (this.startupActive || this.executing.size > 0) return;
+    if (this.hasOutstandingMutators()) return;
     if (this.closed) this.releaseRunnerOwnership();
     const waiters = this.idleWaiters;
     this.idleWaiters = [];
     for (const resolve of waiters) resolve();
+  }
+
+  private hasOutstandingMutators(): boolean {
+    return this.startupActive || this.scansActive > 0 || this.executing.size > 0;
   }
 
   private releaseRunnerOwnership(): void {
