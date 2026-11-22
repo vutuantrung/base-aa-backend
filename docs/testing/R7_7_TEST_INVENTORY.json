@@ -1,0 +1,2156 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-22",
+  "checkpoint": {
+    "branch": "main",
+    "head": "b8560c5f354a3fab0550fe513293ead6142a7ccd",
+    "worktreeStatus": "clean except pre-existing untracked prompts/R7_7_A_TEST_INVENTORY_RESPONSIBILITY_MAPPING_CODEX_PROMPT.md",
+    "runtime": "Node v22.23.5; npm 10.9.9"
+  },
+  "inventoryMethod": {
+    "scope": "All *.(test|spec).(ts|js|mjs|cjs) files found recursively under tests/ and testing/.",
+    "staticAnalysisLimits": "Fields are source scans and inferred classifications, not proof of full runtime behavior. testCount counts direct node:test test( registrations via lexical regex; suites using generated/dynamic tests may be undercounted. Flags indicate explicit source constructs, not transitive effects.",
+    "testCountMethod": "Counts line-start node:test test()/it() registrations. Cross-checked against the actual Node 22 test-runner aggregate: backend 250; playground 32. This is a source-level count; dynamically generated registrations would require separate runner evidence."
+  },
+  "totals": {
+    "testFiles": 54,
+    "backendTestFiles": 49,
+    "playgroundTestFiles": 5,
+    "lexicallyCountedTestRegistrations": 282,
+    "responsibilityUnknownFiles": 5,
+    "uncategorizedPaths": [
+      "testing/aaui/tests/dashboard-state.test.cjs",
+      "testing/aaui/tests/resource-selection.test.cjs",
+      "testing/aaui/tests/task-flow.test.cjs",
+      "testing/tests/mock-vm-info.test.mjs",
+      "testing/tests/scheduled-peer-message.test.mjs"
+    ],
+    "duplicatePaths": [],
+    "missingPaths": [],
+    "inventoryPathCountMatchesDiscovery": true,
+    "supportAssets": [
+      {
+        "path": "tests/helpers/memory-reliable-store.ts",
+        "kind": "test helper",
+        "usedBy": [
+          "tests/reliable-outbox.test.ts"
+        ]
+      },
+      {
+        "path": "tests/helpers/reliable-crash-child.ts",
+        "kind": "child-process harness",
+        "usedBy": [
+          "tests/reliable-crash-process.test.ts"
+        ]
+      },
+      {
+        "path": "tests/support/mock-pserver.ts",
+        "kind": "peer fixture",
+        "usedBy": [
+          "tests/application-peer-ack-drain.test.ts",
+          "tests/demo-pserver-aaui.test.ts",
+          "tests/peer-forwarding.test.ts",
+          "tests/task-received-routing.test.ts",
+          "tests/resource-selection-persistence.test.ts",
+          "tests/aaui-resource-selection-routing.test.ts",
+          "tests/pserver-aaui-task-roundtrip.test.ts"
+        ]
+      },
+      {
+        "path": "testing/shared/create-peer-server.mjs",
+        "kind": "playground fixture",
+        "usedBy": [
+          "testing/eserver.mjs",
+          "testing/pserver.mjs",
+          "testing/sserver.mjs"
+        ]
+      },
+      {
+        "path": "testing/shared/mock-vm-info.mjs",
+        "kind": "playground fixture",
+        "usedBy": [
+          "testing/tests/mock-vm-info.test.mjs"
+        ]
+      },
+      {
+        "path": "testing/shared/scheduled-peer-message.mjs",
+        "kind": "playground fixture",
+        "usedBy": [
+          "testing/tests/scheduled-peer-message.test.mjs"
+        ]
+      },
+      {
+        "path": "testing/shared/resource-selection.cjs",
+        "kind": "playground fixture",
+        "usedBy": [
+          "testing/aaui/tests/resource-selection.test.cjs"
+        ]
+      },
+      {
+        "path": "testing/shared/task-flow.cjs",
+        "kind": "playground fixture",
+        "usedBy": [
+          "testing/aaui/tests/task-flow.test.cjs"
+        ]
+      },
+      {
+        "path": "testing/aaui/dashboard-state.js",
+        "kind": "playground state module",
+        "usedBy": [
+          "testing/aaui/tests/dashboard-state.test.cjs"
+        ]
+      },
+      {
+        "path": "scripts/check-architecture.ts",
+        "kind": "architecture checker",
+        "usedBy": [
+          "tests/architecture-check.test.ts",
+          "npm run check:architecture"
+        ]
+      },
+      {
+        "path": "src/app/lifecycle-test-seam.ts",
+        "kind": "internal test seam in production source tree",
+        "usedBy": [
+          "tests/application-startup-rollback.test.ts"
+        ],
+        "note": "No public ApplicationInstance API change; static checker currently reports this source as unmapped."
+      }
+    ],
+    "nativeSqliteTestFiles": 24,
+    "testFilesByLayer": {
+      "architecture": 1,
+      "contract": 1,
+      "integration": 11,
+      "mixed": 22,
+      "playground": 5,
+      "process": 1,
+      "unit": 13
+    },
+    "testRegistrationsByLayer": {
+      "architecture": 10,
+      "contract": 3,
+      "integration": 26,
+      "mixed": 120,
+      "playground": 32,
+      "process": 9,
+      "unit": 82
+    },
+    "supportAssetFiles": 11
+  },
+  "entries": [
+    {
+      "path": "testing/aaui/tests/dashboard-state.test.cjs",
+      "packageOrRunner": "testing/package.json:test:playground (Node test runner)",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [
+        "F03",
+        "F09",
+        "M13"
+      ],
+      "testLayer": "playground",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [],
+      "testCount": 21,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: ingests SServer status stream separately from multiple EServer VM streams",
+        "direct source signals (static scan): clock/timer: `/dashboard-state.js');  const at = new Date('2026-11-12T12:00:00.000Z').toISOString(); function mes`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "testing/aaui/tests/resource-selection.test.cjs",
+      "packageOrRunner": "testing/package.json:test:playground (Node test runner)",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "testLayer": "playground",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [],
+      "testCount": 3,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: mock records have the exact requested shapes and allowed platforms",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "testing/aaui/tests/task-flow.test.cjs",
+      "packageOrRunner": "testing/package.json:test:playground (Node test runner)",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "testLayer": "playground",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [],
+      "testCount": 3,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: task mock follows required format and allowed statuses",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "testing/tests/mock-vm-info.test.mjs",
+      "packageOrRunner": "testing/package.json:test:playground (Node test runner)",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "testLayer": "playground",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "../shared/mock-vm-info.mjs",
+        "../shared/scheduled-peer-message.mjs"
+      ],
+      "relatedSourcePaths": [],
+      "testCount": 3,
+      "isolationRisk": [
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled"
+      ],
+      "evidence": [
+        "direct source: mock VM list follows requested array format with supported enum values",
+        "fixture imports/references: ../shared/mock-vm-info.mjs, ../shared/scheduled-peer-message.mjs",
+        "direct source signals (static scan): clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 45));   } finally {     scheduler.stop();   }`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "testing/tests/scheduled-peer-message.test.mjs",
+      "packageOrRunner": "testing/package.json:test:playground (Node test runner)",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "testLayer": "playground",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "../shared/scheduled-peer-message.mjs"
+      ],
+      "relatedSourcePaths": [],
+      "testCount": 2,
+      "isolationRisk": [
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled"
+      ],
+      "evidence": [
+        "direct source: scheduled sender sends repeatedly with ACK and stops cleanly",
+        "fixture imports/references: ../shared/scheduled-peer-message.mjs",
+        "direct source signals (static scan): clock/timer: `lay = ms => new Promise(resolve => setTimeout(resolve, ms));  test('scheduled sender sends repeatedly`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/aa-catalog-boundary.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M07",
+        "M16",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/infrastructure/database/sqlite.js",
+        "src/infrastructure/http/http-server.js",
+        "src/modules/aa-catalog/contracts.js",
+        "src/modules/aa-catalog/sqlite-catalog.js"
+      ],
+      "testCount": 7,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: AaCatalogRepository is a neutral read-only port consumable by a fake without upsert methods",
+        "source imports: src/app/create-app.js, src/infrastructure/database/sqlite.js, src/infrastructure/http/http-server.js, src/modules/aa-catalog/contracts.js, src/modules/aa-catalog/sqlite-catalog.js",
+        "direct source signals (static scan): local listener: `boolean } = {}) {   const server = createServer(createHttpApp({     catalog,     sender: { async execut`; SQLite path: `serts', () => {   const database = openDatabase(':memory:');   try {     const catalog = new SqliteAaCa`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm } from 'node:fs/promises'; import { createServer,`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/aa-catalog.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M16",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 4,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: GET /api/aa",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `ase = `http://127.0.0.1:${await app.listen(0)}`; }); after(async () => { await app.close(); });  t`; SQLite path: `c/app/create-app.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*' }); let base: str`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/aaui-resource-selection-routing.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M13"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js",
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/modules/peer-messaging/resource-selection-store.js"
+      ],
+      "testCount": 1,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: AAUI selection routes via AAB to PServer with precisely three IDs and an ACK",
+        "source imports: src/app/create-app.js, src/modules/peer-messaging/resource-selection-store.js",
+        "fixture imports/references: ./support/mock-pserver.js, tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `ssert/strict'; import { io } from 'socket.io-client'; import { mkdtemp, rm } from 'node:fs/promises'; impo`; SQLite path: `await createMockPServer();   app = createApplication({     dbPath: ':memory:', corsOrigin: '*', enableTestPe`; filesystem: `from 'socket.io-client'; import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from`; env mutation: `ess.env.AAB_SELECTION_STORE_DIR;   process.env.AAB_SELECTION_STORE_DIR = directory;   pserver = await createMockPServer();   ap`; clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 10));   }   assert.equal(app.pserverConnector?`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/application-coordinator.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M07",
+        "M09"
+      ],
+      "businessFlows": [
+        "M09",
+        "M02"
+      ],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/application-coordinator.js",
+        "src/infrastructure/socket/peer-gateway.js",
+        "src/modules/messaging/message-router.js",
+        "src/modules/messaging/route-registry.js"
+      ],
+      "testCount": 8,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: admission cutoff rejects new roots while nested admitted calls may finish",
+        "source imports: src/app/application-coordinator.js, src/infrastructure/socket/peer-gateway.js, src/modules/messaging/message-router.js, src/modules/messaging/route-registry.js",
+        "direct source signals (static scan): clock/timer: `esolve, reject) => {       timer = setTimeout(() => reject(new Error(message)), timeoutMs);     })]);`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/application-lifecycle.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 7,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: one-shot lifecycle shares same-port startup and close results and rejects restart",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `solve, reject }; }  async function listen(server: ReturnType<typeof createServer>): Promise<numbe`; SQLite path: `tart', async () => {   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: fa`; filesystem: `erver } from 'node:http'; import { mkdtemp, readFile, rm } from 'node:fs/promises'; import { tmpd`; env mutation: `nDir = join(root, 'selections');   process.env.AAB_TASK_STORE_DIR = taskDir;   process.env.AAB_SELECTION_STORE_DIR = selec`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/application-peer-ack-drain.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js",
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/modules/resource-selection/resource-selection-store.js",
+        "src/modules/task-workflow/task-file-store.js"
+      ],
+      "testCount": 1,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: live peer ingress and outbound ACK settle before drain cleanup; new business ingress is rejected",
+        "source imports: src/app/create-app.js, src/modules/resource-selection/resource-selection-store.js, src/modules/task-workflow/task-file-store.js",
+        "fixture imports/references: ./support/mock-pserver.js, tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `await createMockPServer();   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; filesystem: `test } from 'node:test'; import { mkdtemp, readFile, rm } from 'node:fs/promises'; import { tmpd`; env mutation: `pdir(), 'aab-r76-peer-drain-'));   process.env.AAB_TASK_STORE_DIR = join(root, 'tasks');   process.env.AAB_SELECTION_STORE`; clock/timer: `esolve, reject) => {       timer = setTimeout(() => reject(new Error(message)), timeoutMs);     })]);`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/application-startup-rollback.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": true,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/application-coordinator.js",
+        "src/app/create-app.js",
+        "src/app/lifecycle-test-seam.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses process-wide state, timers, or module singleton"
+      ],
+      "evidence": [
+        "direct source: activation failure after HTTP bind retains resources until peer and admitted work settle",
+        "source imports: src/app/application-coordinator.js, src/app/create-app.js, src/app/lifecycle-test-seam.js",
+        "direct source signals (static scan): local listener: `oordinator();   const httpServer = createServer();   const admittedEntered = deferred();   const releas`; clock/timer: `esolve, reject) => {       timer = setTimeout(() => reject(new Error(message)), timeoutMs);     })]);`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/application-surface-compatibility.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M07",
+        "M08",
+        "M14",
+        "M15",
+        "M16"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/app/lifecycle.js",
+        "src/config/configuration.js",
+        "src/modules/aa-catalog/sqlite-catalog.js",
+        "src/modules/process-usage/process-usage.js",
+        "src/modules/session/session.js"
+      ],
+      "testCount": 4,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: SQLite overloads and runtime values preserve concrete and optional repository handles",
+        "source imports: src/app/create-app.js, src/app/lifecycle.js, src/config/configuration.js, src/modules/aa-catalog/sqlite-catalog.js, src/modules/process-usage/process-usage.js",
+        "direct source signals (static scan): local listener: `false });   const port = await app.listen(0);   try {     assert.ok(port > 0);     const address`; SQLite path: `ession.js';  const omittedSqlite = createApplication({ dbPath: ':memory:', corsOrigin: '*' }); const enabled`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/architecture-check.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18"
+      ],
+      "businessFlows": [],
+      "testLayer": "architecture",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "../../shared/transport/connectable-message-client.js"
+      ],
+      "relatedSourcePaths": [],
+      "testCount": 10,
+      "isolationRisk": [
+        "filesystem state; temp-directory isolation/cleanup is part of test"
+      ],
+      "evidence": [
+        "direct source: legal type-only import is recorded as erased and NodeNext resolves .js specifiers to TypeScript",
+        "fixture imports/references: ../../shared/transport/connectable-message-client.js",
+        "direct source signals (static scan): filesystem: `rom 'node:assert/strict'; import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'; impor`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/configuration.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M01"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/config/configuration.js",
+        "src/infrastructure/socket/pserver-connector.js",
+        "src/modules/pserver/contracts.js",
+        "src/modules/pserver/pserver-protocol.js"
+      ],
+      "testCount": 6,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: configuration resolves standalone defaults and SQLite mode explicitly",
+        "source imports: src/app/create-app.js, src/config/configuration.js, src/infrastructure/socket/pserver-connector.js, src/modules/pserver/contracts.js, src/modules/pserver/pserver-protocol.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/demo-pserver-aaui.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "SG02",
+        "M03",
+        "M04",
+        "M05",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js",
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/examples/pserver-to-aaui.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: PServer -> AAB -> AAUI receives modifiedParam over reversed connection",
+        "source imports: src/app/create-app.js, src/examples/pserver-to-aaui.js",
+        "fixture imports/references: ./support/mock-pserver.js, tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `await createMockPServer();   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 10));   }   if (!app.pserverConnector?.connect`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/eserver-presence.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: AAUI receives snapshot for existing EServers and subsequent connection events",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `c/app/create-app.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; clock/timer: `ve, reject) => {     const timer = setTimeout(() => reject(new Error('Peer connect timeout')), 3000);`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/eserver-vm-info-forwarding.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 1,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: multiple EServer instances can forward VM info array to AAUI via AAB",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `c/app/create-app.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/f03-sserver-routing.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M04",
+        "M05",
+        "M10"
+      ],
+      "businessFlows": [
+        "F03"
+      ],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 1,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: F03 SServer -> AAB -> AAUI while F04 remains EServer -> AAB -> AAUI",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `c/app/create-app.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; clock/timer: `reject) => {       const timeout = setTimeout(() => reject(new Error('Missing both F03/F04 deliveries`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/f09-task-result-receipt.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M12"
+      ],
+      "businessFlows": [
+        "F08",
+        "F09"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/modules/peer-messaging/task-file-store.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: F09 persists and ACKs EServer while an offline PServer delivery remains pending",
+        "source imports: src/app/create-app.js, src/modules/peer-messaging/task-file-store.js",
+        "direct source signals (static scan): local listener: `'node:crypto'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `dge a durable F09 receipt.   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from`; env mutation: `process.env.AAB_TASK_STORE_DIR;   process.env.AAB_TASK_STORE_DIR = directory;   // Intentionally omit the PServer connect`; clock/timer: `: 'F09 offline case', createdTime: Date.now(), updatedTime: Date.now()   };   await store.save(ori`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/forwarding.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M07",
+        "M09"
+      ],
+      "businessFlows": [
+        "M09"
+      ],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: HTTP -> worker + session socket namespaces + HTTP webhook, with same message ID",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `m 'node:http'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `27.0.0.1:${address.port}`;   app = createApplication({     dbPath: ':memory:', corsOrigin: '*',     webhooks`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/http-gateway.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M01",
+        "M07",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "../src/shared/contracts/message.js"
+      ],
+      "relatedSourcePaths": [
+        "src/infrastructure/http/http-server.js",
+        "src/shared/contracts/message.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close"
+      ],
+      "evidence": [
+        "direct source: health is public and API authentication precedes SQLite availability",
+        "source imports: src/infrastructure/http/http-server.js, src/shared/contracts/message.js",
+        "fixture imports/references: ../src/shared/contracts/message.js",
+        "direct source signals (static scan): local listener: `t: NewMessage[] = []; const http = createServer(createHttpApp({   sqliteEnabled: false,   apiKey: 'test`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/http-outbound-adapter.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M07",
+        "M09"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": true,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "../src/shared/contracts/message.js"
+      ],
+      "relatedSourcePaths": [
+        "src/infrastructure/http/http-outbound-adapter.js",
+        "src/shared/contracts/message.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "uses process-wide state, timers, or module singleton"
+      ],
+      "evidence": [
+        "direct source: webhook adapter sends only to trusted endpoint IDs with existing security options",
+        "source imports: src/infrastructure/http/http-outbound-adapter.js, src/shared/contracts/message.js",
+        "fixture imports/references: ../src/shared/contracts/message.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/integration-clients.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M08"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": true,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "../src/shared/contracts/message.js",
+        "../src/shared/transport/connectable-client.js"
+      ],
+      "relatedSourcePaths": [
+        "src/infrastructure/integration-clients/index.js",
+        "src/shared/contracts/message.js",
+        "src/shared/transport/connectable-client.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses process-wide state, timers, or module singleton"
+      ],
+      "evidence": [
+        "direct source: HTTP client sends through the app endpoint and preserves HTTP error behavior",
+        "source imports: src/infrastructure/integration-clients/index.js, src/shared/contracts/message.js, src/shared/transport/connectable-client.js",
+        "fixture imports/references: ../src/shared/contracts/message.js, ../src/shared/transport/connectable-client.js",
+        "direct source signals (static scan): local listener: `ntracts/message.js';  const http = createServer(); const io = new Server(http); let baseUrl: string; le`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/integration.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M07",
+        "M09",
+        "M10",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/infrastructure/integration-clients/index.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: HTTP session and process usage persistence",
+        "source imports: src/app/create-app.js, src/infrastructure/integration-clients/index.js",
+        "direct source signals (static scan): local listener: `ssert/strict'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `on-clients/index.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*' }); let url: stri`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/multiple-eservers.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M06",
+        "M10"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 4,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: multiple EServers connect and independently send to AAUI",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `c/app/create-app.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', apiKey: 'test',`; clock/timer: `reject) => {       const timeout = setTimeout(() => reject(new Error('timeout')), 2000);       socket`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/peer-connections.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: EServer, SServer and AAUI connect inbound to AAB",
+        "source imports: src/app/create-app.js",
+        "direct source signals (static scan): local listener: `ssert/strict'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `c/app/create-app.js';  const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; filesystem: `1,     transformer: {       transform(message) {         processed.push(message.id ?? 'missin`; clock/timer: `ject) => {         const timeout = setTimeout(() => reject(new Error('connect timeout')), 3000);`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/peer-destination-policy.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M06",
+        "M10"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/contracts.js",
+        "src/modules/peer-messaging/peer-destination-policy.js",
+        "src/modules/peer-messaging/peer-directory.js",
+        "src/modules/peer-messaging/peer-message-service.js",
+        "src/modules/peer-messaging/transformation-registry.js"
+      ],
+      "testCount": 15,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: explicit EServer target and single-instance fallback use M06 identity capabilities",
+        "source imports: src/modules/peer-messaging/contracts.js, src/modules/peer-messaging/peer-destination-policy.js, src/modules/peer-messaging/peer-directory.js, src/modules/peer-messaging/peer-message-service.js, src/modules/peer-messaging/transformation-registry.js",
+        "direct source signals (static scan): filesystem: `1,     transformer: { async transform(message) {       transformCalled = true;       transfor`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/peer-directory.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M06"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/peer-directory.js"
+      ],
+      "testCount": 4,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: directory registers multiple EServer instances and keeps the default identity",
+        "source imports: src/modules/peer-messaging/peer-directory.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/peer-forwarding.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M09",
+        "M10"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js",
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: AAB connects outward to PServer and forwards transformed PServer -> EServer",
+        "source imports: src/app/create-app.js",
+        "fixture imports/references: ./support/mock-pserver.js, tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `await createMockPServer();   app = createApplication({     dbPath: ':memory:', corsOrigin: '*', enableTestPe`; filesystem: `ity: 10,     transformer: { transform(message) {       return { ...message.payload, data: { .`; clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 10));   }   if (!app.pserverConnector?.connect`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/peer-message-handler.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/socket/peer-gateway.js",
+        "src/modules/peer-messaging/contracts.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: authenticated special operations select one workflow in the established precedence",
+        "source imports: src/infrastructure/socket/peer-gateway.js, src/modules/peer-messaging/contracts.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/peer-message-service.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M06",
+        "M10",
+        "M11"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "../src/shared/persistence/atomic-json-record-store.js"
+      ],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/contracts.js",
+        "src/modules/peer-messaging/peer-message-service.js",
+        "src/modules/peer-messaging/transformation-registry.js",
+        "src/shared/persistence/atomic-json-record-store.js"
+      ],
+      "testCount": 11,
+      "isolationRisk": [
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test"
+      ],
+      "evidence": [
+        "direct source: multiple transformations execute in priority order and preserve routing metadata",
+        "source imports: src/modules/peer-messaging/contracts.js, src/modules/peer-messaging/peer-message-service.js, src/modules/peer-messaging/transformation-registry.js, src/shared/persistence/atomic-json-record-store.js",
+        "fixture imports/references: ../src/shared/persistence/atomic-json-record-store.js",
+        "direct source signals (static scan): filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from`; clock/timer: `rprint: 'stable',       createdAt: Date.now(), updatedAt: Date.now(), state: 'queued', attempts: 0`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/process-usage-http-api.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M07",
+        "M15",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/http/http-server.js",
+        "src/modules/process-usage/contracts.js"
+      ],
+      "testCount": 4,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close"
+      ],
+      "evidence": [
+        "direct source: GET process-usage preserves optional filtering, Number coercion and invalid PID rejection",
+        "source imports: src/infrastructure/http/http-server.js, src/modules/process-usage/contracts.js",
+        "direct source signals (static scan): local listener: `boolean } = {}) {   const server = createServer(createHttpApp({     usage,     sender: { async execute(`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/process-usage-repository.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M15",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/infrastructure/database/sqlite.js",
+        "src/modules/process-usage/contracts.js",
+        "src/modules/process-usage/process-usage.js"
+      ],
+      "testCount": 6,
+      "isolationRisk": [
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: neutral process-usage contract accepts a synchronous fake and legacy exports preserve adapter identity",
+        "source imports: src/app/create-app.js, src/infrastructure/database/sqlite.js, src/modules/process-usage/contracts.js, src/modules/process-usage/process-usage.js",
+        "direct source signals (static scan): SQLite path: `alues', () => {   const database = openDatabase(':memory:');   try {     const repository = new SqliteP`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/pserver-aaui-task-roundtrip.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M12"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js",
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 1,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: F08/F09 task lifecycle: PServer -> AAB -> EServer, with AAUI notifications",
+        "source imports: src/app/create-app.js",
+        "fixture imports/references: ./support/mock-pserver.js, tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `'node:crypto'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `await createMockPServer();   app = createApplication({     dbPath: ':memory:', corsOrigin: '*', enableTestPe`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, readFile, rm } from 'node:fs/promises'; import { tmpd`; env mutation: `process.env.AAB_TASK_STORE_DIR;   process.env.AAB_TASK_STORE_DIR = storeDirectory;   pserver = await createMockPServer();`; clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 10));   }   assert.equal(app.pserverConnector?`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/pserver-protocol.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M03",
+        "M04"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/socket/pserver-transport.js",
+        "src/modules/peer-messaging/contracts.js",
+        "src/modules/pserver/contracts.js",
+        "src/modules/pserver/pserver-protocol.js"
+      ],
+      "testCount": 16,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: protocol exposes transport connection before session readiness and registers on connect",
+        "source imports: src/infrastructure/socket/pserver-transport.js, src/modules/peer-messaging/contracts.js, src/modules/pserver/contracts.js, src/modules/pserver/pserver-protocol.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/pserver-session.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M03",
+        "M04"
+      ],
+      "businessFlows": [],
+      "testLayer": "integration",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: AAB connects on /ws and registers VM session",
+        "source imports: src/app/create-app.js",
+        "fixture imports/references: ./support/mock-pserver.js",
+        "direct source signals (static scan): local listener: `['facebook'] } }   });   await app.listen(0);   await pserver.arrival;   for (let attempt = 0; at`; SQLite path: `await createMockPServer();   app = createApplication({     dbPath: ':memory:', corsOrigin: '*', enableTestPe`; clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 10));   }   if (!app.pserverConnector?.connect`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/reliable-crash-process.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M10",
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "F08",
+        "F09",
+        "M13"
+      ],
+      "testLayer": "process",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": true,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "../src/shared/persistence/atomic-json-record-store.js",
+        "../src/shared/persistence/reliable-outbox-runner.js",
+        "tests/helpers/reliable-crash-child.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/shared/persistence/atomic-json-record-store.js",
+        "src/shared/persistence/reliable-outbox-runner.js"
+      ],
+      "testCount": 9,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "spawns child process; child exit/IPC and temporary state require bounded cleanup",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: SIGKILL before temp write, after write before sync, and before canonical link never yields a receipt or send",
+        "source imports: src/app/create-app.js, src/shared/persistence/atomic-json-record-store.js, src/shared/persistence/reliable-outbox-runner.js",
+        "fixture imports/references: ../src/shared/persistence/atomic-json-record-store.js, ../src/shared/persistence/reliable-outbox-runner.js, tests/helpers/reliable-crash-child.ts",
+        "direct source signals (static scan): local listener: `Error: unknown;     try { await app.listen(0); }     catch (error) { startupError = error; }     a`; child process: `{ fork, type ChildProcess } from 'node:child_process'; import { access, mkdir, mkdtemp, open, readFile, rea`; SQLite path: `staleHandle.close();   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; filesystem: `e:child_process'; import { access, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, unlink`; env mutation: `ess.env.AAB_SELECTION_STORE_DIR;   process.env.AAB_TASK_STORE_DIR = taskDirectory;   process.env.AAB_SELECTION_STORE_DIR =`; clock/timer: `table-message-id') {   const now = Date.now();   return createReliableRecord<Payload, Ack>({ key,`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/reliable-outbox.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "F08",
+        "F09",
+        "M13"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "../src/shared/persistence/atomic-json-record-store.js",
+        "../src/shared/persistence/reliable-outbox-runner.js",
+        "./helpers/memory-reliable-store.js"
+      ],
+      "relatedSourcePaths": [
+        "src/shared/persistence/atomic-json-record-store.js",
+        "src/shared/persistence/reliable-outbox-runner.js"
+      ],
+      "testCount": 29,
+      "isolationRisk": [
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "uses process-wide state, timers, or module singleton"
+      ],
+      "evidence": [
+        "direct source: atomic outbox creation is exclusive, mode-restricted, capacity-bounded and duplicate-stable across reopen",
+        "source imports: src/shared/persistence/atomic-json-record-store.js, src/shared/persistence/reliable-outbox-runner.js",
+        "fixture imports/references: ../src/shared/persistence/atomic-json-record-store.js, ../src/shared/persistence/reliable-outbox-runner.js, ./helpers/memory-reliable-store.js",
+        "direct source signals (static scan): filesystem: `rom 'node:assert/strict'; import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from`; clock/timer: `ore<Payload, Ack>();   const now = Date.now();   for (let index = 0; index < 8; index += 1) {`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/resource-selection-persistence.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "M13"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/modules/peer-messaging/resource-selection-store.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: AAB persists selection and ACKs received while an offline PServer delivery remains pending",
+        "source imports: src/app/create-app.js, src/modules/peer-messaging/resource-selection-store.js",
+        "fixture imports/references: tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `m 'node:path'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `ION_STORE_DIR = directory;   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, readdir, rm } from 'node:fs/promises'; import { tmpdi`; env mutation: `n(tmpdir(), 'aab-selections-'));   process.env.AAB_SELECTION_STORE_DIR = directory;   app = createApplication({ dbPath: ':memor`; clock/timer: `, reject) => {       const timer = setTimeout(() => reject(new Error('Missing selection snapshot')),`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/resource-selection-snapshot-adapter.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M13"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/socket/resource-selection-snapshot.js",
+        "src/modules/resource-selection/resource-selection-workflow.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: selection snapshot checks identity before querying and emits M13 projection unchanged",
+        "source imports: src/infrastructure/socket/resource-selection-snapshot.js, src/modules/resource-selection/resource-selection-workflow.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/resource-selection-store.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "contract",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/resource-selection-store.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "filesystem state; temp-directory isolation/cleanup is part of test"
+      ],
+      "evidence": [
+        "direct source: compatibility import keeps immutable receipt and separate fallback sidecar format",
+        "source imports: src/modules/peer-messaging/resource-selection-store.js",
+        "direct source signals (static scan): filesystem: `rom 'node:assert/strict'; import { mkdtemp, readFile, rm, writeFile, mkdir, stat } from 'node:fs/`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/resource-selection-workflow.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M13"
+      ],
+      "businessFlows": [
+        "M13"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "./helpers/memory-reliable-store.js"
+      ],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/contracts.js",
+        "src/modules/resource-selection/resource-selection-store.js",
+        "src/modules/resource-selection/resource-selection-workflow.js"
+      ],
+      "testCount": 9,
+      "isolationRisk": [
+        "filesystem state; temp-directory isolation/cleanup is part of test"
+      ],
+      "evidence": [
+        "direct source: invalid resource-selection envelope and IDs return exact ACKs without side effects",
+        "source imports: src/modules/peer-messaging/contracts.js, src/modules/resource-selection/resource-selection-store.js, src/modules/resource-selection/resource-selection-workflow.js",
+        "fixture imports/references: ./helpers/memory-reliable-store.js",
+        "direct source signals (static scan): filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm, writeFile } from 'node:fs/promises'; import { tmp`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/routing.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M09"
+      ],
+      "businessFlows": [
+        "M09"
+      ],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "../src/shared/contracts/message.js"
+      ],
+      "relatedSourcePaths": [
+        "src/modules/messaging/message-router.js",
+        "src/modules/messaging/messaging.js",
+        "src/modules/messaging/route-registry.js",
+        "src/shared/contracts/message.js"
+      ],
+      "testCount": 10,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: SendMessage publishes through a transport-independent publisher capability",
+        "source imports: src/modules/messaging/message-router.js, src/modules/messaging/messaging.js, src/modules/messaging/route-registry.js, src/shared/contracts/message.js",
+        "fixture imports/references: ../src/shared/contracts/message.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/session-http-api.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M07",
+        "M14",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/http/http-server.js",
+        "src/modules/session/contracts.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close"
+      ],
+      "evidence": [
+        "direct source: HTTP session routes preserve list/get/create validation and response behavior",
+        "source imports: src/infrastructure/http/http-server.js, src/modules/session/contracts.js",
+        "direct source signals (static scan): local listener: `boolean } = {}) {   const server = createServer(createHttpApp({     sessions,     sender: { async execu`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/session-repository.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M14",
+        "M17"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/infrastructure/database/sqlite.js",
+        "src/modules/session/contracts.js",
+        "src/modules/session/session.js"
+      ],
+      "testCount": 5,
+      "isolationRisk": [
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: neutral session repository contract accepts a fake implementation",
+        "source imports: src/app/create-app.js, src/infrastructure/database/sqlite.js, src/modules/session/contracts.js, src/modules/session/session.js",
+        "direct source signals (static scan): SQLite path: `ionRepository);   const database = openDatabase(':memory:');   try {     const repository: legacySessio`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/shutdown-signals.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M02",
+        "M18"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/app/shutdown-signals.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: first startup-time signal closes the created app and second signal requests nonzero entrypoint exit",
+        "source imports: src/app/create-app.js, src/app/shutdown-signals.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/socket-peer-gateway-handshake.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/socket/socket-peer-gateway.js",
+        "src/modules/peer-messaging/peer-directory.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close"
+      ],
+      "evidence": [
+        "direct source: isolated middleware-gap simulation leaves the registered identity when connection callback never runs",
+        "source imports: src/infrastructure/socket/socket-peer-gateway.js, src/modules/peer-messaging/peer-directory.js",
+        "direct source signals (static scan): local listener: `{ io as createSocketClient } from 'socket.io-client'; import { test } from 'node:test'; import { createSoc`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/socket-peer-message-delivery.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M10"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/socket/socket-peer-gateway.js",
+        "src/infrastructure/socket/socket-peer-message-delivery.js",
+        "src/modules/peer-messaging/contracts.js"
+      ],
+      "testCount": 1,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: socket peer delivery preserves event, 5-second timeout and ACK interpretation",
+        "source imports: src/infrastructure/socket/socket-peer-gateway.js, src/infrastructure/socket/socket-peer-message-delivery.js, src/modules/peer-messaging/contracts.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/task-history-snapshot-adapter.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M12"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/infrastructure/socket/task-history-snapshot.js",
+        "src/modules/task-workflow/task-workflow.js"
+      ],
+      "testCount": 3,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: snapshot adapter guards before lookup and delivers successful projection to the original current connection",
+        "source imports: src/infrastructure/socket/task-history-snapshot.js, src/modules/task-workflow/task-workflow.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/task-history-snapshot.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M12"
+      ],
+      "businessFlows": [],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/modules/peer-messaging/task-file-store.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: persisted tasks appear in AAUI snapshot after AAUI connects late",
+        "source imports: src/app/create-app.js, src/modules/peer-messaging/task-file-store.js",
+        "direct source signals (static scan): local listener: `'node:crypto'; import { io } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `.listRecent(), [task]);      app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers:`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, rm } from 'node:fs/promises'; import { tmpdir } from`; env mutation: `process.env.AAB_TASK_STORE_DIR;   process.env.AAB_TASK_STORE_DIR = directory;   let app: ReturnType<typeof createApplicat`; clock/timer: `config: 'from-curl', createdTime: Date.now(), updatedTime: Date.now()     };     await store.save`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/task-received-routing.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M10",
+        "M12"
+      ],
+      "businessFlows": [
+        "F09"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": true,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": true,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": true,
+      "usesProcessWideState": true,
+      "needsRealClock": true,
+      "fixtureDependencies": [
+        "./support/mock-pserver.js",
+        "tests/support/mock-pserver.ts"
+      ],
+      "relatedSourcePaths": [
+        "src/app/create-app.js",
+        "src/modules/peer-messaging/task-file-store.js"
+      ],
+      "testCount": 2,
+      "isolationRisk": [
+        "mutates process.env; isolation depends on finally/afterEach restoration",
+        "opens local HTTP/Socket.IO listener; requires isolated ports and guaranteed close",
+        "uses wall/monotonic clock or timers; inspect whether asserted bounds are controlled",
+        "filesystem state; temp-directory isolation/cleanup is part of test",
+        "exercises app/repository SQLite path; optional native addon must load under selected Node ABI"
+      ],
+      "evidence": [
+        "direct source: PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notified",
+        "source imports: src/app/create-app.js, src/modules/peer-messaging/task-file-store.js",
+        "fixture imports/references: ./support/mock-pserver.js, tests/support/mock-pserver.ts",
+        "direct source signals (static scan): local listener: `; import { io, type Socket } from 'socket.io-client'; import { createApplication } from '../src/app/create`; SQLite path: `await createMockPServer();   app = createApplication({     dbPath: ':memory:', corsOrigin: '*', enableTestPe`; filesystem: `rom 'node:assert/strict'; import { mkdtemp, readFile, rm } from 'node:fs/promises'; import { tmpd`; env mutation: `n(tmpdir(), 'aab-task-tests-'));   process.env.AAB_TASK_STORE_DIR = directory;   pserver = await createMockPServer();   ap`; clock/timer: `{     await new Promise(resolve => setTimeout(resolve, 10));   }   assert.equal(app.pserverConnector?`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/task-workflow.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M12"
+      ],
+      "businessFlows": [
+        "F08"
+      ],
+      "testLayer": "mixed",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": true,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [
+        "../src/shared/persistence/atomic-json-record-store.js",
+        "./helpers/memory-reliable-store.js"
+      ],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/contracts.js",
+        "src/modules/task-workflow/task-file-store.js",
+        "src/modules/task-workflow/task-workflow.js",
+        "src/shared/persistence/atomic-json-record-store.js"
+      ],
+      "testCount": 14,
+      "isolationRisk": [
+        "filesystem state; temp-directory isolation/cleanup is part of test"
+      ],
+      "evidence": [
+        "direct source: invalid F08/F09 envelopes and task payloads return exact ACKs without side effects",
+        "source imports: src/modules/peer-messaging/contracts.js, src/modules/task-workflow/task-file-store.js, src/modules/task-workflow/task-workflow.js, src/shared/persistence/atomic-json-record-store.js",
+        "fixture imports/references: ../src/shared/persistence/atomic-json-record-store.js, ./helpers/memory-reliable-store.js",
+        "direct source signals (static scan): filesystem: `rom 'node:assert/strict'; import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'; import`"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    },
+    {
+      "path": "tests/transformation-executor.test.ts",
+      "packageOrRunner": "package.json:test (Node test runner; serial)",
+      "responsibilityIds": [
+        "M10",
+        "M11"
+      ],
+      "businessFlows": [],
+      "testLayer": "unit",
+      "requiresNetworkListener": false,
+      "requiresChildProcess": false,
+      "requiresNativeSQLite": false,
+      "usesFilesystem": false,
+      "mutatesProcessEnv": false,
+      "usesProcessWideState": false,
+      "needsRealClock": false,
+      "fixtureDependencies": [],
+      "relatedSourcePaths": [
+        "src/modules/peer-messaging/contracts.js",
+        "src/modules/peer-messaging/transformation-registry.js"
+      ],
+      "testCount": 10,
+      "isolationRisk": [
+        "low evident external isolation dependency; static scan cannot prove independence"
+      ],
+      "evidence": [
+        "direct source: registry validates registration, unregisters by ID, and resolves wildcards by priority then ID",
+        "source imports: src/modules/peer-messaging/contracts.js, src/modules/peer-messaging/transformation-registry.js",
+        "direct source signals (static scan): none matched"
+      ],
+      "unresolvedClassificationNotes": "Responsibility mapping is an analyst inference from test names, imports, exercised APIs and architecture ownership; multi-responsibility rows are intentional."
+    }
+  ],
+  "runnerDefinitions": [
+    {
+      "package": "root package.json",
+      "script": "test",
+      "command": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
+      "discovers": "49 backend test files; serial Node test runner"
+    },
+    {
+      "package": "root package.json",
+      "script": "check:architecture",
+      "command": "node --import tsx scripts/check-architecture.ts",
+      "kind": "source ownership/dependency architecture gate; not a test file"
+    },
+    {
+      "package": "root package.json",
+      "script": "typecheck",
+      "command": "tsc --noEmit",
+      "kind": "TypeScript check"
+    },
+    {
+      "package": "root package.json",
+      "script": "build",
+      "command": "tsc -p tsconfig.json",
+      "kind": "TypeScript build"
+    },
+    {
+      "package": "testing/package.json",
+      "script": "test:playground",
+      "command": "node --test tests/*.test.mjs aaui/tests/*.test.cjs",
+      "discovers": "5 playground test files; 32 registered tests"
+    },
+    {
+      "package": "testing/package.json",
+      "script": "test:scheduler",
+      "command": "node --test tests/scheduled-peer-message.test.mjs",
+      "discovers": "subset of test:playground"
+    },
+    {
+      "package": "testing/package.json",
+      "script": "test:vm-info",
+      "command": "node --test tests/mock-vm-info.test.mjs",
+      "discovers": "subset of test:playground"
+    },
+    {
+      "package": "testing/package.json",
+      "script": "test:aaui",
+      "command": "node --test aaui/tests/*.test.cjs",
+      "discovers": "three AAUI playground test files; subset of test:playground"
+    }
+  ]
+}
