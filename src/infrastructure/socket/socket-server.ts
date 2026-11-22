@@ -3,13 +3,14 @@ import type { TransformationRegistry } from '../../modules/peer-messaging/transf
 import type { Server as HttpServer } from 'node:http';
 import type { MessageSender } from '../../modules/messaging/messaging.js';
 import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
+import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
 export type { SocketMessageHub } from './socket-gateway.js';
 
 /** Compatibility entrypoint for the Socket.IO gateway. */
 export function attachSocketServer(http: HttpServer, deps: {
   sender: MessageSender; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean;
-  transformations?: TransformationRegistry; reliabilityPolicy?: ReliabilityRunnerPolicy
+  transformations?: TransformationRegistry; reliabilityPolicy?: ReliabilityRunnerPolicy; admission?: ApplicationAdmission
 }) {
   return createSocketGateway(http, deps);
 }

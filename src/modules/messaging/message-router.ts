@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { MessageEnvelope, MessagePublisher, NewMessage } from '../../shared/contracts/message.js';
 import type { Destination } from './route-registry.js';
 import { RouteRegistry } from './route-registry.js';
+import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
 /** Infrastructure adapters implement delivery only; they never re-enter the router. */
 export interface OutboundTransportAdapter {
@@ -11,7 +12,8 @@ export interface OutboundTransportAdapter {
 
 export class MessageRouter implements MessagePublisher {
   private readonly adapters = new Map<Destination['transport'], OutboundTransportAdapter>();
-  constructor(readonly routes: RouteRegistry, adapters: readonly OutboundTransportAdapter[]) {
+  constructor(readonly routes: RouteRegistry, adapters: readonly OutboundTransportAdapter[],
+    private readonly coordinator?: ApplicationAdmission) {
     for (const adapter of adapters) {
       if (this.adapters.has(adapter.transport)) throw new Error(`Duplicate transport: ${adapter.transport}`);
       this.adapters.set(adapter.transport, adapter);
@@ -19,10 +21,18 @@ export class MessageRouter implements MessagePublisher {
   }
 
   async publish(message: NewMessage): Promise<MessageEnvelope> {
+    if (this.coordinator) return this.coordinator.run('generic', () => this.publishAdmitted(message));
+    return this.publishAdmitted(message);
+  }
+
+  private async publishAdmitted(message: NewMessage): Promise<MessageEnvelope> {
     const envelope = this.createEnvelope(message);
     const plan = this.planDispatch(envelope);
-    // Runtime failures may cause partial delivery; Phase 5 will add durable retries.
-    await Promise.all(plan.map(({ adapter, destination }) => adapter.deliver(envelope, destination)));
+    const deliveries = plan.map(({ adapter, destination }) => this.coordinator
+      ? this.coordinator.runAdmitted('generic', () => adapter.deliver(envelope, destination))
+      : adapter.deliver(envelope, destination));
+    // Promise.all keeps the public fail-fast result while tracked siblings continue safely.
+    await Promise.all(deliveries);
     return envelope;
   }
 

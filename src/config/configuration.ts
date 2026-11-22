@@ -11,6 +11,7 @@ export type ResolvedConfiguration = {
     enableSqlite: boolean;
     enableTestPeers: boolean;
     pserver: Omit<PServerConnectionConfig, 'apiKey'> | undefined;
+    shutdownTimeoutMs: number;
   };
   enableTestPeers: boolean;
 };
@@ -20,6 +21,9 @@ export function resolveConfiguration(environment: Environment): ResolvedConfigur
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('Invalid PORT');
 
   const enableTestPeers = environment.ENABLE_TEST_PEERS === '1';
+  const shutdownTimeoutMs = Number(environment.SHUTDOWN_TIMEOUT_MS ?? 15_000);
+  if (!Number.isSafeInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 1 || shutdownTimeoutMs > 120_000)
+    throw new Error('Invalid SHUTDOWN_TIMEOUT_MS (expected an integer from 1 to 120000)');
   const vmInfo: VmInfo = {
     udid: environment.VM_UDID ?? 'aab-demo-vm',
     sdk: environment.VM_SDK ?? '',
@@ -41,7 +45,8 @@ export function resolveConfiguration(environment: Environment): ResolvedConfigur
         url: environment.PSERVER_URL ?? 'http://127.0.0.1:3001',
         path: environment.PSERVER_SOCKET_PATH ?? '/ws',
         vmInfo
-      } : undefined
+      } : undefined,
+      shutdownTimeoutMs
     }
   };
 }

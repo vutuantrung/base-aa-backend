@@ -19,19 +19,37 @@ export const DEFAULT_RELIABILITY_POLICY: ReliabilityRunnerPolicy = {
 } as const;
 
 let activeAttemptsAcrossProcess = 0;
-const waitingAttemptsAcrossProcess: Array<() => void> = [];
+type AttemptWaiter = { grant: () => void; canceled: boolean };
+const waitingAttemptsAcrossProcess: AttemptWaiter[] = [];
 
-function acquireProcessAttemptSlot(): Promise<() => void> {
+function acquireProcessAttemptSlot(): { promise: Promise<(() => void) | undefined>; cancel: () => void } {
   if (activeAttemptsAcrossProcess < DEFAULT_RELIABILITY_POLICY.concurrency) {
     activeAttemptsAcrossProcess += 1;
-    return Promise.resolve(releaseProcessAttemptSlot);
+    return { promise: Promise.resolve(releaseProcessAttemptSlot), cancel() {} };
   }
-  return new Promise(resolve => waitingAttemptsAcrossProcess.push(() => resolve(releaseProcessAttemptSlot)));
+  let resolveWaiter: (release: (() => void) | undefined) => void = () => {};
+  const waiter: AttemptWaiter = {
+    canceled: false,
+    grant: () => resolveWaiter(releaseProcessAttemptSlot)
+  };
+  const promise = new Promise<(() => void) | undefined>(resolve => { resolveWaiter = resolve; });
+  waitingAttemptsAcrossProcess.push(waiter);
+  return {
+    promise,
+    cancel: () => {
+      if (waiter.canceled) return;
+      waiter.canceled = true;
+      const index = waitingAttemptsAcrossProcess.indexOf(waiter);
+      if (index >= 0) waitingAttemptsAcrossProcess.splice(index, 1);
+      resolveWaiter(undefined);
+    }
+  };
 }
 
 function releaseProcessAttemptSlot(): void {
-  const next = waitingAttemptsAcrossProcess.shift();
-  if (next) next();
+  let next: AttemptWaiter | undefined;
+  while ((next = waitingAttemptsAcrossProcess.shift()) && next.canceled) { /* discard canceled waiter */ }
+  if (next) next.grant();
   else activeAttemptsAcrossProcess -= 1;
 }
 
@@ -57,8 +75,12 @@ export class ReliableOutboxRunner<TPayload, TAck> {
   private readonly executing = new Set<string>();
   private timer: NodeJS.Timeout | undefined;
   private started = false;
+  private activated = false;
   private startupActive = false;
   private closed = false;
+  private readonly slotWaiters = new Set<() => void>();
+  private idleWaiters: Array<() => void> = [];
+  private releaseRunner: (() => void) | undefined;
   private readonly policy: ReliabilityRunnerPolicy;
 
   constructor(
@@ -68,12 +90,13 @@ export class ReliableOutboxRunner<TPayload, TAck> {
     this.policy = options.policy ? validateReliabilityPolicy(options.policy) : DEFAULT_RELIABILITY_POLICY;
   }
 
-  async start(): Promise<void> {
+  async start(activate = true): Promise<void> {
     if (this.started || this.closed) return;
     this.startupActive = true;
     try {
       await this.store.initialize();
       if (this.closed) return;
+      this.releaseRunner = this.store.claimRunner?.();
       this.started = true;
       for (const record of await this.store.list()) {
         if (this.closed) return;
@@ -84,14 +107,25 @@ export class ReliableOutboxRunner<TPayload, TAck> {
           this.options.onState(uncertain);
         }
       }
-      if (this.closed) return;
-      await this.scan();
-      if (this.closed) return;
-      this.timer = setInterval(() => { this.scanSafely(); }, this.policy.scanIntervalMs);
-      this.timer.unref();
+      if (this.closed || !activate) return;
+      await this.activate();
+    } catch (error) {
+      this.releaseRunner?.();
+      this.releaseRunner = undefined;
+      throw error;
     } finally {
       this.startupActive = false;
+      this.resolveIdleIfNeeded();
     }
+  }
+
+  async activate(): Promise<void> {
+    if (this.closed || !this.started || this.activated) return;
+    this.activated = true;
+    await this.scan();
+    if (this.closed) return;
+    this.timer = setInterval(() => { this.scanSafely(); }, this.policy.scanIntervalMs);
+    this.timer.unref();
   }
 
   async enqueue(key: string): Promise<void> {
@@ -143,15 +177,26 @@ export class ReliableOutboxRunner<TPayload, TAck> {
         }
         this.executing.add(key);
         let releaseSlot: (() => void) | undefined;
+        let cancelSlot: (() => void) | undefined;
         try {
-          releaseSlot = await acquireProcessAttemptSlot();
-          if (!this.closed) await this.attempt(key);
+          const slot = acquireProcessAttemptSlot();
+          cancelSlot = slot.cancel;
+          this.slotWaiters.add(slot.cancel);
+          releaseSlot = await slot.promise;
+          this.slotWaiters.delete(slot.cancel);
+          cancelSlot = undefined;
+          if (releaseSlot && !this.closed) await this.attempt(key);
         }
         catch (error) { console.error('[AAB] RELIABILITY OUTBOX ATTEMPT FAILED', error instanceof Error ? error.message : 'unknown'); }
         finally {
+          if (cancelSlot) {
+            cancelSlot();
+            this.slotWaiters.delete(cancelSlot);
+          }
           releaseSlot?.();
           this.executing.delete(key);
           this.active.delete(key);
+          this.resolveIdleIfNeeded();
           this.pump();
           this.scanSafely();
         }
@@ -182,6 +227,13 @@ export class ReliableOutboxRunner<TPayload, TAck> {
       clearNextAttempt: true,
       lastError: ''
     });
+    if (this.closed) {
+      await this.store.transition(key, 'retryable', {
+        nextAttemptAt: this.now() + this.retryDelay(previousAttempts),
+        lastError: 'Shutdown began before transport invocation'
+      });
+      return;
+    }
     try {
       await this.options.deliver(record.payload);
       record = await this.store.transition(key, 'delivered', { clearNextAttempt: true, lastError: '' });
@@ -218,11 +270,43 @@ export class ReliableOutboxRunner<TPayload, TAck> {
   private random(): number { return Math.min(1, Math.max(0, this.options.random?.() ?? Math.random())); }
 
   close(): boolean {
+    this.beginDrain();
+    return this.startupActive || this.executing.size > 0;
+  }
+
+  beginDrain(): boolean {
     this.closed = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     this.pending.length = 0;
+    for (const cancel of this.slotWaiters) cancel();
+    this.slotWaiters.clear();
+    this.resolveIdleIfNeeded();
     return this.startupActive || this.executing.size > 0;
+  }
+
+  async waitForIdle(): Promise<void> {
+    if (this.startupActive || this.executing.size > 0)
+      await new Promise<void>(resolve => this.idleWaiters.push(resolve));
+    this.releaseRunnerOwnership();
+  }
+
+  workCounts(): Readonly<{ pending: number; active: number; executing: number; slotWaiters: number }> {
+    return Object.freeze({ pending: this.pending.length, active: this.active.size,
+      executing: this.executing.size, slotWaiters: this.slotWaiters.size });
+  }
+
+  private resolveIdleIfNeeded(): void {
+    if (this.startupActive || this.executing.size > 0) return;
+    if (this.closed) this.releaseRunnerOwnership();
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    for (const resolve of waiters) resolve();
+  }
+
+  private releaseRunnerOwnership(): void {
+    this.releaseRunner?.();
+    this.releaseRunner = undefined;
   }
 }
 

@@ -38,6 +38,7 @@ export interface ReliableRecordStore<TPayload, TAck> {
   transition(key: string, state: ReliableDeliveryState,
     changes?: { attempts?: number; nextAttemptAt?: number; lastError?: string; clearNextAttempt?: boolean }): Promise<ReliableRecord<TPayload, TAck>>;
   close(preserveLock?: boolean): Promise<void>;
+  claimRunner?(): () => void;
 }
 
 export const DEFAULT_RELIABILITY_LIMITS: ReliabilityLimits = {
@@ -80,6 +81,7 @@ const processWriters = new Map<string, {
   references: number;
   preserveLock: boolean;
 }>();
+const processRunners = new Set<string>();
 const processKeyQueues = new Map<string, Promise<void>>();
 
 function digest(value: string): string {
@@ -145,6 +147,19 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
   async initialize(): Promise<void> {
     if (!this.initialized) this.initialized = this.initializeDirectory();
     await this.initialized;
+  }
+
+  claimRunner(): () => void {
+    if (!this.writerKey) throw new Error('Reliable record store must be initialized before claiming its runner');
+    const runnerKey = this.writerKey;
+    if (processRunners.has(runnerKey)) throw new Error('A reliable outbox runner already owns this state directory in this process');
+    processRunners.add(runnerKey);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      processRunners.delete(runnerKey);
+    };
   }
 
   private async initializeDirectory(): Promise<void> {

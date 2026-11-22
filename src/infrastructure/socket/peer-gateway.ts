@@ -14,6 +14,7 @@ import { sendTaskHistorySnapshot } from './task-history-snapshot.js';
 import { sendResourceSelectionSnapshot } from './resource-selection-snapshot.js';
 import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
 import { DEFAULT_RELIABILITY_LIMITS } from '../../shared/persistence/atomic-json-record-store.js';
+import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
 export interface ExternalPeerTransport extends PServerPeerTransport {}
 
@@ -27,6 +28,26 @@ export interface PeerMessageHandlerCapabilities {
     authenticatedFrom: PeerId,
     authenticatedInstanceId?: string
   ): Promise<PeerMessageAck>;
+}
+
+export async function processAdmittedPeerMessage(
+  coordinator: ApplicationAdmission | undefined,
+  value: unknown,
+  authenticatedFrom: PeerId,
+  instanceId: string | undefined,
+  handle: (value: unknown, from: PeerId, instanceId?: string) => Promise<PeerMessageAck>,
+  acknowledge: (ack: PeerMessageAck) => void
+): Promise<void> {
+  const processAndAcknowledge = async () => { acknowledge(await handle(value, authenticatedFrom, instanceId)); };
+  if (!coordinator) { await processAndAcknowledge(); return; }
+  try { await coordinator.run('peer', processAndAcknowledge); }
+  catch (error) {
+    if (error instanceof Error && error.message === 'APPLICATION_DRAINING') {
+      acknowledge({ ok: false, code: 'DELIVERY_FAILED', error: 'APPLICATION_DRAINING' });
+      return;
+    }
+    throw error;
+  }
 }
 
 /** M05 composes authenticated operation routing before delegating validation to each owner. */
@@ -61,10 +82,10 @@ function getRawPayloadType(value: unknown): unknown {
  */
 export function attachPeerGateway(
   io: Server, apiKey: string | undefined, transformations: TransformationRegistry,
-  reliabilityPolicy?: ReliabilityRunnerPolicy
+  reliabilityPolicy?: ReliabilityRunnerPolicy, coordinator?: ApplicationAdmission
 ) {
   const directory = new PeerDirectory();
-  const connections = createSocketPeerGateway(io, apiKey, directory);
+  const connections = createSocketPeerGateway(io, apiKey, directory, () => coordinator?.isAccepting() ?? true);
   const destinationPolicy = new PeerDestinationPolicy(directory, new SocketPeerMessageDelivery(connections));
   // P03 states one capacity bound without defining its scope across the two
   // independently retained workflow directories. Split it evenly so the
@@ -88,6 +109,7 @@ export function attachPeerGateway(
   }
 
   function publishPresence(instanceId: string, status: 'online' | 'offline', socketId: string, reason?: string): void {
+    if (coordinator && !coordinator.isAccepting()) return;
     const target = getConnection('aaui');
     if (!target?.connected) return;
     target.emit('peer:status', {
@@ -145,11 +167,34 @@ export function attachPeerGateway(
       processPeerMessageForAck(service, value, authenticatedFrom, authenticatedInstanceId)
   });
 
+  async function receiveAdmittedMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
+    if (!coordinator) return handleMessage(value, authenticatedFrom, instanceId);
+    try { return await coordinator.run('peer', () => handleMessage(value, authenticatedFrom, instanceId)); }
+    catch (error) {
+      if (error instanceof Error && error.message === 'APPLICATION_DRAINING')
+        return { ok: false, code: 'DELIVERY_FAILED', error: 'APPLICATION_DRAINING' };
+      throw error;
+    }
+  }
+
+  async function processPServerIngress(value: unknown, acknowledge: (ack: PeerMessageAck) => void): Promise<void> {
+    await processAdmittedPeerMessage(coordinator, value, 'pserver', undefined, handleMessage, acknowledge);
+  }
+
+  function runSnapshot(operation: () => Promise<void>): void {
+    const work = coordinator ? coordinator.run('snapshot', operation) : operation();
+    void work.catch(error => {
+      if (!(error instanceof Error && error.message === 'APPLICATION_DRAINING'))
+        console.error('[AAB] SNAPSHOT FAILED', error instanceof Error ? error.message : 'unknown');
+    });
+  }
+
   async function sendTaskSnapshot(connection: PeerSocketConnection): Promise<void> {
     await sendTaskHistorySnapshot(connection, () => isCurrentAaui(connection), taskWorkflow);
   }
 
   connections.onConnection(connection => {
+    if (coordinator && !coordinator.isAccepting()) { connection.disconnect(); return; }
     const peerId = connection.peerId;
     const instanceId = connection.instanceId;
     console.log(`[AAB] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${connection.connectionId}`);
@@ -160,14 +205,14 @@ export function attachPeerGateway(
       // Late AAUI connections and reconnects always receive the online set.
       connection.emit('peer:status:snapshot', presenceSnapshot());
       // Task lifecycle events are transient; rehydrate the dashboard from disk.
-      void sendTaskSnapshot(connection);
-      void sendSelectionSnapshot(connection);
+      runSnapshot(() => sendTaskSnapshot(connection));
+      runSnapshot(() => sendSelectionSnapshot(connection));
     }
     connection.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
     if (peerId === 'aaui') {
-      connection.on('task:lifecycle:refresh', () => { void sendTaskSnapshot(connection); });
-      connection.on('resource-selection:refresh', () => { void sendSelectionSnapshot(connection); });
+      connection.on('task:lifecycle:refresh', () => { runSnapshot(() => sendTaskSnapshot(connection)); });
+      connection.on('resource-selection:refresh', () => { runSnapshot(() => sendSelectionSnapshot(connection)); });
     }
 
     connection.on('peer:ping', (payload, ackCandidate) => {
@@ -175,7 +220,8 @@ export function attachPeerGateway(
       if (typeof ackCandidate === 'function') ackCandidate({ ok: true, from: 'aab', timestamp: Date.now() });
     });
     connection.on('peer:message', async (value, ackCandidate) => {
-      if (typeof ackCandidate === 'function') ackCandidate(await handleMessage(value, peerId, instanceId));
+      if (typeof ackCandidate !== 'function') return;
+      await processAdmittedPeerMessage(coordinator, value, peerId, instanceId, handleMessage, ack => ackCandidate(ack));
     });
     connection.onDisconnect((reason, removedCurrentIdentity) => {
       if (peerId === 'eserver' && removedCurrentIdentity) {
@@ -186,28 +232,44 @@ export function attachPeerGateway(
   });
 
   return {
-    async start(): Promise<void> {
+    async start(deferDelivery = false): Promise<void> {
       try {
-        await taskWorkflow.start();
-        await selectionWorkflow.start();
+        await taskWorkflow.start(!deferDelivery);
+        await selectionWorkflow.start(!deferDelivery);
       }
       catch (error) {
+        this.beginDrain();
+        await this.waitForIdle();
         await this.close();
         throw error;
       }
     },
-    async close(): Promise<void> {
-      const taskAttemptActive = taskWorkflow.close();
-      const selectionAttemptActive = selectionWorkflow.close();
+    async activate(): Promise<void> {
+      await Promise.all([taskWorkflow.activate(), selectionWorkflow.activate()]);
+    },
+    beginDrain(): void {
+      taskWorkflow.close();
+      selectionWorkflow.close();
+    },
+    async waitForIdle(): Promise<void> {
+      await Promise.all([taskWorkflow.waitForIdle(), selectionWorkflow.waitForIdle()]);
+    },
+    workCounts() {
+      return { task: taskWorkflow.workCounts(), selection: selectionWorkflow.workCounts() };
+    },
+    async close(preserveLock = false): Promise<void> {
+      this.beginDrain();
+      await this.waitForIdle();
       await Promise.all([
-        taskStore.reliability.close(taskAttemptActive),
-        selectionStore.reliability.close(selectionAttemptActive)
+        taskStore.reliability.close(preserveLock),
+        selectionStore.reliability.close(preserveLock)
       ]);
     },
     notifyPServerReady(): void {
       void Promise.all([taskWorkflow.destinationReady(), selectionWorkflow.destinationReady()]);
     },
     registerPServerTransport(transport: ExternalPeerTransport): void { destinationPolicy.registerPServerTransport(transport); },
-    receiveFromPServer(value: unknown): Promise<PeerMessageAck> { return handleMessage(value, 'pserver'); }
+    receiveFromPServer(value: unknown): Promise<PeerMessageAck> { return receiveAdmittedMessage(value, 'pserver'); },
+    processPServerIngress
   };
 }

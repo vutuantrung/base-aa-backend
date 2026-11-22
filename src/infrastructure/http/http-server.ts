@@ -4,6 +4,7 @@ import type { SessionRepository } from '../../modules/session/contracts.js';
 import type { ProcessUsageRepository } from '../../modules/process-usage/contracts.js';
 import { createApiAccessMiddleware, httpErrorHandler } from './http-middleware.js';
 import { createHttpApiRouter, type HttpMessageSender } from './http-api-router.js';
+import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
 export interface HttpApplicationDependencies {
   sessions?: SessionRepository;
@@ -12,6 +13,7 @@ export interface HttpApplicationDependencies {
   sqliteEnabled?: boolean;
   sender: HttpMessageSender;
   apiKey?: string;
+  admission?: ApplicationAdmission;
 }
 
 /** Compatibility entrypoint for constructing the inbound HTTP gateway. */

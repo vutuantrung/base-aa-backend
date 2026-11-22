@@ -1,5 +1,67 @@
 # R7.6 Lifecycle Decision Baseline
 
+## Historical R7.6.A characterization
+
+Sections explicitly titled “Current sequences,” “Readiness and failure matrix,” and “Characterization performed in R7.6.A” below document the A checkpoint’s source state and test limits. They are historical and are superseded by the tested R7.6.B implementation described above; pending language there is not the current policy.
+
+## R7.6.B implemented ownership and current sequences
+
+The R7.6.A characterization below is retained as historical evidence; the approved implementation supersedes its “pending” source descriptions. Tested tree: branch `main`, committed baseline `3fe329bc596e768935d2e611b20164153f5199b5`, dirty R7.6.B diff; Node 22.23.5. Detailed source/test trace and limits: [R7.6.B report](../../R7_6_B_COORDINATED_BOUNDED_LIFECYCLE_IMPLEMENTATION_VERIFICATION_REPORT.md).
+
+| Resource | Owner and readiness/admission | Drain/release boundary | Evidence/limit |
+|---|---|---|---|
+| Application and HTTP listener | M02 `ApplicationCoordinator` plus one-shot `createApplication`; local ready after recovery and listener bind; independent of PServer/peers | Cutoff synchronously closes admission; shared start/close results; stop waits tracked work then dependencies | Loopback lifecycle tests, HTTP health/drain and bind rollback; no external deployment test |
+| Signals | `main.ts` only; handlers installed before async config/start; controller holds startup-time signal until app handle exists | first signal calls same bounded close; second calls entrypoint exit(1); dispose removes handlers | injected EventEmitter tests, not OS signal subprocess |
+| HTTP | M07 routes keep auth/disabled-feature/parser/route precedence; applicable handlers use shared admission | admitted operation spans async handler response; draining response is 503 `{error:"APPLICATION_DRAINING"}`; `/health` stays `{status:"ok"}` | Local HTTP loopback; unknown/disabled behavior also covered by existing tests |
+| Socket.IO and peer ingress | M05 checks readiness on new connection and checks every message; M04 protocol preserves pre-session check and ACK callback gate | authenticated ACK message and ACK callback are tracked as `peer`; cutoff returns existing `DELIVERY_FAILED` with reason `APPLICATION_DRAINING`; no callback means no work | Existing integration plus deterministic helper tests; dedicated live peer-drain callback was not stable in harness |
+| Generic M09 | M02 injects gate into M09 router and sender | root and all started adapter branches tracked independently; `Promise.all` still fails fast; no new roots at cutoff | Controlled deferred branch plus local webhook loopback |
+| M12/M13 and stores | Workflow owns runner/store; process-local canonical path runner lease plus existing writer lock | stops scans/pending and cancels global slot waiters; active attempt/outcome work drains; pre-emit fence records known-unsent retryable; lease releases only after runner startup/execution quiesces | runner tests, same-directory app test and existing Linux child crash suite |
+| Snapshots | M05 owns detached connection/refresh read tasks | reads tracked through completion; existing current-identity delivery checks preserved; drain retains stores/socket until complete | existing snapshot tests and full suite; no cancellation of filesystem read |
+| SQLite | M17 handle built during M02 construction | SQLite closes after app admission/peer work and transports settle; initialization closes partially constructed DB on failure | SQLite/reopen tests; synchronous DB calls cannot be preempted by JS timer |
+
+### Implemented startup order
+
+```mermaid
+sequenceDiagram
+  participant Main as main.ts
+  participant M02 as M02 coordinator
+  participant Runner as M12/M13 recovery
+  participant HTTP as HTTP + Socket.IO
+  participant P as PServer
+  Main->>Main: install signal handlers
+  Main->>M02: construct app; register handle for startup signal
+  M02->>Runner: recover stores, hold scheduler activation
+  Runner-->>M02: recovery ready
+  M02->>HTTP: bind listener
+  HTTP-->>M02: listening
+  M02->>Runner: activate eligible scans
+  M02->>P: connect after bind
+  M02-->>Main: running and locally ready
+```
+
+### Implemented shutdown order
+
+```mermaid
+sequenceDiagram
+  participant Main as entrypoint signal handler
+  participant M02 as M02 coordinator
+  participant Work as admitted app work and M09 branches
+  participant Runner as M12/M13 runners and stores
+  participant Peer as PServer and Socket.IO
+  participant HTTP as HTTP listener
+  participant DB as SQLite
+  Main->>M02: close; capture single monotonic deadline
+  M02->>M02: readiness false; reject new admission
+  M02->>Runner: cancel scans, pending jobs and slot waiters
+  M02->>Work: await accepted work and started sends/commits
+  M02->>Peer: close PServer, stores after runner idle, Socket.IO
+  M02->>HTTP: close listener if still open
+  M02->>DB: close persistence last
+  M02-->>Main: resolve or timeout/aggregate error
+```
+
+Safe cleanup continues across independent close errors. Timeout does not cancel underlying work: `close()` rejects, state remains failed, and dependency cleanup does not race a still-tracked mutator. A synchronous event-loop stall cannot be interrupted by the JavaScript deadline. `SHUTDOWN_TIMEOUT_MS` defaults to 15000 ms, integer range 1–120000. Process supervisor owns final termination. Stale outbox lock recovery remains verified-owner-dead/manual only.
+
 ## Checkpoint and evidence
 
 - Repository `vutuantrung/base-aa-backend`, branch `main`, committed source baseline `9c3cb2bec19dcc2cf9d31ce505bd84dc7a90a539`.

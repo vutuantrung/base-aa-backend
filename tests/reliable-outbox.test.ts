@@ -31,6 +31,13 @@ function record(key: string, id = key) {
   });
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
 test('atomic outbox creation is exclusive, mode-restricted, capacity-bounded and duplicate-stable across reopen', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'reliable-outbox-'));
   let store = createDiskStore(directory, 1);
@@ -555,6 +562,123 @@ test('close during an active attempt preserves ownership evidence through the fi
     runner.close();
     await store.close(true);
     await observer.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('shutdown cancels a process-wide slot waiter without a late send or limiter leak', async () => {
+  const stores = Array.from({ length: 5 }, () => new MemoryReliableRecordStore<Payload, Ack>());
+  const scheduled: Array<Array<() => Promise<void>>> = stores.map(() => []);
+  const releases = Array.from({ length: 4 }, () => deferred<void>());
+  const firstFourStarted = deferred<void>();
+  let active = 0;
+  let fifthSends = 0;
+  const runners = stores.map((store, index) => new ReliableOutboxRunner(store, {
+    isReady: () => true,
+    async deliver() {
+      if (index === 4) { fifthSends += 1; return; }
+      active += 1;
+      if (active === 4) firstFourStarted.resolve();
+      await releases[index]!.promise;
+      active -= 1;
+    },
+    onState() {}, defer(work) { scheduled[index]!.push(work); }
+  }));
+  const createdAt = Date.now();
+  for (let index = 0; index < stores.length; index += 1) {
+    await stores[index]!.create(createReliableRecord({ key: `F08:limiter-waiter-${index}`,
+      fingerprint: `fingerprint:${index}`, createdAt, updatedAt: createdAt,
+      state: 'queued', attempts: 0, payload: { message: `waiter-${index}` }, ack: { ok: true, id: `waiter-${index}` } }));
+    await runners[index]!.start();
+  }
+  for (const tasks of scheduled) for (const task of tasks) void task();
+  await firstFourStarted.promise;
+  runners[4]!.close();
+  await runners[4]!.waitForIdle();
+  assert.equal(fifthSends, 0);
+  assert.equal((await stores[4]!.get('F08:limiter-waiter-4'))?.state, 'queued');
+  for (const release of releases) release.resolve();
+  await Promise.all(runners.slice(0, 4).map(async runner => { runner.close(); await runner.waitForIdle(); }));
+  await Promise.all(stores.map(store => store.close()));
+  const afterReleaseStore = new MemoryReliableRecordStore<Payload, Ack>();
+  await afterReleaseStore.create(createReliableRecord({ key: 'F08:limiter-after-release',
+    fingerprint: 'fingerprint:after-release', createdAt: Date.now(), updatedAt: Date.now(),
+    state: 'queued', attempts: 0, payload: { message: 'after-release' }, ack: { ok: true, id: 'after-release' } }));
+  const afterReleaseScheduled: Array<() => Promise<void>> = [];
+  let afterReleaseSends = 0;
+  const afterReleaseRunner = new ReliableOutboxRunner(afterReleaseStore, {
+    isReady: () => true, async deliver() { afterReleaseSends += 1; }, onState() {},
+    defer(work) { afterReleaseScheduled.push(work); }
+  });
+  await afterReleaseRunner.start();
+  for (const task of afterReleaseScheduled) await task();
+  assert.equal(afterReleaseSends, 1);
+  afterReleaseRunner.close();
+  await afterReleaseRunner.waitForIdle();
+  await afterReleaseStore.close();
+});
+
+test('cutoff between durable attempting state and transport invocation persists known-unsent retry without emitting', async () => {
+  const memory = new MemoryReliableRecordStore<Payload, Ack>();
+  const key = 'F08:cutoff-before-emit';
+  const createdAt = Date.now();
+  await memory.create(createReliableRecord({ key, fingerprint: key, createdAt, updatedAt: createdAt,
+    state: 'queued', attempts: 0, payload: { message: key }, ack: { ok: true, id: key } }));
+  const transitionEntered = deferred<void>();
+  const releaseTransition = deferred<void>();
+  const store = {
+    initialize: () => memory.initialize(), get: (value: string) => memory.get(value), list: () => memory.list(),
+    create: (value: ReturnType<typeof record>) => memory.create(value),
+    async transition(value: string, state: Parameters<typeof memory.transition>[1], changes?: Parameters<typeof memory.transition>[2]) {
+      if (state === 'attempting') {
+        transitionEntered.resolve();
+        await releaseTransition.promise;
+      }
+      return memory.transition(value, state, changes);
+    },
+    close: () => memory.close()
+  };
+  const scheduled: Array<() => Promise<void>> = [];
+  let sends = 0;
+  const runner = new ReliableOutboxRunner(store, {
+    isReady: () => true, async deliver() { sends += 1; }, onState() {}, defer(work) { scheduled.push(work); }, now: () => createdAt
+  });
+  await runner.start();
+  const attempt = scheduled[0]!();
+  await transitionEntered.promise;
+  runner.close();
+  releaseTransition.resolve();
+  await attempt;
+  const persisted = await memory.get(key);
+  assert.equal(sends, 0);
+  assert.equal(persisted?.state, 'retryable');
+  assert.equal(persisted?.attempts, 1);
+  assert.ok((persisted?.nextAttemptAt ?? 0) > createdAt);
+  await runner.waitForIdle();
+  await memory.close();
+});
+
+test('same canonical directory permits one in-process outbox runner even with shared store references', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'reliable-runner-owner-'));
+  const firstStore = createDiskStore(directory);
+  const secondStore = createDiskStore(directory);
+  const createRunner = (store: ReturnType<typeof createDiskStore>) => new ReliableOutboxRunner(store, {
+    isReady: () => false, async deliver() {}, onState() {}, defer(work) { void work(); }
+  });
+  const firstRunner = createRunner(firstStore);
+  const secondRunner = createRunner(secondStore);
+  try {
+    await firstRunner.start();
+    await assert.rejects(secondRunner.start(), /runner already owns this state directory/);
+    firstRunner.close();
+    await firstRunner.waitForIdle();
+    await secondRunner.start();
+    secondRunner.close();
+    await secondRunner.waitForIdle();
+  } finally {
+    firstRunner.close(); secondRunner.close();
+    await Promise.all([firstRunner.waitForIdle(), secondRunner.waitForIdle()]);
+    await Promise.all([firstStore.close(), secondStore.close()]);
     await rm(directory, { recursive: true, force: true });
   }
 });

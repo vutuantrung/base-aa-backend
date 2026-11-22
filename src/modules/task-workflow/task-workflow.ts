@@ -57,8 +57,11 @@ export class TaskWorkflow {
     });
   }
 
-  async start(): Promise<void> { await this.runner.start(); }
+  async start(activate = true): Promise<void> { await this.runner.start(activate); }
+  async activate(): Promise<void> { await this.runner.activate(); }
   close(): boolean { return this.runner.close(); }
+  async waitForIdle(): Promise<void> { await this.runner.waitForIdle(); }
+  workCounts() { return this.runner.workCounts(); }
   async destinationReady(): Promise<void> { await this.runner.wake(); }
 
   async receiveTask(value: unknown): Promise<PeerMessageAck> {

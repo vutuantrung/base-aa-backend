@@ -75,16 +75,17 @@ same-key prepare/transform can run more than once, so transformers should be sid
 or idempotent. This status does not claim power-loss durability, receiver deduplication or
 exactly-once effects.
 
-## R7.6 lifecycle decisions — pending
+## R7.6 lifecycle decisions — approved D01–D06
 
-R7.6.A records current resource ownership, readiness, failure behavior and a proposed
-dependency-aware shutdown sequence in the [lifecycle baseline](R7_6_LIFECYCLE_DECISION_BASELINE.md).
-The [D01–D06 package](R7_6_LIFECYCLE_POLICY.md) is proposal only; lifecycle state/API,
-readiness endpoint/admission behavior, drain set, deadline/escalation, cleanup aggregation and
-diagnostics remain pending owner approval. No R7.6.B behavior is authorized. Existing R4-D05
-coordinated lifecycle, R4-D06 separate readiness, R4-D07 bounded graceful drain, R4-D08
-instance isolation, and R5-D08 compatibility remain constraints, not proof of current
-conformance.
+The architecture owner approved the coordinated one-shot M02 lifecycle, internal readiness,
+admission cutoff and tracked drain, single 15-second monotonic total deadline, dependency-safe
+aggregated cleanup, and entrypoint-only signal ownership. The implemented contract and evidence
+are recorded in the [R7.6.B report](../../R7_6_B_COORDINATED_BOUNDED_LIFECYCLE_IMPLEMENTATION_VERIFICATION_REPORT.md)
+and [lifecycle policy](R7_6_LIFECYCLE_POLICY.md). The application API remains unchanged;
+`SHUTDOWN_TIMEOUT_MS` is the approved bounded configuration. `/health` is unchanged and no
+readiness endpoint is added. Evidence is local Linux loopback and process tests, not deployed
+filesystem, remote receiver, power-loss, or unconditional delivery evidence. R4-D05–D08 and
+R5-D08 remain preserved constraints.
 
 ## Interpretation and unresolved matters
 - Architecture targets are not current conformance claims. R4-D03 acyclic dependencies and R4-D07 bounded graceful drain require R7 verification/implementation. R5 contract names in handoff are illustrative, not mandatory exports.

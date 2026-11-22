@@ -36,7 +36,7 @@ const resolvedConfiguration: ResolvedConfiguration = {
   enableTestPeers: true,
   application: {
     dbPath: './data/app.db', corsOrigin: 'http://localhost:5173', apiKey: undefined,
-    enableSqlite: false, enableTestPeers: true, pserver: defaultPServerConfig
+    enableSqlite: false, enableTestPeers: true, pserver: defaultPServerConfig, shutdownTimeoutMs: 15_000
   }
 };
 
@@ -48,6 +48,7 @@ test('configuration resolves standalone defaults and SQLite mode explicitly', ()
   assert.equal(configuration.application.corsOrigin, 'http://localhost:5173');
   assert.equal(configuration.application.enableTestPeers, false);
   assert.equal(configuration.application.pserver, undefined);
+  assert.equal(configuration.application.shutdownTimeoutMs, 15_000);
   assert.deepEqual(defaultVmInfo, { udid: 'aab-demo-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] });
   assert.deepEqual(resolveConfiguration({ ENABLE_TEST_PEERS: '1' }).application.pserver, defaultPServerConfig);
 });
@@ -75,6 +76,13 @@ test('configuration rejects ports outside safe integer range 0 through 65535', (
   }
   assert.equal(resolveConfiguration({ PORT: '0' }).port, 0);
   assert.equal(resolveConfiguration({ PORT: '65535' }).port, 65535);
+});
+
+test('shutdown budget defaults to fifteen seconds and validates the bounded millisecond setting', () => {
+  assert.equal(resolveConfiguration({ SHUTDOWN_TIMEOUT_MS: '25000' }).application.shutdownTimeoutMs, 25_000);
+  for (const SHUTDOWN_TIMEOUT_MS of ['0', '-1', '1.5', '120001', 'not-a-number']) {
+    assert.throws(() => resolveConfiguration({ SHUTDOWN_TIMEOUT_MS }), /Invalid SHUTDOWN_TIMEOUT_MS/);
+  }
 });
 
 test('PServer feature gate and exact flag strings are preserved', () => {

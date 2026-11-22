@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { CHANNELS, type Channel, type MessageEnvelope } from '../../shared/contracts/message.js';
 import type { MessageSender } from '../../modules/messaging/messaging.js';
 import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
+import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
 const inboundMessage = z.object({ event: z.string().min(1).max(100), payload: z.unknown(), correlationId: z.string().max(200).optional() });
 type Ack = (result: { ok: true; data: MessageEnvelope } | { ok: false; error: string }) => void;
@@ -18,27 +19,43 @@ export interface SocketMessageHub {
 export function createSocketGateway(http: HttpServer, deps: {
   sender: MessageSender; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean;
   transformations?: TransformationRegistry; reliabilityPolicy?: ReliabilityRunnerPolicy
+  admission?: ApplicationAdmission
 }) {
   const io = new Server(http, { cors: { origin: deps.corsOrigin }, maxHttpBufferSize: 1_000_000 });
+  try {
   let peerGateway: ReturnType<typeof attachPeerGateway> | undefined;
   if (deps.enableTestPeers) {
     if (!deps.transformations) throw new Error('Peer transformations registry is required');
-    peerGateway = attachPeerGateway(io, deps.apiKey, deps.transformations, deps.reliabilityPolicy);
+    peerGateway = attachPeerGateway(io, deps.apiKey, deps.transformations, deps.reliabilityPolicy, deps.admission);
   }
   for (const channel of CHANNELS) {
     const namespace = io.of(`/${channel}`);
     namespace.use((socket, next) => {
       if (deps.apiKey && socket.handshake.auth.token !== deps.apiKey) return next(new Error('unauthorized'));
+      if (deps.admission && !deps.admission.isAccepting()) return next(new Error('APPLICATION_DRAINING'));
       next();
     });
     namespace.on('connection', (socket: Socket) => {
+      if (deps.admission && !deps.admission.isAccepting()) { socket.disconnect(true); return; }
       socket.on('message', async (value: unknown, ack?: Ack) => {
+        const operation = async () => {
         const parsed = inboundMessage.safeParse(value);
         if (!parsed.success) { ack?.({ ok: false, error: 'invalid message' }); return; }
         try {
           const data = await deps.sender.execute({ channel, ...parsed.data });
           ack?.({ ok: true, data });
         } catch (error) {
+          console.error('Socket message failure:', error);
+          ack?.({ ok: false, error: 'internal server error' });
+        }
+        };
+        if (!deps.admission) { await operation(); return; }
+        try { await deps.admission.run('socket', operation); }
+        catch (error) {
+          if (error instanceof Error && error.message === 'APPLICATION_DRAINING') {
+            ack?.({ ok: false, error: 'APPLICATION_DRAINING' });
+            return;
+          }
           console.error('Socket message failure:', error);
           ack?.({ ok: false, error: 'internal server error' });
         }
@@ -51,4 +68,8 @@ export function createSocketGateway(http: HttpServer, deps: {
     broadcast(channel: Channel, message: MessageEnvelope) { io.of(`/${channel}`).emit('message', message); },
     close: async () => { await new Promise<void>(resolve => io.close(() => resolve())); }
   };
+  } catch (error) {
+    io.close(() => {});
+    throw error;
+  }
 }

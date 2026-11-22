@@ -73,7 +73,8 @@ deployment filesystem. C03 remains: duplicate concurrent prepare/transform may r
 once, so transformers must be side-effect-free or idempotent. There is no automatic GC and
 stale writer locks remain fail-closed pending verified-owner-dead manual recovery.
 
-R7.6.A has documented, but not approved, lifecycle/readiness/shutdown proposals in the
-[baseline](../architecture/R7_6_LIFECYCLE_DECISION_BASELINE.md) and
-[policy package](../architecture/R7_6_LIFECYCLE_POLICY.md). Do not infer a new shutdown
-deadline or operator action from that proposal.
+R7.6.B implements the approved bounded shutdown contract. `SHUTDOWN_TIMEOUT_MS` defaults to
+15000 ms and accepts integer values 1–120000. First SIGINT/SIGTERM begins coordinated close;
+a second signal requests entrypoint exit 1. A timeout rejects close without implying live work
+was canceled. Follow the [R7.6 operations notes](R7_6_LIFECYCLE.md) and preserve writer locks
+and record/quarantine evidence until the recorded owner-dead verification procedure is complete.

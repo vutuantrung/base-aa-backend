@@ -12,6 +12,7 @@ export interface PServerProtocolConfig {
 export interface PServerGatewayCapabilities {
   registerPServerTransport(transport: { isConnected(): boolean; deliver(message: PeerMessage): Promise<void> }): void;
   receiveFromPServer(value: unknown): Promise<PeerMessageAck>;
+  processPServerIngress?(value: unknown, acknowledge: (ack: PeerMessageAck) => void): Promise<void>;
   notifyPServerReady?(): void;
 }
 
@@ -85,7 +86,9 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
       return;
     }
     console.log('[AAB] RECEIVE PServer peer:message');
-    ack?.(await gateway.receiveFromPServer(value));
+    if (!ack) return;
+    if (gateway.processPServerIngress) await gateway.processPServerIngress(value, ack);
+    else ack(await gateway.receiveFromPServer(value));
   });
 
   transport.on('connect_error', error => {

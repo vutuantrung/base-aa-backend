@@ -18,7 +18,8 @@ export interface PeerSocketConnection extends PeerIdentity {
 }
 
 /** Socket.IO namespace and physical connection capabilities for the peer gateway. */
-export function createSocketPeerGateway(io: Server, apiKey: string | undefined, directory: PeerDirectory) {
+export function createSocketPeerGateway(io: Server, apiKey: string | undefined, directory: PeerDirectory,
+  isAccepting: () => boolean = () => true) {
   const peers = io.of('/peers');
   let connectionHandler: ((connection: PeerSocketConnection) => void) | undefined;
 
@@ -26,6 +27,7 @@ export function createSocketPeerGateway(io: Server, apiKey: string | undefined, 
     const auth = peerAuth.safeParse(socket.handshake.auth);
     if (!auth.success) return next(new Error('invalid peer identity'));
     if (apiKey && auth.data.token !== apiKey) return next(new Error('unauthorized'));
+    if (!isAccepting()) return next(new Error('APPLICATION_DRAINING'));
     try {
       directory.register(auth.data.peerId, socket.id, auth.data.instanceId);
       next();

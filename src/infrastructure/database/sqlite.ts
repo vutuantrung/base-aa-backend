@@ -12,9 +12,10 @@ export function openDatabase(dbPath: string): Database.Database {
   }
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
   const db = new DatabaseConstructor(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.exec(`
+  try {
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    db.exec(`
     CREATE TABLE IF NOT EXISTS Session (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL
@@ -33,6 +34,12 @@ export function openDatabase(dbPath: string): Database.Database {
     CREATE TABLE IF NOT EXISTS AaTask (id TEXT PRIMARY KEY, extension_id TEXT NOT NULL, payload TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_aa_activity_extension ON AaActivity(extension_id);
     CREATE INDEX IF NOT EXISTS idx_aa_task_extension ON AaTask(extension_id);
-  `);
-  return db;
+    `);
+    return db;
+  } catch (error) {
+    try { db.close(); } catch (closeError) {
+      throw new AggregateError([error, closeError], 'SQLite initialization and cleanup failed', { cause: error });
+    }
+    throw error;
+  }
 }

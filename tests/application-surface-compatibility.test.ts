@@ -23,7 +23,7 @@ const configuration: ResolvedConfiguration = {
   enableTestPeers: false,
   application: {
     dbPath: ':memory:', corsOrigin: '*', apiKey: undefined,
-    enableSqlite: false, enableTestPeers: false, pserver: undefined
+    enableSqlite: false, enableTestPeers: false, pserver: undefined, shutdownTimeoutMs: 15_000
   }
 };
 const compatibleApplication: ApplicationInstance = createApplication(configuration.application);
