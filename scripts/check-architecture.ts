@@ -20,7 +20,7 @@ function assign(owner: string, category: Ownership['category'], paths: string[])
   for (const path of paths) explicitOwnership.set(path, { owner, category });
 }
 assign('M01', 'module', ['src/config/configuration.ts']);
-assign('M02', 'module', ['src/app/create-app.ts', 'src/app/lifecycle.ts', 'src/main.ts']);
+assign('M02', 'module', ['src/app/application-coordinator.ts', 'src/app/create-app.ts', 'src/app/lifecycle.ts', 'src/app/shutdown-signals.ts', 'src/main.ts']);
 assign('M03', 'module', ['src/infrastructure/socket/pserver-connector.ts', 'src/infrastructure/socket/pserver-transport.ts']);
 assign('M04', 'module', ['src/modules/pserver/contracts.ts', 'src/modules/pserver/pserver-protocol.ts']);
 assign('M05', 'module', [
@@ -57,7 +57,7 @@ assign('Support', 'support', [
   'src/shared/persistence/atomic-json-record-store.ts',
   'src/shared/persistence/reliable-outbox-runner.ts',
   'src/shared/contracts/reliable-delivery.ts',
-  'src/shared/contracts/message.ts', 'src/shared/transport/connectable-client.ts',
+  'src/shared/contracts/application-admission.ts', 'src/shared/contracts/message.ts', 'src/shared/transport/connectable-client.ts',
   'src/shared/transport/connectable-message-client.ts', 'src/shared/transport/message-bus.ts', 'src/tools/utils.ts'
 ]);
 assign('Example', 'example', ['src/examples/pserver-to-aaui.ts']);
