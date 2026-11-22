@@ -1,6 +1,7 @@
 import type { IncomingPeerMessage, PeerId, PeerMessage } from './contracts.js';
 import { PeerMessageError, type PeerDelivery, type PeerDeliveryContext } from './peer-message-service.js';
 import type { DirectoryPeerId, PeerIdentity } from './peer-directory.js';
+import { ProvenUnsentDeliveryError } from '../../shared/contracts/reliable-delivery.js';
 
 const boundEServerInstance = Symbol('bound-eserver-instance');
 
@@ -78,7 +79,7 @@ export class PeerDestinationPolicy implements PeerDelivery {
   async deliver(message: PeerMessage, context?: PeerDeliveryContext): Promise<void> {
     if (message.to === 'pserver') {
       const transport = this.pserverTransport;
-      if (!transport?.isConnected()) throw new Error('PServer is offline');
+      if (!transport?.isConnected()) throw new ProvenUnsentDeliveryError('PServer is offline');
       await transport.deliver(message);
     } else if (message.to !== 'aab') {
       let identity: PeerIdentity | undefined;

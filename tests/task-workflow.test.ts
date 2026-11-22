@@ -7,6 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { JsonTaskFileStore, type StoredTask, type TaskFileStore } from '../src/modules/task-workflow/task-file-store.js';
 import { TaskWorkflow, type TaskLifecycleNotification, type TaskWorkflowCapabilities } from '../src/modules/task-workflow/task-workflow.js';
 import type { PeerMessage, PeerId } from '../src/modules/peer-messaging/contracts.js';
+import type { PeerMessageAck } from '../src/modules/peer-messaging/contracts.js';
+import type { TaskOperationPayload } from '../src/modules/task-workflow/task-file-store.js';
+import { MemoryReliableRecordStore } from './helpers/memory-reliable-store.js';
+import type { ReliableRecordStore } from '../src/shared/persistence/atomic-json-record-store.js';
 
 function task(id = 'task-workflow-1', status: StoredTask['status'] = 'inProgress'): StoredTask {
   return { id, status, config: 'task-config', createdTime: 100, updatedTime: 100 };
@@ -38,16 +42,25 @@ function harness(options: {
   eServerReady?: boolean;
   pServerReady?: boolean;
   processMessage?: TaskWorkflowCapabilities['processMessage'];
+  outbox?: TaskWorkflowCapabilities['outbox'];
 } = {}) {
   const deferred: Array<() => Promise<void>> = [];
   const taskEvents: TaskLifecycleNotification[] = [];
   const resultEvents: TaskLifecycleNotification[] = [];
   const processed: Array<{ value: unknown; from: PeerId; instanceId?: string }> = [];
   const store = options.store ?? {
-    async save() {}, async read() { return undefined; }, async saveResult() {}, async listRecent() { return []; }
+    async save() {}, async read(taskId: string) { return task(taskId); }, async saveResult() {}, async listRecent() { return []; }
   };
+  const outbox = options.outbox ?? (store instanceof JsonTaskFileStore
+    ? store.reliability
+    : new MemoryReliableRecordStore<TaskOperationPayload, PeerMessageAck>());
   const capabilities: TaskWorkflowCapabilities = {
     store,
+    outbox,
+    ...(store instanceof JsonTaskFileStore ? {
+      hasLegacyOperation: (kind: 'F08' | 'F09', taskId: string) => store.hasLegacyOperation(kind, taskId),
+      projectLegacyOperation: (payload: TaskOperationPayload) => store.projectLegacyOperation(payload)
+    } : {}),
     listEServerInstances: () => options.instances ?? [],
     isEServerConnectionReady: () => options.eServerReady ?? true,
     isPServerConnected: () => options.pServerReady ?? true,
@@ -60,7 +73,7 @@ function harness(options: {
     publishTaskLifecycle: notification => { taskEvents.push(notification); },
     publishTaskResultLifecycle: notification => { resultEvents.push(notification); }
   };
-  return { workflow: new TaskWorkflow(capabilities), deferred, taskEvents, resultEvents, processed };
+  return { workflow: new TaskWorkflow(capabilities), deferred, taskEvents, resultEvents, processed, outbox };
 }
 
 test('invalid F08/F09 envelopes and task payloads return exact ACKs without side effects', async () => {
@@ -88,23 +101,32 @@ test('invalid F08/F09 envelopes and task payloads return exact ACKs without side
   assert.equal(setup.resultEvents.length, 0);
 });
 
-test('F08 waits for persistence, captures explicit target and ACKs before deferred delivery failure', async () => {
+test('F08 waits for persistence, captures explicit target and retains ambiguous delivery outcome', async () => {
   let finishSave: (() => void) | undefined;
-  const store: TaskFileStore = {
-    save: () => new Promise<void>(resolve => { finishSave = resolve; }),
-    async read() { return undefined; }, async saveResult() {}, async listRecent() { return []; }
+  let started!: () => void;
+  const commitStarted = new Promise<void>(resolve => { started = resolve; });
+  const memory = new MemoryReliableRecordStore<TaskOperationPayload, PeerMessageAck>();
+  const outbox: ReliableRecordStore<TaskOperationPayload, PeerMessageAck> = {
+    initialize: () => memory.initialize(), get: key => memory.get(key), list: () => memory.list(),
+    transition: (key, state, changes) => memory.transition(key, state, changes), close: () => memory.close(),
+    create: record => new Promise(resolve => {
+      finishSave = () => { void memory.create(record).then(resolve); };
+      started();
+    })
   };
   let failDelivery: (() => void) | undefined;
+  let markDeliveryStarted!: () => void;
+  const deliveryStarted = new Promise<void>(resolve => { markDeliveryStarted = resolve; });
   const options = {
-    store,
     instances: [{ instanceId: 'single-instance' }],
     processMessage: async () => new Promise<PeerMessage>((_resolve, reject) => {
+      markDeliveryStarted();
       failDelivery = () => reject(new Error('downstream ACK failed'));
     })
   };
-  const setup = harness(options);
+  const setup = harness({ ...options, outbox });
   const pendingReceipt = setup.workflow.receiveTask(taskRequest(task(), { toInstanceId: 'explicit-instance' }));
-  await Promise.resolve();
+  await commitStarted;
   assert.equal(finishSave !== undefined, true);
   assert.equal(setup.taskEvents.length, 0);
   assert.equal(setup.deferred.length, 0);
@@ -120,21 +142,21 @@ test('F08 waits for persistence, captures explicit target and ACKs before deferr
   assert.equal(setup.deferred.length, 1);
 
   const deferredForward = setup.deferred[0]?.();
-  await Promise.resolve();
+  await deliveryStarted;
   assert.equal(failDelivery !== undefined, true);
   assert.equal(setup.taskEvents.length, 1);
   failDelivery?.();
   await deferredForward;
   assert.equal(setup.processed[0]?.from, 'pserver');
   assert.equal(setup.processed[0]?.instanceId, undefined);
-  assert.deepEqual(setup.processed[0]?.value, {
-    version: '1.0', kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'explicit-instance',
-    channel: 'worker', event: 'message',
-    payload: { type: 'demo.task.request', version: '1.0', data: task() },
-    id: receipt.data.id
-  });
-  assert.equal(setup.taskEvents.at(1)?.status, 'forwardFailed');
-  assert.equal(setup.taskEvents.at(1)?.reason, 'downstream ACK failed');
+  const outbound = setup.processed[0]?.value;
+  assert.ok(outbound && typeof outbound === 'object');
+  assert.equal(Reflect.get(outbound, 'toInstanceId'), 'explicit-instance');
+  assert.equal(Reflect.get(outbound, 'id'), receipt.data.id);
+  assert.equal(typeof Reflect.get(outbound, 'timestamp'), 'number');
+  assert.deepEqual(setup.taskEvents.map(event => event.status), ['received']);
+  const [operation] = await setup.outbox.list();
+  assert.equal(operation?.state, 'uncertain');
 });
 
 test('F08 falls back to the sole registered EServer when no target is supplied', async () => {
@@ -142,18 +164,20 @@ test('F08 falls back to the sole registered EServer when no target is supplied',
   const receipt = await setup.workflow.receiveTask(taskRequest());
   assert.equal(receipt.ok, true);
   if (!receipt.ok) return;
-  assert.equal(receipt.data.toInstanceId, 'sole-worker');
+  assert.equal('toInstanceId' in receipt.data, false);
   await setup.deferred[0]?.();
-  assert.deepEqual(setup.processed[0]?.value, {
-    version: '1.0', kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'sole-worker',
-    channel: 'worker', event: 'message',
-    payload: { type: 'demo.task.request', version: '1.0', data: task() },
-    id: receipt.data.id
-  });
+  assert.equal(setup.processed[0]?.from, 'pserver');
+  const delivered = setup.processed[0]?.value;
+  assert.ok(delivered && typeof delivered === 'object');
+  assert.equal(Reflect.get(delivered, 'toInstanceId'), 'sole-worker');
+  assert.equal(Reflect.get(delivered, 'id'), receipt.data.id);
+  const deliveredPayload = Reflect.get(delivered, 'payload');
+  assert.ok(deliveredPayload && typeof deliveredPayload === 'object');
+  assert.deepEqual(Reflect.get(deliveredPayload, 'data'), task());
   assert.equal(setup.taskEvents.at(1)?.status, 'forwarded');
 });
 
-test('F08 persists unresolved target receipts and reports captured resolution or physical readiness failures', async () => {
+test('F08 persists unresolved target receipts as terminal failure and queues captured offline targets', async () => {
   const unresolved = harness({ instances: [{ instanceId: 'one' }, { instanceId: 'two' }] });
   const receipt = await unresolved.workflow.receiveTask(taskRequest());
   assert.equal(receipt.ok, true);
@@ -161,50 +185,70 @@ test('F08 persists unresolved target receipts and reports captured resolution or
   assert.equal(receipt.status, 'received');
   assert.equal('toInstanceId' in receipt.data, false);
   assert.equal(unresolved.taskEvents.at(0)?.instanceId, null);
-  await unresolved.deferred[0]?.();
   assert.equal(unresolved.processed.length, 0);
-  assert.equal(unresolved.taskEvents[1]?.reason, 'No unique EServer destination; specify toInstanceId');
+  assert.deepEqual(unresolved.taskEvents.map(event => event.status), ['received', 'forwardFailed']);
+  assert.match(unresolved.taskEvents[1]?.reason ?? '', /Multiple EServer/);
 
   const offline = harness({ instances: [{ instanceId: 'captured' }], eServerReady: false });
   const offlineReceipt = await offline.workflow.receiveTask(taskRequest());
   assert.equal(offlineReceipt.ok, true);
   await offline.deferred[0]?.();
   assert.equal(offline.processed.length, 0);
-  assert.equal(offline.taskEvents.at(1)?.reason, 'EServer is offline');
+  assert.equal(offline.taskEvents.length, 1);
 });
 
-test('F08 persistence rejection has no receipt notification or forwarding', async () => {
-  const store: TaskFileStore = {
-    async save() { throw new Error('disk full'); }, async read() { return undefined; },
-    async saveResult() {}, async listRecent() { return []; }
+test('F08 capacity rejection has no receipt notification or forwarding', async () => {
+  const memory = new MemoryReliableRecordStore<TaskOperationPayload, PeerMessageAck>();
+  const outbox: ReliableRecordStore<TaskOperationPayload, PeerMessageAck> = {
+    initialize: () => memory.initialize(), get: key => memory.get(key), list: () => memory.list(),
+    transition: (key, state, changes) => memory.transition(key, state, changes), close: () => memory.close(),
+    async create() { throw new Error('Reliability queue capacity is full'); }
   };
-  const setup = harness({ store, instances: [{ instanceId: 'worker' }] });
+  const setup = harness({ outbox, instances: [{ instanceId: 'worker' }] });
   assert.deepEqual(await setup.workflow.receiveTask(taskRequest()), {
-    ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB'
+    ok: false, code: 'DELIVERY_FAILED', error: 'Reliability queue capacity is full'
   });
   assert.equal(setup.taskEvents.length, 0);
   assert.equal(setup.deferred.length, 0);
 });
 
-test('F08 duplicate task ID rejects the second receipt without replacing or rescheduling the first', async () => {
+test('F08 duplicate task ID replays the exact receipt ACK without replacing or rescheduling the first', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'aab-workflow-f08-duplicate-'));
+  const store = new JsonTaskFileStore(directory);
   try {
-    const store = new JsonTaskFileStore(directory);
     const original = task(`task-${randomUUID()}`);
-    const setup = harness({ store });
+    const setup = harness({ store, instances: [{ instanceId: 'worker' }] });
 
     const firstReceipt = await setup.workflow.receiveTask(taskRequest(original));
-    const duplicateReceipt = await setup.workflow.receiveTask(taskRequest({ ...original, config: 'changed retry' }));
+    const duplicateReceipt = await setup.workflow.receiveTask(taskRequest(original));
 
     assert.equal(firstReceipt.ok, true);
     if (firstReceipt.ok) assert.equal(firstReceipt.status, 'received');
-    assert.deepEqual(duplicateReceipt, {
-      ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB'
-    });
+    assert.deepEqual(duplicateReceipt, firstReceipt);
+    if (firstReceipt.ok && 'data' in firstReceipt) assert.equal('toInstanceId' in firstReceipt.data, false);
     assert.deepEqual(await store.read(original.id), original);
     assert.deepEqual(setup.taskEvents.map(event => event.status), ['received']);
     assert.equal(setup.deferred.length, 1);
+    const [operation] = await store.reliability.list();
+    assert.equal(operation?.state, 'queued');
+    assert.equal(operation?.payload.targetId, 'worker');
+    const conflicting = await setup.workflow.receiveTask(taskRequest({ ...original, config: 'changed' }));
+    assert.deepEqual(conflicting, {
+      ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate task operation'
+    });
+
+    await store.reliability.close();
+    const reopenedStore = new JsonTaskFileStore(directory);
+    try {
+      const reopened = harness({ store: reopenedStore, instances: [] });
+      assert.deepEqual(await reopened.workflow.receiveTask(taskRequest(original)), firstReceipt);
+      assert.equal(reopened.deferred.length, 0);
+      await reopenedStore.reliability.close();
+    } finally {
+      await reopenedStore.reliability.close();
+    }
   } finally {
+    await store.reliability.close();
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -233,18 +277,34 @@ test('F09 validates original correlation, writes compatible result file exclusiv
     assert.equal((await readFile(join(directory, `${original.id}.result.json`), 'utf8')).endsWith('\n'), true);
     assert.equal((await stat(join(directory, `${original.id}.result.json`))).mode & 0o777, 0o600);
 
-    assert.deepEqual(await setup.workflow.receiveTaskResult(taskResult(finished), 'worker-1'), {
-      ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB'
-    });
+    assert.deepEqual(await setup.workflow.receiveTaskResult(taskResult(finished), 'worker-1'), receipt);
     assert.equal(setup.resultEvents.at(0)?.status, 'received');
     assert.equal(setup.resultEvents.length, 1);
     assert.equal(setup.deferred.length, 1);
+    const conflict = await setup.workflow.receiveTaskResult(taskResult(finished), 'worker-2');
+    assert.deepEqual(conflict, {
+      ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate task operation'
+    });
+    assert.deepEqual((await store.reliability.list()).map(item => item.key), [`F09:${original.id}`]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test('F09 receipt succeeds while offline PServer failure is reported asynchronously', async () => {
+test('F08 request and F09 result for the same task ID occupy distinct idempotency keys', async () => {
+  const setup = harness({ instances: [{ instanceId: 'worker-1' }] });
+  const original = task(`task-${randomUUID()}`);
+  const request = await setup.workflow.receiveTask(taskRequest(original));
+  const result = await setup.workflow.receiveTaskResult(taskResult({
+    ...original, status: 'finished', updatedTime: original.updatedTime + 1
+  }), 'worker-1');
+  assert.equal(request.ok, true);
+  assert.equal(result.ok, true);
+  assert.deepEqual((await setup.outbox.list()).map(item => item.key).sort(),
+    [`F08:${original.id}`, `F09:${original.id}`].sort());
+});
+
+test('F09 receipt succeeds while offline PServer delivery remains retryable and unreported as failure', async () => {
   const setup = harness({ pServerReady: false });
   const receipt = await setup.workflow.receiveTaskResult(taskResult(), 'worker-9');
   assert.equal(receipt.ok, true);
@@ -252,21 +312,31 @@ test('F09 receipt succeeds while offline PServer failure is reported asynchronou
   assert.equal(receipt.status, 'received');
   assert.deepEqual(setup.resultEvents.map(event => event.status), ['received']);
   await setup.deferred[0]?.();
-  assert.deepEqual(setup.resultEvents.map(event => event.status), ['received', 'forwardFailed']);
-  assert.equal(setup.resultEvents[1]?.reason, 'PServer is offline');
+  assert.deepEqual(setup.resultEvents.map(event => event.status), ['received']);
   assert.equal(setup.processed.length, 0);
+  assert.equal((await setup.outbox.list())[0]?.state, 'retryable');
 });
 
 test('F09 does not issue a receipt or schedule forwarding until result persistence resolves', async () => {
   let finishSave: (() => void) | undefined;
+  let started!: () => void;
+  const commitStarted = new Promise<void>(resolve => { started = resolve; });
+  const memory = new MemoryReliableRecordStore<TaskOperationPayload, PeerMessageAck>();
+  const outbox: ReliableRecordStore<TaskOperationPayload, PeerMessageAck> = {
+    initialize: () => memory.initialize(), get: key => memory.get(key), list: () => memory.list(),
+    transition: (key, state, changes) => memory.transition(key, state, changes), close: () => memory.close(),
+    create: record => new Promise(resolve => {
+      finishSave = () => { void memory.create(record).then(resolve); };
+      started();
+    })
+  };
   const store: TaskFileStore = {
-    async save() {}, async read() { return undefined; },
-    saveResult: () => new Promise<void>(resolve => { finishSave = resolve; }),
+    async save() {}, async read(taskId) { return task(taskId); }, async saveResult() {},
     async listRecent() { return []; }
   };
-  const setup = harness({ store });
+  const setup = harness({ store, outbox });
   const pendingReceipt = setup.workflow.receiveTaskResult(taskResult(), 'worker-waiting');
-  await Promise.resolve();
+  await commitStarted;
   assert.equal(finishSave !== undefined, true);
   assert.equal(setup.resultEvents.length, 0);
   assert.equal(setup.deferred.length, 0);

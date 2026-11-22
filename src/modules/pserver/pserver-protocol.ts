@@ -1,5 +1,6 @@
 import type { PeerMessage, PeerMessageAck } from '../peer-messaging/contracts.js';
 import type { PServerTransport, VmInfo } from './contracts.js';
+import { ProvenUnsentDeliveryError } from '../../shared/contracts/reliable-delivery.js';
 
 export const SESSION_CONNECT_EVENT = 'automation_vm:session:connect';
 export const DISPATCH_EVENT = 'activity:task:dispatch';
@@ -11,6 +12,7 @@ export interface PServerProtocolConfig {
 export interface PServerGatewayCapabilities {
   registerPServerTransport(transport: { isConnected(): boolean; deliver(message: PeerMessage): Promise<void> }): void;
   receiveFromPServer(value: unknown): Promise<PeerMessageAck>;
+  notifyPServerReady?(): void;
 }
 
 export function createPServerProtocol(config: PServerProtocolConfig, transport: PServerTransport, gateway: PServerGatewayCapabilities) {
@@ -23,7 +25,7 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
   gateway.registerPServerTransport({
     isConnected: isSessionReady,
     async deliver(message) {
-      if (!isSessionReady()) throw new Error('PServer session is not registered');
+      if (!isSessionReady()) throw new ProvenUnsentDeliveryError('PServer session is not registered');
       const result = await transport.emitWithAck<{ ok?: boolean }>('peer:message', message, 5000);
       if (!result?.ok) throw new Error('PServer rejected message');
     }
@@ -43,6 +45,7 @@ export function createPServerProtocol(config: PServerProtocolConfig, transport: 
       }
       sessionId = ack.session.id;
       sessionReady = true;
+      gateway.notifyPServerReady?.();
       console.log('[AAB] SESSION READY', { session_id: sessionId, vm_udid: ack.session.vm_udid });
     }, error => {
       if (generation !== registrationGeneration) return;

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+import type { PeerMessage, PeerMessageAck } from '../peer-messaging/contracts.js';
+import { AtomicJsonRecordStore, type ReliabilityLimits, type ReliableRecord } from '../../shared/persistence/atomic-json-record-store.js';
 
 export const resourceSelectionSchema = z.object({
   browserProfileId: z.string().trim().min(1).max(150),
@@ -19,6 +21,24 @@ export type StoredSelection = {
   deliveryError?: string;
 };
 
+export interface SelectionOperationPayload {
+  record: StoredSelection;
+  outbound: PeerMessage;
+}
+
+function isSelectionOperationPayload(value: unknown): value is SelectionOperationPayload {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Partial<SelectionOperationPayload>;
+  return Boolean(payload.record && typeof payload.record === 'object' &&
+    resourceSelectionSchema.safeParse(payload.record.selection).success &&
+    payload.outbound && typeof payload.outbound === 'object');
+}
+
+function isPeerMessageAck(value: unknown): value is PeerMessageAck {
+  return Boolean(value && typeof value === 'object' && 'ok' in value &&
+    ((value as { ok: unknown }).ok === true || (value as { ok: unknown }).ok === false));
+}
+
 export interface ResourceSelectionStore {
   save(selection: ResourceSelection): Promise<StoredSelection>;
   updateDelivery(id: string, status: SelectionDeliveryStatus, reason?: string): Promise<void>;
@@ -31,9 +51,13 @@ export interface ResourceSelectionStore {
  */
 export class JsonResourceSelectionStore implements ResourceSelectionStore {
   private readonly directory: string;
+  readonly reliability: AtomicJsonRecordStore<SelectionOperationPayload, PeerMessageAck>;
 
-  constructor(directory = process.env.AAB_SELECTION_STORE_DIR ?? './data/resource-selections') {
+  constructor(directory = process.env.AAB_SELECTION_STORE_DIR ?? './data/resource-selections', limits?: ReliabilityLimits) {
     this.directory = resolve(directory);
+    this.reliability = new AtomicJsonRecordStore(
+      join(this.directory, '.r7.5-outbox'), isSelectionOperationPayload, isPeerMessageAck, limits
+    );
   }
 
   private receiptPath(id: string): string {
@@ -80,9 +104,12 @@ export class JsonResourceSelectionStore implements ResourceSelectionStore {
       throw error;
     }
 
-    const records: StoredSelection[] = [];
+    const canonicalOperations = await this.reliability.list();
+    const canonicalIds = new Set(canonicalOperations.map(operation => operation.payload.record.id));
+    const records = new Map<string, { record: StoredSelection; time: number }>();
     for (const name of names) {
       const id = name.slice(0, -'.json'.length);
+      if (canonicalIds.has(id)) continue;
       const receipt = JSON.parse(await readFile(this.receiptPath(id), 'utf8')) as {
         id: string; createdTime: number; selection: unknown
       };
@@ -95,16 +122,37 @@ export class JsonResourceSelectionStore implements ResourceSelectionStore {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
       const deliveryStatus = delivery.deliveryStatus;
-      records.push({
+      const legacyRecord: StoredSelection = {
         id, createdTime: receipt.createdTime,
         selection: resourceSelectionSchema.parse(receipt.selection),
         deliveryStatus: deliveryStatus === 'forwarded' || deliveryStatus === 'forwardFailed'
           ? deliveryStatus : 'pending',
         ...(deliveryStatus === 'forwardFailed' && typeof delivery.deliveryError === 'string'
           ? { deliveryError: delivery.deliveryError } : {})
+      };
+      records.set(id, { record: legacyRecord, time: legacyRecord.createdTime });
+    }
+    for (const operation of canonicalOperations) {
+      const state = operation.state;
+      const deliveryStatus = state === 'delivered' ? 'forwarded' : state === 'failed' ? 'forwardFailed' : 'pending';
+      records.set(operation.payload.record.id, {
+        record: {
+          ...operation.payload.record, deliveryStatus,
+          ...(state === 'failed' && operation.lastError ? { deliveryError: operation.lastError } : {})
+        },
+        time: operation.createdAt
       });
     }
-    return records.sort((a, b) => b.createdTime - a.createdTime || b.id.localeCompare(a.id))
-      .slice(0, Math.max(0, limit));
+    return [...records.values()].sort((a, b) => b.time - a.time || b.record.id.localeCompare(a.record.id))
+      .slice(0, Math.max(0, limit)).map(item => item.record);
+  }
+
+  async projectLegacyReceipt(record: StoredSelection): Promise<void> {
+    await mkdir(this.directory, { recursive: true });
+    await writeFile(this.receiptPath(record.id), JSON.stringify({
+      id: record.id, createdTime: record.createdTime, selection: record.selection
+    }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   }
 }
+
+export type SelectionOperationRecord = ReliableRecord<SelectionOperationPayload, PeerMessageAck>;

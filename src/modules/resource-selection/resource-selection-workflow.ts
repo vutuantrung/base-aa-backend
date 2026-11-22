@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { incomingPeerMessageSchema, type IncomingPeerMessage, type PeerMessage, type PeerMessageAck } from '../peer-messaging/contracts.js';
-import { resourceSelectionSchema, type ResourceSelectionStore, type StoredSelection } from './resource-selection-store.js';
+import { resourceSelectionSchema, type ResourceSelectionStore, type SelectionOperationPayload, type StoredSelection } from './resource-selection-store.js';
+import { createReliableRecord, fingerprintReliableValue, type ReliableRecordStore } from '../../shared/persistence/atomic-json-record-store.js';
+import { ReliableOutboxRunner, type ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
 
 export interface ResourceSelectionSnapshot {
   records: StoredSelection[];
@@ -9,14 +11,38 @@ export interface ResourceSelectionSnapshot {
 
 export interface ResourceSelectionWorkflowCapabilities {
   readonly store: Pick<ResourceSelectionStore, 'save' | 'updateDelivery' | 'listRecent'>;
+  readonly outbox: ReliableRecordStore<SelectionOperationPayload, PeerMessageAck>;
+  projectLegacyReceipt?(record: StoredSelection): Promise<void>;
   processMessage(value: unknown, authenticatedFrom: 'aaui'): Promise<PeerMessage>;
+  prepareForDurableDelivery?(value: unknown, authenticatedFrom: 'aaui'): Promise<PeerMessage>;
+  deliverPreparedMessage?(message: PeerMessage): Promise<void>;
+  isPServerConnected(): boolean;
   defer(work: () => Promise<void>): void;
   publishUpdated(record: StoredSelection): void;
+  now?: () => number;
+  random?: () => number;
+  reliabilityPolicy?: ReliabilityRunnerPolicy;
 }
 
-/** M13 owns selection validation, receipt, forwarding status and snapshot projection. */
+/** M13 owns selection receipt, canonical delivery state and snapshot projection. */
 export class ResourceSelectionWorkflow {
-  constructor(private readonly capabilities: ResourceSelectionWorkflowCapabilities) {}
+  private readonly runner: ReliableOutboxRunner<SelectionOperationPayload, PeerMessageAck>;
+
+  constructor(private readonly capabilities: ResourceSelectionWorkflowCapabilities) {
+    this.runner = new ReliableOutboxRunner(capabilities.outbox, {
+      isReady: () => this.capabilities.isPServerConnected(),
+      deliver: payload => this.deliver(payload),
+      onState: operation => this.publishState(operation.payload, operation.state, operation.lastError),
+      defer: capabilities.defer,
+      now: capabilities.now,
+      random: capabilities.random,
+      policy: capabilities.reliabilityPolicy
+    });
+  }
+
+  async start(): Promise<void> { await this.runner.start(); }
+  close(): boolean { return this.runner.close(); }
+  async destinationReady(): Promise<void> { await this.runner.wake(); }
 
   async receiveSelection(value: unknown): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
@@ -25,58 +51,85 @@ export class ResourceSelectionWorkflow {
       return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection envelope' };
     }
     const selection = resourceSelectionSchema.safeParse(parsed.data.payload.data);
-    if (!selection.success) {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection IDs' };
-    }
+    if (!selection.success) return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection IDs' };
 
-    let record: StoredSelection;
-    try {
-      record = await this.capabilities.store.save(selection.data);
-    } catch (error) {
-      console.error('[AAB] RESOURCE SELECTION PERSIST FAILED', error);
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist resource selection' };
-    }
-
-    this.capabilities.publishUpdated(record);
-    console.log('[AAB] RESOURCE SELECTION SAVED', record.id);
     const messageId = parsed.data.id ?? randomUUID();
-    this.capabilities.defer(() => this.forwardSelection(parsed.data, messageId, record));
+    const key = parsed.data.id ? `M13:aaui:${parsed.data.id}` : `M13:aaui:unkeyed:${randomUUID()}`;
+    const fingerprint = fingerprintReliableValue({
+      authenticatedSender: 'aaui', id: parsed.data.id, kind: parsed.data.kind, from: parsed.data.from,
+      to: parsed.data.to, toInstanceId: parsed.data.toInstanceId, channel: parsed.data.channel,
+      event: parsed.data.event, correlationId: parsed.data.correlationId, causationId: parsed.data.causationId,
+      payload: { type: parsed.data.payload.type, version: parsed.data.payload.version, data: selection.data }
+    });
+    const existing = await this.capabilities.outbox.get(key);
+    if (existing) {
+      if (existing.fingerprint !== fingerprint)
+        return { ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate resource selection submission' };
+      return existing.ack;
+    }
 
-    const envelope: PeerMessage = {
-      ...parsed.data, id: messageId, timestamp: Date.now(),
+    const timestamp = this.now();
+    const record: StoredSelection = {
+      id: randomUUID(), createdTime: timestamp, selection: selection.data, deliveryStatus: 'pending'
+    };
+    const ackEnvelope: PeerMessage = {
+      ...parsed.data, id: messageId, timestamp,
       payload: structuredClone(parsed.data.payload)
     };
-    return { ok: true, status: 'received', data: envelope };
+    const prepareValue = { ...parsed.data, id: messageId };
+    let outbound: PeerMessage = { ...prepareValue, timestamp };
+    let preparationError: string | undefined;
+    try {
+      if (this.capabilities.prepareForDurableDelivery)
+        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'aaui');
+    } catch (error) { preparationError = error instanceof Error ? error.message : String(error); }
+
+    const payload: SelectionOperationPayload = { record, outbound };
+    const ack: PeerMessageAck = { ok: true, status: 'received', data: ackEnvelope };
+    const operation = createReliableRecord({
+      key, fingerprint, createdAt: timestamp, updatedAt: timestamp,
+      state: preparationError ? 'failed' : 'queued', attempts: 0,
+      ...(preparationError ? { lastError: preparationError } : {}), payload, ack
+    });
+    let committed: Awaited<ReturnType<typeof this.capabilities.outbox.create>>;
+    try { committed = await this.capabilities.outbox.create(operation); }
+    catch (error) {
+      console.error('[AAB] RESOURCE SELECTION PERSIST FAILED', error instanceof Error ? error.message : 'unknown');
+      return { ok: false, code: 'DELIVERY_FAILED', error: error instanceof Error && error.message === 'Reliability queue capacity is full'
+        ? 'Reliability queue capacity is full' : 'Could not persist resource selection' };
+    }
+    if (committed.record.fingerprint !== fingerprint)
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate resource selection submission' };
+    if (!committed.created) return committed.record.ack;
+
+    try { await this.capabilities.projectLegacyReceipt?.(record); }
+    catch (error) { console.error('[AAB] RESOURCE SELECTION LEGACY PROJECTION FAILED', record.id, error instanceof Error ? error.message : 'unknown'); }
+    this.publishUpdated(record);
+    if (preparationError) this.publishUpdated({ ...record, deliveryStatus: 'forwardFailed', deliveryError: preparationError });
+    else await this.runner.enqueue(key);
+    return ack;
   }
 
   async createSnapshot(): Promise<ResourceSelectionSnapshot> {
     const records = await this.capabilities.store.listRecent(50);
-    return { records, timestamp: Date.now() };
+    return { records, timestamp: this.now() };
   }
 
-  private async forwardSelection(
-    parsed: IncomingPeerMessage, messageId: string, record: StoredSelection
-  ): Promise<void> {
-    let status: 'forwarded' | 'forwardFailed' = 'forwarded';
-    let reason: string | undefined;
-    try {
-      await this.capabilities.processMessage({ ...parsed, id: messageId }, 'aaui');
-      console.log('[AAB] RESOURCE SELECTION FORWARDED', record.id);
-    } catch (error) {
-      status = 'forwardFailed';
-      reason = error instanceof Error ? error.message : String(error);
-      console.error('[AAB] RESOURCE SELECTION FORWARD FAILED', record.id, reason);
-    }
-
-    // Monitoring persistence is independent of peer delivery and the final AAUI update.
-    try {
-      await this.capabilities.store.updateDelivery(record.id, status, reason);
-    } catch (storeError) {
-      console.error('[AAB] RESOURCE SELECTION STATUS STORE FAILED', record.id, storeError);
-    }
-    this.capabilities.publishUpdated({
-      ...record, deliveryStatus: status,
-      ...(reason ? { deliveryError: reason } : {})
-    });
+  private async deliver(payload: SelectionOperationPayload): Promise<void> {
+    if (this.capabilities.deliverPreparedMessage) await this.capabilities.deliverPreparedMessage(payload.outbound);
+    else await this.capabilities.processMessage(payload.outbound, 'aaui');
   }
+
+  private publishState(payload: SelectionOperationPayload, state: string, reason?: string): void {
+    if (state !== 'delivered' && state !== 'failed') return;
+    const deliveryStatus = state === 'delivered' ? 'forwarded' : 'forwardFailed';
+    this.publishUpdated({ ...payload.record, deliveryStatus, ...(reason ? { deliveryError: reason } : {}) });
+  }
+
+  private publishUpdated(record: StoredSelection): void {
+    try { this.capabilities.publishUpdated(record); }
+    catch (error) { console.error('[AAB] RESOURCE SELECTION PROJECTION FAILED', record.id, error instanceof Error ? error.message : 'unknown'); }
+  }
+
+  private now(): number { return this.capabilities.now?.() ?? Date.now(); }
 }

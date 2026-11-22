@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ResourceSelectionWorkflow, type ResourceSelectionWorkflowCapabilities } from '../src/modules/resource-selection/resource-selection-workflow.js';
 import { JsonResourceSelectionStore, type ResourceSelection, type StoredSelection } from '../src/modules/resource-selection/resource-selection-store.js';
 import type { PeerMessage } from '../src/modules/peer-messaging/contracts.js';
+import type { PeerMessageAck } from '../src/modules/peer-messaging/contracts.js';
+import type { SelectionOperationPayload } from '../src/modules/resource-selection/resource-selection-store.js';
+import { MemoryReliableRecordStore } from './helpers/memory-reliable-store.js';
 
 const originalSelection = { browserProfileId: ' profile-1 ', proxyId: ' proxy-2 ', accountId: ' account-3 ' };
 const peerMessageId = 'e38b8679-88e5-4657-b3c8-74368027f38e';
@@ -30,6 +33,7 @@ function harness(options: {
   updateDelivery?: (id: string, status: ForwardStatus, reason?: string) => Promise<void>;
   listRecent?: (limit: number) => Promise<StoredSelection[]>;
   processMessage?: (value: unknown, from: 'aaui') => Promise<PeerMessage>;
+  outbox?: ResourceSelectionWorkflowCapabilities['outbox'];
 } = {}) {
   const notifications: StoredSelection[] = [];
   const schedules: Array<() => Promise<void>> = [];
@@ -37,6 +41,7 @@ function harness(options: {
   const writes: Array<{ id: string; status: ForwardStatus; reason?: string }> = [];
   const order: string[] = [];
   const capabilities: ResourceSelectionWorkflowCapabilities = {
+    outbox: options.outbox ?? new MemoryReliableRecordStore<SelectionOperationPayload, PeerMessageAck>(),
     store: {
       async save(selection) {
         order.push('save');
@@ -53,16 +58,21 @@ function harness(options: {
         return [];
       }
     },
+    async projectLegacyReceipt(saved) {
+      order.push('save');
+      await options.save?.(saved.selection);
+    },
     async processMessage(value, from) {
       processCalls.push({ value, from });
       if (options.processMessage) return options.processMessage(value, from);
       return processedMessage;
     },
+    isPServerConnected: () => true,
     defer(work) { order.push('defer'); schedules.push(work); },
     publishUpdated(updated) { order.push(`publish:${updated.deliveryStatus}`); notifications.push(updated); }
   };
   return {
-    workflow: new ResourceSelectionWorkflow(capabilities), notifications, schedules, processCalls, writes, order
+    workflow: new ResourceSelectionWorkflow(capabilities), notifications, schedules, processCalls, writes, order, outbox: capabilities.outbox
   };
 }
 
@@ -85,13 +95,24 @@ test('invalid resource-selection envelope and IDs return exact ACKs without side
 
 test('selection receipt waits for persistence, publishes normalized record, and ACKs original payload independently', async () => {
   let completeSave: (() => void) | undefined;
+  let markStarted!: () => void;
+  const commitStarted = new Promise<void>(resolve => { markStarted = resolve; });
+  const memory = new MemoryReliableRecordStore<SelectionOperationPayload, PeerMessageAck>();
+  const outbox: ResourceSelectionWorkflowCapabilities['outbox'] = {
+    initialize: () => memory.initialize(), get: key => memory.get(key), list: () => memory.list(),
+    transition: (key, state, changes) => memory.transition(key, state, changes), close: () => memory.close(),
+    create: operation => new Promise(resolve => {
+      completeSave = () => { void memory.create(operation).then(resolve); };
+      markStarted();
+    })
+  };
   const setup = harness({
-    save: selection => new Promise(resolve => { completeSave = () => resolve({ ...record, selection }); })
+    outbox
   });
   const pending = setup.workflow.receiveSelection(message(originalSelection, { id: peerMessageId }));
-  await Promise.resolve();
+  await commitStarted;
   assert.equal(completeSave !== undefined, true);
-  assert.deepEqual(setup.order, ['save']);
+  assert.deepEqual(setup.order, []);
   assert.equal(setup.notifications.length, 0);
   assert.equal(setup.schedules.length, 0);
 
@@ -109,15 +130,21 @@ test('selection receipt waits for persistence, publishes normalized record, and 
   assert.equal(setup.processCalls.length, 0);
 
   await setup.schedules[0]?.();
-  assert.deepEqual(setup.processCalls[0], {
-    value: { ...message(), id: peerMessageId }, from: 'aaui'
-  });
-  assert.deepEqual(setup.writes, [{ id: record.id, status: 'forwarded' }]);
+  assert.equal(setup.processCalls[0]?.from, 'aaui');
+  const outbound = setup.processCalls[0]?.value;
+  assert.ok(outbound && typeof outbound === 'object');
+  assert.equal(Reflect.get(outbound, 'id'), peerMessageId);
+  assert.equal(typeof Reflect.get(outbound, 'timestamp'), 'number');
+  assert.deepEqual(setup.writes, []);
   assert.equal(setup.notifications.at(1)?.deliveryStatus, 'forwarded');
 });
 
 test('persistence failure produces no pending notification or deferred work', async () => {
-  const setup = harness({ save: async () => { throw new Error('disk full'); } });
+  const outbox: ResourceSelectionWorkflowCapabilities['outbox'] = {
+    async initialize() {}, async get() { return undefined; }, async list() { return []; }, async close() {},
+    async create() { throw new Error('disk full'); }, async transition() { throw new Error('not found'); }
+  };
+  const setup = harness({ outbox });
   assert.deepEqual(await setup.workflow.receiveSelection(message()), {
     ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist resource selection'
   });
@@ -125,17 +152,17 @@ test('persistence failure produces no pending notification or deferred work', as
   assert.equal(setup.schedules.length, 0);
 });
 
-test('forwarded delivery remains forwarded when status sidecar update fails', async () => {
+test('canonical delivered state projects forwarded even when no legacy sidecar is written', async () => {
   const setup = harness({ updateDelivery: async () => { throw new Error('sidecar unavailable'); } });
   const receipt = await setup.workflow.receiveSelection(message());
   assert.equal(receipt.ok, true);
   await setup.schedules[0]?.();
-  assert.equal(setup.writes[0]?.status, 'forwarded');
+  assert.equal(setup.writes.length, 0);
   assert.equal(setup.notifications.at(1)?.deliveryStatus, 'forwarded');
   assert.equal('deliveryError' in (setup.notifications.at(1) ?? {}), false);
 });
 
-test('failed delivery remains forwardFailed when status sidecar update also fails', async () => {
+test('ambiguous delivery outcome remains pending and uncertain instead of unsafe retry', async () => {
   const setup = harness({
     processMessage: async () => { throw 'wire rejected'; },
     updateDelivery: async () => { throw new Error('sidecar unavailable'); }
@@ -143,20 +170,25 @@ test('failed delivery remains forwardFailed when status sidecar update also fail
   const receipt = await setup.workflow.receiveSelection(message());
   assert.equal(receipt.ok, true);
   await setup.schedules[0]?.();
-  assert.deepEqual(setup.writes[0], { id: record.id, status: 'forwardFailed', reason: 'wire rejected' });
-  assert.equal(setup.notifications.at(1)?.deliveryStatus, 'forwardFailed');
-  assert.equal(setup.notifications.at(1)?.deliveryError, 'wire rejected');
+  const [operation] = await setup.outbox.list();
+  assert.equal(operation?.state, 'uncertain');
+  assert.deepEqual(setup.writes, []);
+  assert.equal(setup.notifications.length, 1);
+  assert.equal(setup.notifications[0]?.deliveryStatus, 'pending');
 });
 
-test('redelivery of the same selection message creates a distinct receipt and deferred attempt', async () => {
+test('redelivery with a stable message ID replays the canonical ACK without duplicate receipt or send', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'aab-selection-redelivery-'));
+  const store = new JsonResourceSelectionStore(directory);
   try {
-    const store = new JsonResourceSelectionStore(directory);
     const schedules: Array<() => Promise<void>> = [];
     const notifications: StoredSelection[] = [];
     const capabilities: ResourceSelectionWorkflowCapabilities = {
       store,
+      outbox: store.reliability,
+      projectLegacyReceipt: saved => store.projectLegacyReceipt(saved),
       async processMessage() { return processedMessage; },
+      isPServerConnected: () => true,
       defer(work) { schedules.push(work); },
       publishUpdated(record) { notifications.push(record); }
     };
@@ -165,28 +197,65 @@ test('redelivery of the same selection message creates a distinct receipt and de
 
     const first = await workflow.receiveSelection(redelivered);
     const second = await workflow.receiveSelection(redelivered);
+    const [canonicalReceipt] = await store.reliability.list();
+    assert.ok(canonicalReceipt);
+    await writeFile(join(directory, `${canonicalReceipt.payload.record.id}.delivery.json`), '{corrupt legacy sidecar');
     const receipts = await store.listRecent(50);
 
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
-    assert.equal(receipts.length, 2);
-    assert.notEqual(receipts[0]?.id, receipts[1]?.id);
-    assert.deepEqual(receipts.map(receipt => receipt.selection), [record.selection, record.selection]);
-    assert.deepEqual(receipts.map(receipt => receipt.deliveryStatus), ['pending', 'pending']);
-    assert.equal(schedules.length, 2);
-    assert.deepEqual(notifications.map(notification => notification.deliveryStatus), ['pending', 'pending']);
+    assert.deepEqual(second, first);
+    assert.equal(receipts.length, 1);
+    assert.deepEqual(receipts.map(receipt => receipt.selection), [record.selection]);
+    assert.deepEqual(receipts.map(receipt => receipt.deliveryStatus), ['pending']);
+    assert.equal(schedules.length, 1);
+    assert.deepEqual(notifications.map(notification => notification.deliveryStatus), ['pending']);
+    await store.reliability.close();
+
+    const reopenedStore = new JsonResourceSelectionStore(directory);
+    try {
+      const reopenedSchedules: Array<() => Promise<void>> = [];
+      const reopened = new ResourceSelectionWorkflow({
+        ...capabilities,
+        store: reopenedStore,
+        outbox: reopenedStore.reliability,
+        projectLegacyReceipt: saved => reopenedStore.projectLegacyReceipt(saved),
+        defer(work) { reopenedSchedules.push(work); }
+      });
+      assert.deepEqual(await reopened.receiveSelection(redelivered), first);
+      assert.equal(reopenedSchedules.length, 0);
+      assert.deepEqual(await reopened.receiveSelection(message({ ...originalSelection, accountId: 'other-account' }, { id: peerMessageId })), {
+        ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate resource selection submission'
+      });
+    } finally {
+      await reopenedStore.reliability.close();
+    }
   } finally {
+    await store.reliability.close();
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test('empty delivery failure reason is omitted from notification but passed to store fallback', async () => {
+test('selection submissions without a caller ID remain independently receipted', async () => {
+  const setup = harness();
+  const first = await setup.workflow.receiveSelection(message());
+  const second = await setup.workflow.receiveSelection(message());
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.notDeepEqual(first, second);
+  assert.equal((await setup.outbox.list()).length, 2);
+  assert.equal(setup.schedules.length, 2);
+});
+
+test('ambiguous empty delivery failure reason remains private to canonical uncertain state', async () => {
   const setup = harness({ processMessage: async () => { throw new Error(''); } });
   const receipt = await setup.workflow.receiveSelection(message());
   assert.equal(receipt.ok, true);
   await setup.schedules[0]?.();
-  assert.deepEqual(setup.writes[0], { id: record.id, status: 'forwardFailed', reason: '' });
-  assert.equal('deliveryError' in (setup.notifications.at(1) ?? {}), false);
+  const [operation] = await setup.outbox.list();
+  assert.equal(operation?.state, 'uncertain');
+  assert.equal(setup.writes.length, 0);
+  assert.equal(setup.notifications.length, 1);
 });
 
 test('selection snapshot projection uses the 50-record limit and current timestamp', async () => {

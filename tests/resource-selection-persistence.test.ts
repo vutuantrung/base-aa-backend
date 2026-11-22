@@ -43,21 +43,12 @@ function connect(peerId: 'aaui') {
   return { socket, ready };
 }
 
-test('AAB persists selection and ACKs received even when PServer is offline', async () => {
+test('AAB persists selection and ACKs received while an offline PServer delivery remains pending', async () => {
   const ui = connect('aaui');
   await ui.ready;
   try {
     const events: any[] = [];
-    const failure = new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Missing selection forwarding failure')), 3000);
-      ui.socket.on('resource-selection:updated', record => {
-        events.push(record);
-        if (record.deliveryStatus === 'forwardFailed') {
-          clearTimeout(timer);
-          resolve(record);
-        }
-      });
-    });
+    ui.socket.on('resource-selection:updated', record => events.push(record));
     const ack: any = await ui.socket.timeout(3000).emitWithAck('peer:message', {
       kind: 'request', from: 'aaui', to: 'pserver',
       payload: { type: 'demo.resource-selection', data: selection }
@@ -65,17 +56,13 @@ test('AAB persists selection and ACKs received even when PServer is offline', as
     assert.equal(ack.ok, true);
     assert.equal(ack.status, 'received');
 
-    const failed = await failure;
-    assert.equal(failed.deliveryStatus, 'forwardFailed');
-    assert.deepEqual(events.map(record => record.deliveryStatus), ['pending', 'forwardFailed']);
-    assert.match(failed.deliveryError, /offline/i);
-
     const store = new JsonResourceSelectionStore(directory);
     const [saved] = await store.listRecent(50);
     assert.ok(saved);
-    assert.equal(saved.id, failed.id);
     assert.deepEqual(saved.selection, selection);
-    assert.equal(saved.deliveryStatus, 'forwardFailed');
+    assert.equal(saved.deliveryStatus, 'pending');
+    assert.deepEqual(events.map(record => record.deliveryStatus), ['pending']);
+    assert.equal(saved.id, events[0].id);
     assert.equal((await readdir(directory)).filter(name => /^[0-9a-f-]{36}\.json$/.test(name)).length, 1);
 
     // Request a snapshot through the same AAUI connection.
@@ -87,7 +74,10 @@ test('AAB persists selection and ACKs received even when PServer is offline', as
       });
     });
     ui.socket.emit('resource-selection:refresh');
-    assert.equal((await refreshed).records[0].id, failed.id);
+    const snapshot = (await refreshed).records[0];
+    assert.equal(snapshot.id, saved.id);
+    assert.equal(snapshot.deliveryStatus, 'pending');
+    await store.reliability.close();
   } finally { ui.socket.disconnect(); }
 });
 
@@ -106,7 +96,7 @@ test('new AAUI connection recovers saved records from AAB disk', async () => {
     const received = await snapshot;
     assert.ok(received.records.some((record: any) =>
       record.selection.browserProfileId === selection.browserProfileId &&
-      record.deliveryStatus === 'forwardFailed'));
+      record.deliveryStatus === 'pending'));
   } finally { ui.socket.disconnect(); }
 });
 

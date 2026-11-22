@@ -15,6 +15,7 @@ import { HttpOutboundAdapter, type WebhookEndpoint } from '../infrastructure/htt
 import { attachSocketServer } from '../infrastructure/socket/socket-server.js';
 import { SocketOutboundAdapter } from '../infrastructure/socket/socket-outbound-adapter.js';
 import type { Server as HttpServer } from 'node:http';
+import type { ReliabilityRunnerPolicy } from '../shared/persistence/reliable-outbox-runner.js';
 
 export type ApplicationInstance = {
   httpServer: HttpServer; router: MessageRouter; routes: RouteRegistry; transformations: TransformationRegistry;
@@ -33,6 +34,8 @@ export type ApplicationConfig = {
   pserver?: Omit<PServerConnectionConfig, 'apiKey'>;
   routes?: readonly RouteRule[];
   webhooks?: Readonly<Record<string, WebhookEndpoint>>;
+  /** Optional, bounded outbox scan/retry policy; defaults to the approved R7.5 profile. */
+  reliabilityPolicy?: ReliabilityRunnerPolicy;
 };
 
 export function createApplication(config: ApplicationConfig & { enableSqlite?: true }): ApplicationInstance & { sessions: SqliteSessionRepository; usage: SqliteProcessUsageRepository; catalog: SqliteAaCatalogRepository };
@@ -52,7 +55,11 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
   const usage = db ? new SqliteProcessUsageRepository(db) : undefined;
   const catalog = db ? new SqliteAaCatalogRepository(db) : undefined;
   const httpServer = createServer(createHttpApp({ sessions, usage, catalog, sqliteEnabled, sender, apiKey: config.apiKey }));
-  const sockets = attachSocketServer(httpServer, { sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey, enableTestPeers: config.enableTestPeers, transformations });
+  const sockets = attachSocketServer(httpServer, {
+    sender, corsOrigin: config.corsOrigin, apiKey: config.apiKey,
+    enableTestPeers: config.enableTestPeers, transformations,
+    reliabilityPolicy: config.reliabilityPolicy
+  });
   const pserverConnector = sockets.peerGateway && config.pserver
     ? connectToPServer({ ...config.pserver, apiKey: config.apiKey }, sockets.peerGateway)
     : undefined;
@@ -62,12 +69,16 @@ export function createApplication(config: ApplicationConfig): ApplicationInstanc
   ]);
   return {
     httpServer, router, routes, transformations, sender, sessions, usage, catalog, pserverConnector,
-    listen: (port: number) => new Promise<number>((resolve, reject) => {
+    listen: async (port: number) => {
+      await sockets.peerGateway?.start();
+      return new Promise<number>((resolve, reject) => {
       httpServer.once('error', reject);
       httpServer.listen(port, () => { httpServer.off('error', reject); const address = httpServer.address(); pserverConnector?.connect(); resolve(typeof address === 'object' && address ? address.port : port); });
-    }),
+      });
+    },
     close: async () => {
       pserverConnector?.close();
+      await sockets.peerGateway?.close();
       await sockets.close();
       if (httpServer.listening) await new Promise<void>((resolve, reject) => httpServer.close(err => err ? reject(err) : resolve()));
       persistence.close();

@@ -46,27 +46,27 @@ The architecture owner approved the following preserve-current options after the
 
 TD12 catalog stored-data/schema migration remains deferred to R7.5; this decision set does not authorize it.
 
-## R7.5 reliability high-level decisions — approved; details pending
+## R7.5 reliability decisions — detailed policy approved for Stage 2
 
-For R7.5, the architecture owner approved these option selections after the R7.5.A
-characterization. They authorize the direction, not unrecorded wire, retry, retention,
-storage or rollout parameters. Detailed decisions are **pending** in the [R7.5 reliability
-policy package](R7_5_RELIABILITY_POLICY.md); no implementation may infer approval from this
-table.
+The architecture owner approved D01–D06 and the detailed P01–P06 policy recorded in the
+[R7.5 reliability policy](R7_5_RELIABILITY_POLICY.md). The approval authorizes the bounded
+implementation described there; it does not claim peer-side deduplication, power-loss
+durability, exactly-once business effects, or a shutdown drain. Verification and residual
+limits are in the [Stage 2 report](../../R7_5_B_CONSERVATIVE_RELIABILITY_IMPLEMENTATION_REPORT.md).
 
 | Decision | Approved selection | Scope and evidence boundary |
 |---|---|---|
-| R7.5-D01 — Receipt consistency | **B — atomic file replacement and flush** | No proven power-loss guarantee. Exact commit protocol and ACK boundary await approval. |
-| R7.5-D02 — Post-ACK recovery | **B — durable outbox and bounded at-least-once replay** | Remote ACK meaning, replay eligibility, limits and uncertain outcomes await peer/owner approval. |
-| R7.5-D03 — Idempotency | **B — exact-duplicate receipt replay and same-key/different-payload conflict** | Keys, absent IDs, conflict wire mapping and retention await approval; no exactly-once claim. |
-| R7.5-D04 — Delivery state | **B — canonical persisted state; notifications are projections** | State machine, public status projection and legacy recovery await approval. |
-| R7.5-D05 — M09 fan-out | **A — preserve current Promise.all/partial outcomes** | No aggregate result or retry change. |
-| R7.5-D06 — M16 catalog | **A — preserve current behavior; no migration** | TD12 stays open; separate approval required for validation/schema/data changes. |
+| R7.5-D01 — Receipt consistency | **B — approved.** One versioned canonical receipt+outbox record; exclusive temp, file sync, non-overwriting hard-link publication, directory sync attempt; no power-loss promise. |
+| R7.5-D02 — Post-ACK recovery | **B — approved.** Only proven-unsent work is retryable. Any possibly-started send without a positive accepted ACK becomes `uncertain`; replay is disabled for current peers. |
+| R7.5-D03 — Idempotency | **B — approved.** F08/F09 operation-prefixed task keys; M13 authenticated-AAUI + supplied message ID; exact ACK replay; stable `INVALID_MESSAGE` conflict; no missing-ID dedupe or key expiry. |
+| R7.5-D04 — Delivery state | **B — approved.** Canonical persisted state precedes notification; M13 legacy statuses are projections and canonical records override old sidecars. |
+| R7.5-D05 — M09 fan-out | **A — preserve current Promise.all/partial outcomes.** No aggregate result or retry change. |
+| R7.5-D06 — M16 catalog | **A — preserve current behavior; no migration.** TD12 stays open. |
 
 R7.5.A evidence is in the [A report](../../R7_5_A_DURABILITY_CONTRACTS_FAILURE_POLICIES_REPORT.md)
-and [durability baseline](R7_5_DURABILITY_DECISION_BASELINE.md). R7.5.B has prepared the
-policy package but is blocked before implementation by detailed approval needs, recorded
-in the [policy gate report](../../R7_5_B_POLICY_GATE_REPORT.md).
+and [durability baseline](R7_5_DURABILITY_DECISION_BASELINE.md). The earlier
+[policy-gate report](../../R7_5_B_POLICY_GATE_REPORT.md) records the former pending state;
+the explicit approval and implementation supersede that gate.
 
 ## Interpretation and unresolved matters
 - Architecture targets are not current conformance claims. R4-D03 acyclic dependencies and R4-D07 bounded graceful drain require R7 verification/implementation. R5 contract names in handoff are illustrative, not mandatory exports.

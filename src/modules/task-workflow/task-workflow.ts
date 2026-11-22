@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { incomingPeerMessageSchema, type IncomingPeerMessage, type PeerMessage, type PeerMessageAck, type PeerId } from '../peer-messaging/contracts.js';
-import { taskSchema, type StoredTask, type TaskFileStore } from './task-file-store.js';
+import { taskSchema, type StoredTask, type TaskFileStore, type TaskOperationPayload } from './task-file-store.js';
+import { createReliableRecord, fingerprintReliableValue, type ReliableRecordStore } from '../../shared/persistence/atomic-json-record-store.js';
+import { ReliableOutboxRunner, type ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
 
 export type TaskLifecycleStatus = 'received' | 'forwarded' | 'forwardFailed';
 
@@ -20,18 +22,44 @@ export interface TaskHistorySnapshot {
 
 export interface TaskWorkflowCapabilities {
   readonly store: TaskFileStore;
+  readonly outbox: ReliableRecordStore<TaskOperationPayload, PeerMessageAck>;
+  hasLegacyOperation?(kind: 'F08' | 'F09', taskId: string): Promise<boolean>;
+  projectLegacyOperation?(payload: TaskOperationPayload): Promise<void>;
   listEServerInstances(): Array<{ instanceId?: string }>;
   isEServerConnectionReady(instanceId: string): boolean;
   isPServerConnected(): boolean;
   processMessage(value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessage>;
+  prepareForDurableDelivery?(value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessage>;
+  deliverPreparedMessage?(message: PeerMessage): Promise<void>;
   defer(work: () => Promise<void>): void;
   publishTaskLifecycle(notification: TaskLifecycleNotification): void;
   publishTaskResultLifecycle(notification: TaskLifecycleNotification): void;
+  now?: () => number;
+  random?: () => number;
+  reliabilityPolicy?: ReliabilityRunnerPolicy;
 }
 
 /** M12 owns F08/F09 receipt policy, persistence coordination and history projection. */
 export class TaskWorkflow {
-  constructor(private readonly capabilities: TaskWorkflowCapabilities) {}
+  private readonly runner: ReliableOutboxRunner<TaskOperationPayload, PeerMessageAck>;
+
+  constructor(private readonly capabilities: TaskWorkflowCapabilities) {
+    this.runner = new ReliableOutboxRunner(capabilities.outbox, {
+      isReady: payload => payload.kind === 'F08'
+        ? Boolean(payload.targetId && this.capabilities.isEServerConnectionReady(payload.targetId))
+        : this.capabilities.isPServerConnected(),
+      deliver: payload => this.deliver(payload),
+      onState: record => this.publishState(record.payload, record.state, record.lastError),
+      defer: capabilities.defer,
+      now: capabilities.now,
+      random: capabilities.random,
+      policy: capabilities.reliabilityPolicy
+    });
+  }
+
+  async start(): Promise<void> { await this.runner.start(); }
+  close(): boolean { return this.runner.close(); }
+  async destinationReady(): Promise<void> { await this.runner.wake(); }
 
   async receiveTask(value: unknown): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
@@ -45,28 +73,54 @@ export class TaskWorkflow {
     }
 
     const task = validated.data;
-    const messageId = parsed.data.id ?? randomUUID();
+    const key = `F08:${task.id}`;
+    const existing = await this.capabilities.outbox.get(key);
     const instances = this.capabilities.listEServerInstances();
-    const targetId = parsed.data.toInstanceId ?? (instances.length === 1 ? instances[0]?.instanceId : undefined);
-    try {
-      // File write completion is the existing receipt boundary.
-      await this.capabilities.store.save(task);
-    } catch (error) {
-      console.error('[AAB] TASK PERSIST FAILED', task.id, error);
+    const targetId = parsed.data.toInstanceId ??
+      (existing?.payload.kind === 'F08' ? existing.payload.targetId :
+        instances.length === 1 ? instances[0]?.instanceId : undefined);
+    const fingerprint = fingerprintReliableValue({ task, targetId });
+    const duplicate = this.matchExisting(existing, fingerprint, 'Conflicting duplicate task operation');
+    if (duplicate) return duplicate;
+    if (await this.capabilities.hasLegacyOperation?.('F08', task.id))
       return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB' };
-    }
 
-    this.publishTaskEvent(task, 'received', targetId);
-    console.log('[AAB] TASK RECEIVED', task.id, 'target=', targetId ?? 'unresolved');
-    this.capabilities.defer(() => this.forwardTask(parsed.data, messageId, task, targetId));
-
-    const envelope: PeerMessage = {
-      ...parsed.data, ...(targetId ? { toInstanceId: targetId } : {}),
-      id: messageId,
-      timestamp: Date.now(),
+    const messageId = parsed.data.id ?? randomUUID();
+    const ackTime = this.now();
+    const ackEnvelope: PeerMessage = {
+      ...parsed.data, id: messageId,
+      timestamp: ackTime, payload: structuredClone(parsed.data.payload)
+    };
+    const prepareValue = {
+      ...parsed.data, ...(targetId ? { toInstanceId: targetId } : {}), id: messageId,
       payload: structuredClone(parsed.data.payload)
     };
-    return { ok: true, status: 'received', data: envelope };
+    let outbound: PeerMessage = { ...prepareValue, timestamp: ackTime };
+    let preparationError: string | undefined;
+    try {
+      if (!targetId && instances.length !== 1) {
+        throw new Error(instances.length > 1 ? 'Multiple EServer instances connected; toInstanceId is required' : 'No unique EServer destination; specify toInstanceId');
+      }
+      if (this.capabilities.prepareForDurableDelivery)
+        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'pserver');
+    } catch (error) {
+      preparationError = error instanceof Error ? error.message : String(error);
+    }
+
+    const payload: TaskOperationPayload = { kind: 'F08', task, ...(targetId ? { targetId } : {}), outbound };
+    const ack: PeerMessageAck = { ok: true, status: 'received', data: ackEnvelope };
+    const initialState = preparationError ? 'failed' : 'queued';
+    const record = createReliableRecord({
+      key, fingerprint, createdAt: ackTime, updatedAt: ackTime, state: initialState, attempts: 0,
+      ...(preparationError ? { lastError: preparationError } : {}), payload, ack
+    });
+    const committed = await this.commit(record, 'Could not persist task at AAB');
+    if (committed !== ack) return committed;
+    await this.projectLegacy(payload);
+    this.publishTaskEvent(task, 'received', targetId);
+    if (preparationError) this.publishTaskEvent(task, 'forwardFailed', targetId, preparationError);
+    else await this.runner.enqueue(key);
+    return ack;
   }
 
   async receiveTaskResult(value: unknown, instanceId: string | undefined): Promise<PeerMessageAck> {
@@ -81,85 +135,116 @@ export class TaskWorkflow {
     }
 
     const task = validated.data;
-    const messageId = parsed.data.id ?? randomUUID();
-    try {
-      // Validate and save against the original F08 task before sending a receipt ACK.
-      await this.capabilities.store.saveResult(task);
-    } catch (error) {
-      console.error('[AAB] TASK RESULT PERSIST FAILED', task.id, error);
+    const key = `F09:${task.id}`;
+    const fingerprint = fingerprintReliableValue({ task, sourceInstanceId: instanceId });
+    const duplicate = this.matchExisting(
+      await this.capabilities.outbox.get(key), fingerprint, 'Conflicting duplicate task operation'
+    );
+    if (duplicate) return duplicate;
+    const original = await this.capabilities.store.read(task.id);
+    if (!original || original.config !== task.config || original.createdTime !== task.createdTime || task.updatedTime < original.updatedTime)
       return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB' };
-    }
+    if (await this.capabilities.hasLegacyOperation?.('F09', task.id))
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB' };
 
-    this.publishTaskResultEvent(task, 'received', instanceId);
-    console.log('[AAB] TASK RESULT RECEIVED', task.id, 'from', instanceId ?? 'eserver');
-    this.capabilities.defer(() => this.forwardTaskResult(parsed.data, messageId, task, instanceId));
-
-    const envelope: PeerMessage = {
-      ...parsed.data,
-      id: messageId,
-      sourceInstanceId: instanceId,
-      timestamp: Date.now(),
+    const messageId = parsed.data.id ?? randomUUID();
+    const ackTime = this.now();
+    const ackEnvelope: PeerMessage = {
+      ...parsed.data, id: messageId, sourceInstanceId: instanceId, timestamp: ackTime,
       payload: structuredClone(parsed.data.payload)
     };
-    return { ok: true, status: 'received', data: envelope };
+    const prepareValue = { ...parsed.data, id: messageId };
+    let outbound: PeerMessage = { ...prepareValue, sourceInstanceId: instanceId, timestamp: ackTime };
+    let preparationError: string | undefined;
+    try {
+      if (this.capabilities.prepareForDurableDelivery)
+        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'eserver', instanceId);
+    } catch (error) {
+      preparationError = error instanceof Error ? error.message : String(error);
+    }
+
+    const payload: TaskOperationPayload = {
+      kind: 'F09', task, ...(instanceId ? { sourceInstanceId: instanceId } : {}), outbound
+    };
+    const ack: PeerMessageAck = { ok: true, status: 'received', data: ackEnvelope };
+    const record = createReliableRecord({
+      key, fingerprint, createdAt: ackTime, updatedAt: ackTime,
+      state: preparationError ? 'failed' : 'queued', attempts: 0,
+      ...(preparationError ? { lastError: preparationError } : {}), payload, ack
+    });
+    const committed = await this.commit(record, 'Could not persist task result at AAB');
+    if (committed !== ack) return committed;
+    await this.projectLegacy(payload);
+    this.publishTaskResultEvent(task, 'received', instanceId);
+    if (preparationError) this.publishTaskResultEvent(task, 'forwardFailed', instanceId, preparationError);
+    else await this.runner.enqueue(key);
+    return ack;
   }
 
   async createHistorySnapshot(): Promise<TaskHistorySnapshot> {
     const tasks = await this.capabilities.store.listRecent(50);
     return {
-      timestamp: Date.now(),
-      tasks: tasks.map(task => ({
-        task,
-        status: task.status === 'finished' ? 'finished' : 'received',
-        event: 'task.snapshot'
-      }))
+      timestamp: this.now(),
+      tasks: tasks.map(task => ({ task, status: task.status === 'finished' ? 'finished' : 'received', event: 'task.snapshot' }))
     };
   }
 
+  private matchExisting(
+    existing: Awaited<ReturnType<ReliableRecordStore<TaskOperationPayload, PeerMessageAck>['get']>>,
+    fingerprint: string,
+    conflictMessage: string
+  ): PeerMessageAck | undefined {
+    if (!existing) return undefined;
+    if (existing.fingerprint !== fingerprint)
+      return { ok: false, code: 'INVALID_MESSAGE', error: conflictMessage };
+    return existing.ack;
+  }
+
+  private async commit(
+    record: ReturnType<typeof createReliableRecord<TaskOperationPayload, PeerMessageAck>>,
+    failureMessage: string
+  ): Promise<PeerMessageAck> {
+    try {
+      const result = await this.capabilities.outbox.create(record);
+      if (result.record.fingerprint !== record.fingerprint)
+        return { ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate task operation' };
+      return result.record.ack;
+    } catch (error) {
+      console.error('[AAB] TASK PERSIST FAILED', record.payload.task.id, error instanceof Error ? error.message : 'unknown');
+      return { ok: false, code: 'DELIVERY_FAILED', error: error instanceof Error && error.message === 'Reliability queue capacity is full'
+        ? 'Reliability queue capacity is full' : failureMessage };
+    }
+  }
+
+  private async projectLegacy(payload: TaskOperationPayload): Promise<void> {
+    try { await this.capabilities.projectLegacyOperation?.(payload); }
+    catch (error) { console.error('[AAB] TASK LEGACY PROJECTION FAILED', payload.task.id, error instanceof Error ? error.message : 'unknown'); }
+  }
+
+  private async deliver(payload: TaskOperationPayload): Promise<void> {
+    if (this.capabilities.deliverPreparedMessage) await this.capabilities.deliverPreparedMessage(payload.outbound);
+    else await this.capabilities.processMessage(payload.outbound, payload.kind === 'F08' ? 'pserver' : 'eserver', payload.sourceInstanceId);
+  }
+
+  private publishState(payload: TaskOperationPayload, state: string, reason?: string): void {
+    if (state !== 'delivered' && state !== 'failed') return;
+    if (payload.kind === 'F08') this.publishTaskEvent(payload.task, state === 'delivered' ? 'forwarded' : 'forwardFailed', payload.targetId, reason);
+    else this.publishTaskResultEvent(payload.task, state === 'delivered' ? 'forwarded' : 'forwardFailed', payload.sourceInstanceId, reason);
+  }
+
   private publishTaskEvent(task: StoredTask, status: TaskLifecycleStatus, targetId?: string, reason?: string): void {
-    this.capabilities.publishTaskLifecycle({
-      task, status, instanceId: targetId ?? null,
-      event: `task.${status}`, timestamp: Date.now(), ...(reason ? { reason } : {})
-    });
+    try {
+      this.capabilities.publishTaskLifecycle({ task, status, instanceId: targetId ?? null,
+        event: `task.${status}`, timestamp: this.now(), ...(reason ? { reason } : {}) });
+    } catch (error) { console.error('[AAB] TASK LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
   private publishTaskResultEvent(task: StoredTask, status: TaskLifecycleStatus, instanceId?: string, reason?: string): void {
-    this.capabilities.publishTaskResultLifecycle({
-      task, status, instanceId: instanceId ?? null,
-      event: `task.result.${status}`, timestamp: Date.now(), ...(reason ? { reason } : {})
-    });
+    try {
+      this.capabilities.publishTaskResultLifecycle({ task, status, instanceId: instanceId ?? null,
+        event: `task.result.${status}`, timestamp: this.now(), ...(reason ? { reason } : {}) });
+    } catch (error) { console.error('[AAB] TASK RESULT LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
-  private async forwardTask(
-    parsed: IncomingPeerMessage, messageId: string, task: StoredTask, targetId?: string
-  ): Promise<void> {
-    try {
-      if (!targetId) throw new Error('No unique EServer destination; specify toInstanceId');
-      if (!this.capabilities.isEServerConnectionReady(targetId)) throw new Error('EServer is offline');
-      const outbound: IncomingPeerMessage = { ...parsed, id: messageId, toInstanceId: targetId };
-      await this.capabilities.processMessage(outbound, 'pserver');
-      this.publishTaskEvent(task, 'forwarded', targetId);
-      console.log('[AAB] TASK FORWARDED', task.id, 'to', targetId);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      this.publishTaskEvent(task, 'forwardFailed', targetId, reason);
-      console.error('[AAB] TASK FORWARD FAILED', task.id, reason);
-    }
-  }
-
-  private async forwardTaskResult(
-    parsed: IncomingPeerMessage, messageId: string, task: StoredTask, instanceId?: string
-  ): Promise<void> {
-    try {
-      if (!this.capabilities.isPServerConnected()) throw new Error('PServer is offline');
-      const outbound: IncomingPeerMessage = { ...parsed, id: messageId };
-      await this.capabilities.processMessage(outbound, 'eserver', instanceId);
-      this.publishTaskResultEvent(task, 'forwarded', instanceId);
-      console.log('[AAB] TASK RESULT FORWARDED', task.id, 'to PServer');
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      this.publishTaskResultEvent(task, 'forwardFailed', instanceId, reason);
-      console.error('[AAB] TASK RESULT FORWARD FAILED', task.id, reason);
-    }
-  }
+  private now(): number { return this.capabilities.now?.() ?? Date.now(); }
 }

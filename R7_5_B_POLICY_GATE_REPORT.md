@@ -75,3 +75,13 @@ Changed paths: this gate report, `docs/architecture/R7_5_RELIABILITY_POLICY.md`,
 
 **Stop:** request approval of the detailed policy questions above. Resume Stage 2 within
 R7.5.B only after decisions are recorded. No R7.5.C or R7.6 work.
+
+## Historical gate resolution
+
+This report records the Stage 1 gate as it stood before detailed approval. The architecture
+owner subsequently approved Conservative Reliability Policy P01–P06 for Stage 2, including
+limits on uncertain replay, retry parameters, idempotency keys/conflict mapping, retention,
+canonical status projections and storage operations. The approved implementation contract
+now lives in [R7.5 reliability policy](docs/architecture/R7_5_RELIABILITY_POLICY.md) and
+the ADR. This historical STOP is resolved; the current implementation and fresh verification
+status are in [R7.5.B Stage 2 report](R7_5_B_CONSERVATIVE_RELIABILITY_IMPLEMENTATION_REPORT.md).

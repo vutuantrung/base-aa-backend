@@ -54,6 +54,9 @@ assign('M16', 'module', ['src/modules/aa-catalog/contracts.ts', 'src/modules/aa-
 assign('M17', 'module', ['src/infrastructure/database/persistence.ts', 'src/infrastructure/database/sqlite.ts']);
 assign('M18', 'module', ['src/observability/diagnostics.ts']);
 assign('Support', 'support', [
+  'src/shared/persistence/atomic-json-record-store.ts',
+  'src/shared/persistence/reliable-outbox-runner.ts',
+  'src/shared/contracts/reliable-delivery.ts',
   'src/shared/contracts/message.ts', 'src/shared/transport/connectable-client.ts',
   'src/shared/transport/connectable-message-client.ts', 'src/shared/transport/message-bus.ts', 'src/tools/utils.ts'
 ]);

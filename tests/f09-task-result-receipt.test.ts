@@ -28,7 +28,7 @@ after(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-test('F09 persists and ACKs EServer even when PServer is disconnected', async () => {
+test('F09 persists and ACKs EServer while an offline PServer delivery remains pending', async () => {
   const store = new JsonTaskFileStore(directory);
   const original = {
     id: 'task-' + randomUUID(), status: 'inProgress' as const,
@@ -51,16 +51,8 @@ test('F09 persists and ACKs EServer even when PServer is disconnected', async ()
   try {
     await Promise.all([connected(ui), connected(e)]);
     const events: any[] = [];
-    const failed = new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('F09 failure event missing')), 3000);
-      ui.on('task:result:lifecycle', event => {
-        if (event.task?.id !== original.id) return;
-        events.push(event);
-        if (event.status === 'forwardFailed') {
-          clearTimeout(timer);
-          resolve(event);
-        }
-      });
+    ui.on('task:result:lifecycle', event => {
+      if (event.task?.id === original.id) events.push(event);
     });
 
     const ack: any = await e.timeout(3000).emitWithAck('peer:message', {
@@ -72,10 +64,11 @@ test('F09 persists and ACKs EServer even when PServer is disconnected', async ()
     assert.deepEqual(await store.read(original.id), original);
     const snapshot = await store.listRecent();
     assert.deepEqual(snapshot, [finished]);
-    const failedEvent = await failed;
-    assert.equal(failedEvent.instanceId, 'e-f09-offline');
-    assert.match(failedEvent.reason, /PServer is offline/);
-    assert.deepEqual(events.map(event => event.status), ['received', 'forwardFailed']);
+    const operation = (await store.reliability.list()).find(record => record.payload.kind === 'F09');
+    assert.ok(operation?.state === 'queued' || operation?.state === 'retryable');
+    assert.equal(operation?.attempts, 0);
+    assert.deepEqual(events.map(event => event.status), ['received']);
+    await store.reliability.close();
   } finally {
     e.disconnect();
     ui.disconnect();

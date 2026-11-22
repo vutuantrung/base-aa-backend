@@ -5,6 +5,7 @@ import type { Server as HttpServer } from 'node:http';
 import { z } from 'zod';
 import { CHANNELS, type Channel, type MessageEnvelope } from '../../shared/contracts/message.js';
 import type { MessageSender } from '../../modules/messaging/messaging.js';
+import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
 
 const inboundMessage = z.object({ event: z.string().min(1).max(100), payload: z.unknown(), correlationId: z.string().max(200).optional() });
 type Ack = (result: { ok: true; data: MessageEnvelope } | { ok: false; error: string }) => void;
@@ -14,12 +15,15 @@ export interface SocketMessageHub {
 }
 
 /** M05 owns the Socket.IO server, namespaces, authentication and socket lifecycle. */
-export function createSocketGateway(http: HttpServer, deps: { sender: MessageSender; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean; transformations?: TransformationRegistry }) {
+export function createSocketGateway(http: HttpServer, deps: {
+  sender: MessageSender; corsOrigin: string; apiKey?: string; enableTestPeers?: boolean;
+  transformations?: TransformationRegistry; reliabilityPolicy?: ReliabilityRunnerPolicy
+}) {
   const io = new Server(http, { cors: { origin: deps.corsOrigin }, maxHttpBufferSize: 1_000_000 });
   let peerGateway: ReturnType<typeof attachPeerGateway> | undefined;
   if (deps.enableTestPeers) {
     if (!deps.transformations) throw new Error('Peer transformations registry is required');
-    peerGateway = attachPeerGateway(io, deps.apiKey, deps.transformations);
+    peerGateway = attachPeerGateway(io, deps.apiKey, deps.transformations, deps.reliabilityPolicy);
   }
   for (const channel of CHANNELS) {
     const namespace = io.of(`/${channel}`);

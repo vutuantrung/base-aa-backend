@@ -12,6 +12,7 @@ import { createSocketPeerGateway, type PeerSocketConnection } from './socket-pee
 import { SocketPeerMessageDelivery } from './socket-peer-message-delivery.js';
 import { sendTaskHistorySnapshot } from './task-history-snapshot.js';
 import { sendResourceSelectionSnapshot } from './resource-selection-snapshot.js';
+import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-outbox-runner.js';
 
 export interface ExternalPeerTransport extends PServerPeerTransport {}
 
@@ -19,6 +20,7 @@ export interface PeerMessageHandlerCapabilities {
   receiveResourceSelection(value: unknown): Promise<PeerMessageAck>;
   receiveTaskRequest(value: unknown): Promise<PeerMessageAck>;
   receiveTaskResult(value: unknown, authenticatedInstanceId?: string): Promise<PeerMessageAck>;
+  notifyPServerReady?(): void;
   processGenericMessage(
     value: unknown,
     authenticatedFrom: PeerId,
@@ -56,7 +58,10 @@ function getRawPayloadType(value: unknown): unknown {
  * EServer instances have separate authenticated sockets keyed by instanceId.
  * SServer and AAUI retain their single-connection behavior.
  */
-export function attachPeerGateway(io: Server, apiKey: string | undefined, transformations: TransformationRegistry) {
+export function attachPeerGateway(
+  io: Server, apiKey: string | undefined, transformations: TransformationRegistry,
+  reliabilityPolicy?: ReliabilityRunnerPolicy
+) {
   const directory = new PeerDirectory();
   const connections = createSocketPeerGateway(io, apiKey, directory);
   const destinationPolicy = new PeerDestinationPolicy(directory, new SocketPeerMessageDelivery(connections));
@@ -86,18 +91,31 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   const service = new PeerMessageService(transformations, destinationPolicy);
   const taskWorkflow = new TaskWorkflow({
     store: taskStore,
+    outbox: taskStore.reliability,
+    hasLegacyOperation: (kind, taskId) => taskStore.hasLegacyOperation(kind, taskId),
+    projectLegacyOperation: payload => taskStore.projectLegacyOperation(payload),
     listEServerInstances: () => directory.listInstances('eserver'),
     isEServerConnectionReady: instanceId => getConnection('eserver', instanceId)?.connected ?? false,
     isPServerConnected: () => destinationPolicy.isPServerConnected(),
     processMessage: (value, authenticatedFrom, authenticatedInstanceId) =>
       service.process(value, authenticatedFrom, authenticatedInstanceId),
+    prepareForDurableDelivery: (value, authenticatedFrom, authenticatedInstanceId) =>
+      service.prepareForDurableDelivery(value, authenticatedFrom, authenticatedInstanceId),
+    deliverPreparedMessage: message => service.deliverPreparedMessage(message),
+    reliabilityPolicy,
     defer: work => { setImmediate(() => { void work(); }); },
     publishTaskLifecycle: notification => getConnection('aaui')?.emit('task:lifecycle', notification),
     publishTaskResultLifecycle: notification => getConnection('aaui')?.emit('task:result:lifecycle', notification)
   });
   const selectionWorkflow = new ResourceSelectionWorkflow({
     store: selectionStore,
+    outbox: selectionStore.reliability,
+    projectLegacyReceipt: record => selectionStore.projectLegacyReceipt(record),
     processMessage: (value, authenticatedFrom) => service.process(value, authenticatedFrom),
+    prepareForDurableDelivery: (value, authenticatedFrom) => service.prepareForDurableDelivery(value, authenticatedFrom),
+    deliverPreparedMessage: message => service.deliverPreparedMessage(message),
+    isPServerConnected: () => destinationPolicy.isPServerConnected(),
+    reliabilityPolicy,
     defer: work => { setImmediate(() => { void work(); }); },
     publishUpdated: record => getConnection('aaui')?.emit('resource-selection:updated', record)
   });
@@ -128,6 +146,7 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
     const instanceId = connection.instanceId;
     console.log(`[AAB] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${connection.connectionId}`);
     if (peerId === 'eserver') {
+      void taskWorkflow.destinationReady();
       publishPresence(instanceId!, 'online', connection.connectionId);
     } else if (peerId === 'aaui') {
       // Late AAUI connections and reconnects always receive the online set.
@@ -159,6 +178,20 @@ export function attachPeerGateway(io: Server, apiKey: string | undefined, transf
   });
 
   return {
+    async start(): Promise<void> {
+      await Promise.all([taskWorkflow.start(), selectionWorkflow.start()]);
+    },
+    async close(): Promise<void> {
+      const taskAttemptActive = taskWorkflow.close();
+      const selectionAttemptActive = selectionWorkflow.close();
+      await Promise.all([
+        taskStore.reliability.close(taskAttemptActive),
+        selectionStore.reliability.close(selectionAttemptActive)
+      ]);
+    },
+    notifyPServerReady(): void {
+      void Promise.all([taskWorkflow.destinationReady(), selectionWorkflow.destinationReady()]);
+    },
     registerPServerTransport(transport: ExternalPeerTransport): void { destinationPolicy.registerPServerTransport(transport); },
     receiveFromPServer(value: unknown): Promise<PeerMessageAck> { return handleMessage(value, 'pserver'); }
   };
