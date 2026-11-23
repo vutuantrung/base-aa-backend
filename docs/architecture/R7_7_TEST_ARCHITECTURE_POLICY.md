@@ -1,6 +1,6 @@
-# R7.7 Test Architecture Policy — Pending Owner Approval
+# R7.7 Test Architecture Policy — Approved D01–D07
 
-**Status: PENDING OWNER APPROVAL.** This Stage A package records alternatives and recommendations only. It authorizes no Stage B file movement, fixture refactor, script change, runtime-policy change or production change. Current scripts and test layout remain as-is until the owner selects decisions.
+**Status: APPROVED for R7.7.B implementation.** Architecture owner approved D01–D07 as recorded in the R7.7.B implementation prompt. These decisions authorize test-architecture changes only; production behavior, public contracts, runtime policy and data behavior remain out of scope.
 
 ## Context and constraints
 
@@ -90,7 +90,7 @@ Recommendation: D07=A. Before each Stage B batch, record files, test registratio
 
 ## Stage B acceptance and rollback
 
-Stage B should begin only after explicit owner selection or amendment of D01–D07. Acceptance requires:
+Stage B is authorized by the owner approval recorded above. Acceptance for this implementation checkpoint requires:
 
 1. The inventory validator finds every current test file once and validates responsibility IDs/layer/runner fields.
 2. Fast/Integration/Full selections are reviewed for inclusion and exclusion against all M01–M18, SG02, key flows and crash/lifecycle invariants.
@@ -104,4 +104,4 @@ Rollback: revert one migration batch at a time, restore the prior file/fixture o
 
 ## Approval record
 
-No decisions are approved by this document. Owner selection is required before R7.7.B implementation. No Stage B work is authorized by the recommendations above.
+Approval record: R7.7.B owner prompt authoritatively selects D01=A, D02=A+B, D03=A, D04=A+D, D05=A, D06=A, D07=A. The alternatives above are historical context; approved selections and implementation boundaries are captured in the Stage B report.

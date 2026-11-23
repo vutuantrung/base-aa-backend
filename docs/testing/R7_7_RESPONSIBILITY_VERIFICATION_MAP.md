@@ -55,4 +55,17 @@ Examples for a future agent selector (not a complete analyzer):
 - Change to `src/infrastructure/http/http-api-router.ts` / M07: HTTP route contract files (`http-gateway`, `session-http-api`, `process-usage-http-api`, `aa-catalog-boundary` as relevant), then full gates.
 - Change to `src/app/application-coordinator.ts` / M02: `application-coordinator`, lifecycle, startup rollback and peer ACK drain, then full gates.
 
-Selection by responsibility is a review aid. Imports and runtime composition can be transitive; Stage A does not provide sound automatic impact analysis or claim coverage percentages.
+Selection by responsibility is a review aid. Imports and runtime composition can be transitive; this does not provide sound automatic impact analysis or claim coverage percentages.
+
+## Maintained manifest and profile commands
+
+[`R7_7_TEST_MANIFEST.json`](R7_7_TEST_MANIFEST.json) is the maintained responsibility/profile manifest. The separate [`R7_7_TEST_INVENTORY.json`](R7_7_TEST_INVENTORY.json) remains the historical R7.7.A source inventory. Update the manifest whenever adding or moving a test file. `npm run test:manifest` checks real discovery under `tests/` and `testing/`, responsibility/layer/runner/profile values, and boolean requirements. Multi-owner rows and `unknown` are valid. The five playground tests retain `SG02` plus `unknown`; M12–M15 module classifications remain TBD.
+
+- `npm run test:fast`: architecture checker, typecheck, and manifest-selected deterministic backend contracts. The current selection excludes tests marked as requiring a listener, native SQLite, or child process. It is serial and does not claim measured speedup.
+- `npm run test:integration`: selected HTTP/Socket.IO, SQLite, durable-store and process-crash backend tests, followed by all playground tests. Requires Node 22.23.5, a loadable `better-sqlite3`, loopback bind, temporary filesystem and child-process permissions. It is a focused supplement, not the full regression gate.
+- `npm run test:full`: SQLite runtime preflight, architecture, typecheck, build, unchanged serial backend `npm test`, and the complete playground suite. Use before merge/release; it requires the same host capabilities as integration.
+- `npm test -- --test-concurrency=1` remains the unchanged full backend command. `npm run test:manifest` verifies that newly discovered files cannot silently fall outside selection.
+
+For Codex/Copilot: inspect the diff; map changed source and invariants to this table; run the focused tests and relevant integration selection; run full before merge; record Node/npm versions, exact commands, failures and environment limits. Test placement/imports are not proof of assertion ownership or transitive coverage.
+
+When selecting tests by source responsibility, distinguish **primary** assertions from **companions** that cross a boundary. M02 lifecycle changes pair coordinator, lifecycle, startup rollback and peer ACK drain. M07 HTTP changes select the exact auth-first and SQLite-disabled route matrix (`http-gateway`, `aa-catalog-boundary`, session and process-usage HTTP tests as applicable). M12 F08/F09 changes pair workflow/receipt tests with routing and live peer ACK when the changed operation crosses transport. M17 record-store changes pair outbox and process-crash tests. M09 fan-out changes pair routing assertions with application active-sibling settlement. Full verification remains required for merge or release absent a separately approved exception.

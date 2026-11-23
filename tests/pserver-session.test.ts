@@ -13,7 +13,7 @@ before(async () => {
       vmInfo: { udid: 'test-vm', sdk: '33', model: 'Pixel', abi: 'arm64-v8a', forSearch: true, platforms: ['facebook'] } }
   });
   await app.listen(0);
-  await pserver.arrival;
+  await pserver.waitForArrival();
   for (let attempt = 0; attempt < 100 && !app.pserverConnector?.connected; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }

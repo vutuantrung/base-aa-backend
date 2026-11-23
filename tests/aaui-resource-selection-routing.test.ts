@@ -26,7 +26,7 @@ before(async () => {
     } }
   });
   base = `http://127.0.0.1:${await app.listen(0)}`;
-  await pserver.arrival;
+  await pserver.waitForArrival();
   for (let i = 0; i < 100 && !app.pserverConnector?.connected; i++) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }

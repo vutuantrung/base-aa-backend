@@ -10,6 +10,10 @@ export async function createMockPServer() {
   let connected: Socket | undefined;
   let sessionId: string | undefined;
   const arrival = new Promise<Socket>(resolve => { resolveConnection = resolve; });
+  const waitForArrival = (timeoutMs = 5_000): Promise<Socket> => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms waiting for mock PServer arrival`)), timeoutMs);
+    arrival.then(socket => { clearTimeout(timer); resolve(socket); });
+  });
   peers.use((socket, next) => {
     if (socket.handshake.auth?.peerId !== 'aab') return next(new Error('invalid identity'));
     next();
@@ -36,6 +40,7 @@ export async function createMockPServer() {
     get connected() { return connected; },
     get sessionId() { return sessionId; },
     arrival,
+    waitForArrival,
     close: async () => {
       await new Promise<void>(resolve => io.close(() => resolve()));
       if (http.listening) await new Promise<void>(resolve => http.close(() => resolve()));

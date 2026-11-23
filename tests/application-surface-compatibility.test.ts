@@ -10,14 +10,14 @@ import { SqliteSessionRepository } from '../src/modules/session/session.js';
 const omittedSqlite = createApplication({ dbPath: ':memory:', corsOrigin: '*' });
 const enabledSqlite = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: true });
 const disabledSqlite = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false });
-const dynamicSqliteFlag: boolean = Math.random() > 0.5;
-const dynamicSqlite = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: dynamicSqliteFlag });
+const dynamicSqliteEnabled = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: true });
+const dynamicSqliteDisabled = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false });
 const concreteSessions: SqliteSessionRepository = enabledSqlite.sessions;
 const concreteUsage: SqliteProcessUsageRepository = enabledSqlite.usage;
 const concreteCatalog: SqliteAaCatalogRepository = enabledSqlite.catalog;
 const broadSessions: SqliteSessionRepository | undefined = disabledSqlite.sessions;
 const broadUsage: SqliteProcessUsageRepository | undefined = disabledSqlite.usage;
-const broadCatalog: SqliteAaCatalogRepository | undefined = dynamicSqlite.catalog;
+const broadCatalog: SqliteAaCatalogRepository | undefined = dynamicSqliteDisabled.catalog;
 const configuration: ResolvedConfiguration = {
   port: 0,
   enableTestPeers: false,
@@ -36,14 +36,14 @@ const pserverConfig = {
 };
 
 test('SQLite overloads and runtime values preserve concrete and optional repository handles', async () => {
-  const applications = [omittedSqlite, enabledSqlite, disabledSqlite, dynamicSqlite];
+  const applications = [omittedSqlite, enabledSqlite, disabledSqlite, dynamicSqliteEnabled, dynamicSqliteDisabled];
   try {
-    for (const app of [omittedSqlite, enabledSqlite, ...(dynamicSqliteFlag ? [dynamicSqlite] : [])]) {
+    for (const app of [omittedSqlite, enabledSqlite, dynamicSqliteEnabled]) {
       assert.ok(app.sessions);
       assert.ok(app.usage);
       assert.ok(app.catalog);
     }
-    for (const app of [disabledSqlite, ...(!dynamicSqliteFlag ? [dynamicSqlite] : [])]) {
+    for (const app of [disabledSqlite, dynamicSqliteDisabled]) {
       assert.equal(app.sessions, undefined);
       assert.equal(app.usage, undefined);
       assert.equal(app.catalog, undefined);

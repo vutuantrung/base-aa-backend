@@ -1,0 +1,1238 @@
+{
+  "schemaVersion": 1,
+  "description": "Maintained test responsibility and profile manifest. Update with each test addition or move; classifications are advisory.",
+  "entries": [
+    {
+      "path": "testing/aaui/tests/dashboard-state.test.cjs",
+      "runner": "playground-node-test",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [
+        "F03",
+        "F09",
+        "M13"
+      ],
+      "layer": "playground",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "testing/aaui/tests/resource-selection.test.cjs",
+      "runner": "playground-node-test",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "layer": "playground",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "testing/aaui/tests/task-flow.test.cjs",
+      "runner": "playground-node-test",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "layer": "playground",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "testing/tests/mock-vm-info.test.mjs",
+      "runner": "playground-node-test",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "layer": "playground",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "testing/tests/scheduled-peer-message.test.mjs",
+      "runner": "playground-node-test",
+      "responsibilityIds": [
+        "SG02",
+        "unknown"
+      ],
+      "businessFlows": [],
+      "layer": "playground",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/aa-catalog-boundary.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M07",
+        "M16",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/aa-catalog.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M16",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/aaui-resource-selection-routing.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M13"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/application-coordinator.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M07",
+        "M09"
+      ],
+      "businessFlows": [
+        "M09",
+        "M02"
+      ],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/application-lifecycle.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/application-peer-ack-drain.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/application-startup-rollback.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/application-surface-compatibility.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M07",
+        "M08",
+        "M14",
+        "M15",
+        "M16"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/architecture-check.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18"
+      ],
+      "businessFlows": [],
+      "layer": "architecture",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/configuration.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M01"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/demo-pserver-aaui.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "SG02",
+        "M03",
+        "M04",
+        "M05",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/eserver-presence.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/eserver-vm-info-forwarding.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/f03-sserver-routing.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M04",
+        "M05",
+        "M10"
+      ],
+      "businessFlows": [
+        "F03"
+      ],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/f09-task-result-receipt.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M12"
+      ],
+      "businessFlows": [
+        "F08",
+        "F09"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/forwarding.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M07",
+        "M09"
+      ],
+      "businessFlows": [
+        "M09"
+      ],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/http-gateway.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M01",
+        "M07",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/http-outbound-adapter.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M07",
+        "M09"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/integration-clients.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M08"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/integration.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M05",
+        "M07",
+        "M09",
+        "M10",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/multiple-eservers.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M06",
+        "M10"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/peer-connections.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/peer-destination-policy.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M06",
+        "M10"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/peer-directory.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M06"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/peer-forwarding.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M09",
+        "M10"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/peer-message-handler.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M12",
+        "M13"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/peer-message-service.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M06",
+        "M10",
+        "M11"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/process-usage-http-api.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M07",
+        "M15",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/process-usage-repository.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M15",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/pserver-aaui-task-roundtrip.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M12"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/pserver-protocol.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M03",
+        "M04"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/pserver-session.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M03",
+        "M04"
+      ],
+      "businessFlows": [],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/reliable-crash-process.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M10",
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "F08",
+        "F09",
+        "M13"
+      ],
+      "layer": "process",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": true,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/reliable-outbox.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M12",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "F08",
+        "F09",
+        "M13"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/resource-selection-persistence.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [
+        "M13"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/resource-selection-snapshot-adapter.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M13"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/resource-selection-store.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M13",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "contract",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/resource-selection-workflow.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M13"
+      ],
+      "businessFlows": [
+        "M13"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/routing.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M09"
+      ],
+      "businessFlows": [
+        "M09"
+      ],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/session-http-api.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M07",
+        "M14",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/session-repository.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M14",
+        "M17"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/shutdown-signals.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M02",
+        "M18"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/socket-peer-gateway-handshake.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M06"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/socket-peer-message-delivery.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M10"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/task-history-snapshot-adapter.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M12"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/task-history-snapshot.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M12"
+      ],
+      "businessFlows": [],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/task-received-routing.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M03",
+        "M04",
+        "M05",
+        "M10",
+        "M12"
+      ],
+      "businessFlows": [
+        "F09"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": true,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": true
+      },
+      "profiles": [
+        "integration",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/task-workflow.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M05",
+        "M10",
+        "M12"
+      ],
+      "businessFlows": [
+        "F08"
+      ],
+      "layer": "mixed",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": true,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/test-manifest-validator.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "unknown"
+      ],
+      "businessFlows": [],
+      "layer": "contract",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "tests/transformation-executor.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M10",
+        "M11"
+      ],
+      "businessFlows": [],
+      "layer": "unit",
+      "requirements": {
+        "listener": false,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "fast",
+        "full"
+      ]
+    }
+  ]
+}

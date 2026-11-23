@@ -13,7 +13,7 @@ before(async () => {
   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true, pserver: { url: pserver.url, vmInfo: { udid: 'test-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } } });
   registerPServerToAauiDemo(app.transformations);
   base = `http://127.0.0.1:${await app.listen(0)}`;
-  await pserver.arrival;
+  await pserver.waitForArrival();
   for (let attempt = 0; attempt < 100 && !app.pserverConnector?.connected; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
