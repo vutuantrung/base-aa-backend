@@ -49,6 +49,7 @@ test('configuration resolves standalone defaults and SQLite mode explicitly', ()
   assert.equal(configuration.application.enableTestPeers, false);
   assert.equal(configuration.application.pserver, undefined);
   assert.equal(configuration.application.shutdownTimeoutMs, 15_000);
+  assert.equal(resolveConfiguration({ ENABLE_TEST_PEERS: '0' }).enableTestPeers, false);
   assert.deepEqual(defaultVmInfo, { udid: 'aab-demo-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] });
   assert.deepEqual(resolveConfiguration({ ENABLE_TEST_PEERS: '1' }).application.pserver, defaultPServerConfig);
 });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { io, type Socket } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
 import { registerPServerToAauiDemo } from '../src/examples/pserver-to-aaui.js';
+import { executeTransformations } from '../src/modules/peer-messaging/transformation-registry.js';
 import { createMockPServer } from './support/mock-pserver.js';
 
 let app: ReturnType<typeof createApplication>;
@@ -65,4 +66,15 @@ test('other payload types pass through unchanged', async () => {
     assert.deepEqual(received.payload.data, { originalParam: 'hello' });
     assert.equal(received.processing.transformed, false);
   } finally { aaui.disconnect(); }
+});
+
+test('demo transform keeps its invalid originalParam failure', async () => {
+  await assert.rejects(Promise.resolve(executeTransformations(app.transformations, {
+    id: 'compatibility-invalid-input', version: '1.0', kind: 'event', from: 'pserver', to: 'aaui',
+    channel: 'worker', event: 'message', timestamp: 0,
+    payload: { type: 'demo.modified-param', version: '1.0', data: { originalParam: 7 } }
+  })), {
+    name: 'TransformationExecutionError',
+    message: 'Transformer demo-pserver-to-aaui-modified-param failed: originalParam must be a string'
+  });
 });

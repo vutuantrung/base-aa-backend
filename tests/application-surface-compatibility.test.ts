@@ -34,6 +34,8 @@ const pserverConfig = {
   url: 'http://127.0.0.1:1',
   vmInfo: { udid: 'compat-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] }
 };
+const exampleProbe = { from: 'pserver', to: 'aaui', payload: { type: 'demo.modified-param', version: '1.0', data: {} },
+  version: '1.0', kind: 'event', channel: 'worker', event: 'message', id: 'compatibility-probe', timestamp: 0 } as const;
 
 test('SQLite overloads and runtime values preserve concrete and optional repository handles', async () => {
   const applications = [omittedSqlite, enabledSqlite, disabledSqlite, dynamicSqliteEnabled, dynamicSqliteDisabled];
@@ -69,10 +71,41 @@ test('PServer connector exists only when peer gateway and PServer config are bot
   try {
     assert.equal(disabledPeers.pserverConnector, undefined);
     assert.equal(missingPserver.pserverConnector, undefined);
+    assert.deepEqual(missingPserver.transformations.resolve(exampleProbe), []);
     assert.ok(enabled.pserverConnector);
     assert.equal(enabled.pserverConnector.connected, false);
   } finally {
     await Promise.all([disabledPeers.close(), missingPserver.close(), enabled.close()]);
+  }
+});
+
+test('startApplication registers the example after onCreated and before listen using the top-level flag', async () => {
+  const topLevelOnly: ResolvedConfiguration = {
+    ...configuration,
+    enableTestPeers: true,
+    application: { ...configuration.application, enableTestPeers: false }
+  };
+  let createdApp: ApplicationInstance | undefined;
+  let visibleWhenCreated: ReturnType<ApplicationInstance['transformations']['resolve']> = [];
+  let visibleWhenListening: ReturnType<ApplicationInstance['transformations']['resolve']> = [];
+  const app = await startApplication(topLevelOnly, { info() {}, error() {} }, application => {
+    createdApp = application;
+    visibleWhenCreated = application.transformations.resolve(exampleProbe);
+    const listen = application.listen;
+    application.listen = port => {
+      visibleWhenListening = application.transformations.resolve(exampleProbe);
+      return listen(port);
+    };
+  });
+  try {
+    assert.equal(createdApp, app);
+    assert.deepEqual(visibleWhenCreated, []);
+    assert.equal(visibleWhenListening.length, 1);
+    assert.equal(visibleWhenListening[0]?.id, 'demo-pserver-to-aaui-modified-param');
+    assert.equal(visibleWhenListening[0]?.priority, 10);
+    assert.equal(app.pserverConnector, undefined);
+  } finally {
+    await app.close();
   }
 });
 
@@ -91,7 +124,12 @@ test('application listen returns the bound ephemeral port and close releases it'
 });
 
 test('startApplication accepts resolved configuration and stopApplication accepts close-only input', async () => {
-  const app = await startApplication(configuration, { info() {}, error() {} });
+  let visibleWhenCreated: ReturnType<ApplicationInstance['transformations']['resolve']> = [];
+  const app = await startApplication(configuration, { info() {}, error() {} }, application => {
+    visibleWhenCreated = application.transformations.resolve(exampleProbe);
+  });
+  assert.deepEqual(visibleWhenCreated, []);
+  assert.deepEqual(app.transformations.resolve(exampleProbe), []);
   await stopApplication({ close: async () => {} }, { info() {}, error() {} });
   await app.close();
 });
