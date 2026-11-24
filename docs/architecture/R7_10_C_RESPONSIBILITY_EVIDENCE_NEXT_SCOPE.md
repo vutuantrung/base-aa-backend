@@ -1,0 +1,30 @@
+# R7.10.C — Responsibility Evidence: Next Scope
+
+**Status:** owner-review proposal only. No survey or implementation is authorized by this document.
+
+## Evidence available in the repository
+
+| Candidate evidence area | Repository-grounded surface | Evidence provider needed | What local evidence does not establish |
+|---|---|---|---|
+| **Supported app API/distribution (preferred conditional discovery target)** | `src/app/create-app.ts` exports `createApplication`, `ApplicationConfig`, `ApplicationInstance` and overloads exposing 11 handles/capabilities. `src/app/lifecycle.ts` exports `startApplication`/`stopApplication`, including callback timing. [Application surface inventory](APPLICATION_SURFACE_INVENTORY.md) says several handles have no tracked access but external use is unknown. README documents embedding with `createApplication`. `package.json` marks the package `private` and contains no `exports` map. | A named repository/release maintainer who can state supported distribution and release channels; if an external embedding/deployment is supported, its named operator/consumer owner must confirm versions and used symbols. No accountable person or supported external channel is identified by the committed A/B artifacts or local repo. | `private: true` and lack of `exports` do not prove there are no consumers. README is evidence of a documented example, not evidence of production use. Grep cannot enumerate deployed or copied integrations. |
+| **Legacy public/facade paths (candidate within caller inventory)** | M08 `shared/transport/connectable-client.ts` compatibility re-export; M10 peer-messaging store facades that re-export M12/M13 owners; concrete M02 handles/types. See `MODULE_BOUNDARIES.md`, `DEPENDENCY_INVENTORY.md`, TD01/TD17. | Same named package/release or deployment owner; consumer repositories/releases and a support/deprecation policy. | Current local consumers and compatibility tests do not prove or disprove external imports. No removal/deprecation need or migration date is visible. |
+| **M12/M13 business ownership** | M12 task workflow and M13 resource selection have concrete workflow/store/outbox code and peer/API contracts. Module labels remain TBD by owner decision. M14/M15 are APP. | A named product/API owner for each workflow, plus downstream peer/receiver and operational support owner to confirm business outcomes, ACK meaning, retained data, escalation and support boundaries. No such owner is recorded in the repo. | Implementation location, `demo.*` names, README flows and test fixtures do not establish product ownership or consumer priorities. No real external receiver or product acceptance contract is in evidence. |
+| **Operator/deployment evidence** | `ENABLE_TEST_PEERS`, `ENABLE_SQLITE`, `DB_PATH`, workflow directory env vars and supported Node floor appear in source/package docs. TD18/19 record runtime and production evidence gaps; no deployment/Helm/container/release files are tracked by the bounded repository scan. | A named deployment owner/operator must provide supported Node/OS/filesystem, env sources, storage location, restart/backup expectations, PServer endpoint policy and safe test environment. None is named in the committed checkpoint evidence. | Local Node 22 tests and `/tmp` process-kill evidence do not establish target runtime/filesystem or remote PServer behavior. |
+
+The first bounded discovery, **if a provider is named**, should be an evidence inventory of supported distribution/deployment channels and direct app API/legacy symbol use only for those channels. The accountable repository/release maintainer must identify the channels first. For each confirmed channel, record owner, released version, entrypoint, consumed symbols/flags, compatibility promise and migration/deprecation process. Ask the deployment operator for observed feature-mode values only when a deployment channel is named. No code or ownership change follows automatically.
+
+**Current disposition: DEFER this discovery until a named evidence provider and at least one supported channel are supplied.** If none can be identified, record “no provider/channel evidence available” and preserve all exports, handles, flags and module labels. Do not interpret the absence of a provider or repo manifest as proof of non-use.
+
+## Product ownership alternative
+
+M12/M13 ownership discovery is a separate candidate, not bundled with the caller survey. Before authorizing it, identify the product/API owner and the real peer/receiver/operator who can state expected outcomes. Bound the questions to: responsible business actor, receipt versus completion, ACK/error meanings, data lifetime, retry/uncertain behavior, support/escalation owner, and compatibility/migration authority. Preserve existing R7.5 durable semantics during discovery. Stop and leave TBD if either workflow lacks an accountable owner or the downstream contract cannot be obtained.
+
+## Relative priority
+
+1. **First prerequisite:** name the repository/release maintainer and confirm supported app distribution/deployment channels. Until then, no active consumer survey is actionable.
+2. **Conditional bounded survey:** inventory the exact exported app surface and legacy aliases only against confirmed channels. It can reduce compatibility uncertainty without assuming a module owner.
+3. **Separate business evidence:** M12/M13 product/receiver/operator discovery only with named accountable parties. It has high data/ACK compatibility impact and cannot be inferred from code.
+4. **Defer operations runtime matrix:** already a distinct R7.10.A candidate; no operator target was supplied in B. Do not silently fold it into the AS-D02=B compatibility checkpoint.
+5. **No-action option:** if provider/consumer evidence is unavailable, preserve behavior and labels; carry TD01/TD15–TD19 forward as currently recorded. Do not create speculative surveys, APIs or migrations.
+
+This is discovery sequencing, not authorization for R7.10.D. M12/M13 remain TBD; M14/M15 remain APP. TD15–TD17, TD18/19 and all other open debts retain their existing status.

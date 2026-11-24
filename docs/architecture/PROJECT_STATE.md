@@ -1,5 +1,17 @@
 # AAB — Current checkpoint
 
+## R7.10 final architecture closure & verification (prepared; PENDING FINAL ARCHITECTURE OWNER REVIEW)
+
+- Source baseline verified at `3af7920814e2260ae3cdfeef220ef75fbea0daeb` on `main`; Node `v22.23.5`/npm `10.9.9`. R7.10.A/B/C scope is reconciled. Approved AS-D01=A, AS-D02=B, AS-D03=A, AS-D04=A, AS-D05=A scoped, AS-D06=A and SC-D01=A, SC-D02=C, SC-D03=A, SC-D04=A, SC-D05=A are recorded. Feature-mode semantics stay frozen; external ownership discovery waits for a named provider/target; additive design is NOT ELIGIBLE absent an accepted need.
+- See [final closure handoff](R7_10_FINAL_CLOSURE_DECISION_AND_HANDOFF.md), [C decision policy and dated approval record](R7_10_C_ARCHITECTURE_SCOPE_DECISION_POLICY.md), and [final verification report](../../R7_10_FINAL_ARCHITECTURE_CLOSURE_VERIFICATION_REPORT.md). R7.5–R7.9 constraints remain; M12/M13 TBD, M14/M15 APP, TD15–TD17 and all other debt open, M02 extraction DEFERRED—EQUIVALENCE NOT PROVEN. R7.9 F1/F2 limitations and historical failure identity/discrepancy remain unresolved.
+- Documentation/read-only checks only. No source/test/manifest/CI/package changes; no Full/serial/playground rerun. No staging, commit or push. **Recommend closure within approved scope, subject to final owner review; stop.** No R7.10.D or R7.11 authorization.
+
+## R7.10.C architecture scope reassessment & decision (prepared; PENDING ARCHITECTURE OWNER REVIEW)
+
+- Source baseline remains `3af7920814e2260ae3cdfeef220ef75fbea0daeb` on `main`; committed R7.10.A/B evidence and approved AS-D01=A, AS-D02=B, AS-D03=A, AS-D04=A, AS-D05=A scoped, AS-D06=A are preserved. Feature-mode semantics are proposed to remain frozen; no named defect justifies more characterization or redesign. External caller/product ownership discovery is deferred until an accountable provider and supported target are named; additive capability design is NOT ELIGIBLE without an accepted named requirement.
+- SC-D01–SC-D05 are all **PENDING OWNER APPROVAL**. See [feature-mode reassessment](R7_10_C_FEATURE_MODE_SCOPE_REASSESSMENT.md), [responsibility evidence next scope](R7_10_C_RESPONSIBILITY_EVIDENCE_NEXT_SCOPE.md), [decision policy](R7_10_C_ARCHITECTURE_SCOPE_DECISION_POLICY.md), and [checkpoint report](../../R7_10_C_ARCHITECTURE_SCOPE_REASSESSMENT_DECISION_REPORT.md). M12/M13 remain TBD; M14/M15 APP; TD15–TD17 remain open; M02 extraction remains DEFERRED—EQUIVALENCE NOT PROVEN. No implementation, ownership reclassification, debt closure, R7.10.D or R7.11 is authorized.
+- Node `v22.23.5`/npm `10.9.9`: architecture check passes (59 files/145 edges; zero runtime file SCC; existing M10↔M12↔M13 module SCC); manifest passes (55/55). Diff checks are recorded in the C report. This documentation-only checkpoint did not rerun Full/serial suites. No staging, commit or push; stop for Architecture Owner review.
+
 ## R7.10.B exact feature-mode compatibility characterization (complete; PENDING ARCHITECTURE OWNER REVIEW)
 
 - Source baseline verified at `ea08e70f7855c96e8ce7ab18c83c224aada1f545` on `main`; R7.10.A worktree artifacts and supplied prompts are preserved. Owner approved AS-D01=A, AS-D02=B, AS-D03=A, AS-D04=A, AS-D05=A scoped, AS-D06=A for this bounded checkpoint only; approval record is appended to [R7.10.A decision policy](R7_10_A_ARCHITECTURE_SCOPE_DECISION_POLICY.md). No R7.10.C/R7.11 authorization.
