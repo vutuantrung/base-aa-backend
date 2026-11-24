@@ -94,6 +94,18 @@ test('PServer feature gate and exact flag strings are preserved', () => {
   assert.equal(resolveConfiguration({ VM_FOR_SEARCH: '1', ENABLE_TEST_PEERS: '1' }).application.pserver?.vmInfo.forSearch, false);
 });
 
+test('CLI feature gates accept only the exact string 1', () => {
+  for (const [value, enabled] of [
+    [undefined, false], ['0', false], ['true', false], [' 1', false], ['1 ', false], ['TRUE', false], ['1', true]
+  ] as const) {
+    const configuration = resolveConfiguration(value === undefined ? {} : { ENABLE_TEST_PEERS: value, ENABLE_SQLITE: value });
+    assert.equal(configuration.enableTestPeers, enabled, `ENABLE_TEST_PEERS=${String(value)}`);
+    assert.equal(configuration.application.enableTestPeers, enabled, `nested enableTestPeers=${String(value)}`);
+    assert.equal(configuration.application.pserver !== undefined, enabled, `PServer config=${String(value)}`);
+    assert.equal(configuration.application.enableSqlite, enabled, `ENABLE_SQLITE=${String(value)}`);
+  }
+});
+
 test('PServer contracts remain structurally compatible across public boundaries', () => {
   assert.equal(canonicalVmInfo.udid, fullVmInfo.udid);
   assert.equal(canonicalPServerConfig.url, fullPServerConfig.url);

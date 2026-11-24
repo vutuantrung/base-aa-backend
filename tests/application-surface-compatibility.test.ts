@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
+import { io } from 'socket.io-client';
 import { createApplication, type ApplicationInstance } from '../src/app/create-app.js';
 import { startApplication, stopApplication } from '../src/app/lifecycle.js';
 import type { ResolvedConfiguration } from '../src/config/configuration.js';
@@ -141,6 +142,49 @@ test('startApplication registers the example after onCreated and before listen u
     assert.equal(app.pserverConnector, undefined);
   } finally {
     await app.close();
+  }
+});
+
+test('startApplication keeps nested peer mode enabled when top-level demo registration is disabled', async () => {
+  const priorTasks = process.env.AAB_TASK_STORE_DIR;
+  const priorSelections = process.env.AAB_SELECTION_STORE_DIR;
+  const root = await mkdtemp(join(tmpdir(), 'aab-r710b-mode-mismatch-'));
+  process.env.AAB_TASK_STORE_DIR = join(root, 'tasks');
+  process.env.AAB_SELECTION_STORE_DIR = join(root, 'selections');
+  const nestedOnly: ResolvedConfiguration = {
+    ...configuration,
+    enableTestPeers: false,
+    application: { ...configuration.application, enableTestPeers: true, pserver: undefined }
+  };
+  let visibleWhenCreated: ReturnType<ApplicationInstance['transformations']['resolve']> = [];
+  let app: ApplicationInstance | undefined;
+  let peer: ReturnType<typeof io> | undefined;
+  try {
+    app = await startApplication(nestedOnly, { info() {}, error() {} }, application => {
+      visibleWhenCreated = application.transformations.resolve(exampleProbe);
+    });
+    assert.deepEqual(visibleWhenCreated, []);
+    assert.deepEqual(app.transformations.resolve(exampleProbe), []);
+    assert.equal(app.pserverConnector, undefined);
+
+    const address = app.httpServer.address();
+    assert.ok(address && typeof address === 'object');
+    peer = io(`http://127.0.0.1:${address.port}/peers`, {
+      transports: ['websocket'], reconnection: false, auth: { peerId: 'aaui' }
+    });
+    await new Promise<void>((resolve, reject) => {
+      peer?.once('connect', resolve);
+      peer?.once('connect_error', reject);
+    });
+    assert.equal(peer.connected, true);
+  } finally {
+    peer?.disconnect();
+    if (app) await app.close();
+    if (priorTasks === undefined) delete process.env.AAB_TASK_STORE_DIR;
+    else process.env.AAB_TASK_STORE_DIR = priorTasks;
+    if (priorSelections === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
+    else process.env.AAB_SELECTION_STORE_DIR = priorSelections;
+    await rm(root, { recursive: true, force: true });
   }
 });
 
