@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { createApplication, type ApplicationInstance } from '../src/app/create-app.js';
 import { startApplication, stopApplication } from '../src/app/lifecycle.js';
 import type { ResolvedConfiguration } from '../src/config/configuration.js';
@@ -77,6 +81,37 @@ test('PServer connector exists only when peer gateway and PServer config are bot
   } finally {
     await Promise.all([disabledPeers.close(), missingPserver.close(), enabled.close()]);
   }
+});
+
+test('duplicate route IDs fail construction and the acquired SQLite database can be reopened', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aab-r79d-duplicate-route-'));
+  const dbPath = join(root, 'app.db');
+  const route = { id: 'duplicate', source: 'worker' as const, event: 'message',
+    destinations: [{ transport: 'socket' as const, channel: 'worker' as const }] };
+
+  try {
+    assert.throws(() => createApplication({ dbPath, corsOrigin: '*', routes: [route, route] }), {
+      name: 'Error', message: 'Duplicate route: duplicate'
+    });
+
+    const database = new Database(dbPath);
+    try {
+      const sessionTable = database.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
+        .get('table', 'Session') as { name: string } | undefined;
+      assert.equal(sessionTable?.name, 'Session');
+    } finally {
+      database.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('blank PServer UDID fails construction with the public connector validation error', () => {
+  assert.throws(() => createApplication({
+    dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true,
+    pserver: { url: 'http://127.0.0.1:1', vmInfo: { udid: '  ', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } }
+  }), { name: 'Error', message: 'PServer VM UDID is required' });
 });
 
 test('startApplication registers the example after onCreated and before listen using the top-level flag', async () => {
