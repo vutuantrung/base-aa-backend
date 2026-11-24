@@ -1,5 +1,12 @@
 # AAB — Current checkpoint
 
+## R7.9 final architecture closure verification (complete; PENDING FINAL ARCHITECTURE OWNER REVIEW)
+
+- Verified committed baseline and actual verification source SHA: `a260de8cbe9a2319fceb7c6d8c2a15488d7fca2c` on `main`. The R7.9 delta against R7.8 HEAD `d9b252faf1eafe1f15362398f3c9e5f98c9f67a9` is 24 paths; the only test delta is F1/F2 characterization and the F1 assertion correction. No production extraction occurred; R7.9.B remains **DEFERRED — EQUIVALENCE NOT PROVEN**.
+- RC-D01–D07 and FI-D01–D05 accepted choices remain recorded in their policies; R7.8 C-D01/02/03=A compatibility contracts remain binding. M12/M13 TBD; M14/M15 APP. TD15–TD17 and other open debt remain open. F2 async socket-close completion remains **NOT PROVEN**; historical focused-vs-Full discrepancy is **UNRESOLVED** and older 254/255 outcomes remain unattributed.
+- Node `v22.23.5`/npm `10.9.9`: focused 7/7; architecture 59/145; manifest 55/55; typecheck/build pass; Fast 88/88; authorized-host Integration 69 backend + 32 playground; Full 257 backend + 32 playground; serial backend 257/257; zero skips. Sandbox Integration was permission-blocked and is documented separately. See [final closure report](../../R7_9_FINAL_ARCHITECTURE_CLOSURE_VERIFICATION_REPORT.md) and `/tmp/r7_9_final/full-attempt-01.log` plus metadata.
+- Only this status note and the final report are new in the current worktree; the supplied final prompt remains untracked. No index change, stage, commit, push or debt closure. **GO for closure within approved scope, pending final owner acceptance. R7.9.E/R7.10 NOT STARTED / NOT AUTHORIZED.**
+
 ## R7.9.A–D/FIX1 consolidation (verification complete; pending Architecture Owner review)
 
 - Current source HEAD is unchanged at `d9b252faf1eafe1f15362398f3c9e5f98c9f67a9` on `main`. RC-D01–D07=A (D02 scoped parity-first) and FI-D01–D05=A are recorded in their decision policies; R7.8 C-D01/02/03=A remains binding. A/B/C/D/FIX1 histories remain linked below; D’s former NO-GO is superseded by the F1 correction and passing FIX1 evidence, not rewritten.
