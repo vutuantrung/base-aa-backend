@@ -1,5 +1,15 @@
 # AS — Current checkpoint
 
+> The first section is the current project state. Subsequent phase entries are preserved historical snapshots; their old statuses and forward instructions are not current. Use the closure section above as the Naming Migration status source.
+
+## Naming Migration closure (operator-closed; runtime verification remains partial)
+
+- Naming Migration implementation is complete and was explicitly closed by operator decision. AS `main` is at `b8311c3bc229a5327d3aca106ddc4d1db567c775` (`Naming Migration`), descended from original baseline `72b31e54e266743fbfd18b6169e4a85c843ddeb7`. At task entry, AS was clean with zero staged/unstaged/untracked paths. ARM is `arm-supervisor` at `4e887715d4576e6fa64644778f0072bc94c018b4`; four unstaged documentation paths were present at entry, zero staged and zero untracked. Those ARM changes are preserved.
+- Current mapping: PServer→CDC, AAB→AS, SServer→SPA, AAUI→AA; EServer, ARM and repository names are unchanged. No legacy aliases were introduced. Generic protocols, message fields/events, namespace/path/port contracts, module IDs, ACK/retry/delivery/persistence behavior, AA domain terminology and SQLite schema were preserved. See [Naming Migration closure](../../NAMING_MIGRATION_CLOSURE.md) and [accepted decisions](ARCHITECTURE_DECISIONS.md).
+- AS optional HOST remediation is implemented, focused-tested, packaged as immutable 1.1.1, installed and active in the approved persistent isolated ARM environment. Corrected fixed PORT configs are applied; peer releases remain 1.1.0. This does not prove a loopback runtime bind. At last authenticated inventory all five apps were STOPPED.
+- NM.3.3.V-R.1 diagnosis is PASS for read-only scope and confirms the earlier immediate listener check was premature relative to AS asynchronous startup. NM.3.3.V-R.2 is **deferred before application startup**: host network isolation could not be verified without prohibited system/root changes. RF-22 remains runtime-unverified; RF-23 EServer listeners unverified; RF-24 integration/authentication checks partial and AA-dependent flows unrun; RF-25 containment respected; RF-26 premature verification confirmed; RF-27 has no definition/disposition in retained records. Full regression after HOST remediation remains pending. No production readiness claim.
+- NM.4 was not executed. Remote Application Update remains a separate feature task and was not started. See [V-R.2 evidence](../../NM_3_3_V_R_STARTUP_DIAGNOSIS_AND_VERIFICATION_RECOVERY_REPORT.md) and [historical NM.3.3.V evidence](../../NM_3_3_V_RUNTIME_VERIFICATION_CLOSURE_REPORT.md).
+
 ## NM.3.3.V-R startup diagnosis (PASS for read-only scope; runtime remains unresolved)
 
 - Read-only source and installed AS 1.1.1 inspection confirm HOST resolution reaches `server.listen(port, host)`; AS awaits filesystem-backed task/selection outbox initialization before bind. Retained stdout later records successful HTTP listen and CDC session ACK in the same run after the immediate no-listener probe. ARM returns RUNNING after spawn for this readiness-disabled package; HTTP 200 does not mean listener-ready.
