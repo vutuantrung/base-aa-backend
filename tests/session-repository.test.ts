@@ -57,7 +57,7 @@ test('SQLite session repository lists, gets and creates parameterized raw names 
 });
 
 test('SQLite sessions remain available after database reopen', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-session-repository-'));
+  const directory = await mkdtemp(join(tmpdir(), 'as-session-repository-'));
   const path = join(directory, 'sessions.sqlite');
   try {
     const firstDatabase = openDatabase(path);

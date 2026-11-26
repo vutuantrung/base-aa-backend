@@ -144,7 +144,7 @@ export class ReliableOutboxRunner<TPayload, TAck> {
   }
 
   private reportScanFailure(error: unknown): void {
-    console.error('[AAB] RELIABILITY OUTBOX SCAN FAILED', error instanceof Error ? error.message : 'unknown');
+    console.error('[AS] RELIABILITY OUTBOX SCAN FAILED', error instanceof Error ? error.message : 'unknown');
   }
 
   private async scan(): Promise<void> {
@@ -194,7 +194,7 @@ export class ReliableOutboxRunner<TPayload, TAck> {
           cancelSlot = undefined;
           if (releaseSlot && !this.closed) await this.attempt(key);
         }
-        catch (error) { console.error('[AAB] RELIABILITY OUTBOX ATTEMPT FAILED', error instanceof Error ? error.message : 'unknown'); }
+        catch (error) { console.error('[AS] RELIABILITY OUTBOX ATTEMPT FAILED', error instanceof Error ? error.message : 'unknown'); }
         finally {
           if (cancelSlot) {
             cancelSlot();

@@ -3,7 +3,7 @@
   "description": "Maintained test responsibility and profile manifest. Update with each test addition or move; classifications are advisory.",
   "entries": [
     {
-      "path": "testing/aaui/tests/dashboard-state.test.cjs",
+      "path": "testing/aa/tests/dashboard-state.test.cjs",
       "runner": "playground-node-test",
       "responsibilityIds": [
         "SG02",
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "path": "testing/aaui/tests/resource-selection.test.cjs",
+      "path": "testing/aa/tests/resource-selection.test.cjs",
       "runner": "playground-node-test",
       "responsibilityIds": [
         "SG02",
@@ -49,7 +49,7 @@
       ]
     },
     {
-      "path": "testing/aaui/tests/task-flow.test.cjs",
+      "path": "testing/aa/tests/task-flow.test.cjs",
       "runner": "playground-node-test",
       "responsibilityIds": [
         "SG02",
@@ -154,7 +154,7 @@
       ]
     },
     {
-      "path": "tests/aaui-resource-selection-routing.test.ts",
+      "path": "tests/aa-resource-selection-routing.test.ts",
       "runner": "backend-node-test",
       "responsibilityIds": [
         "M05",
@@ -360,7 +360,7 @@
       ]
     },
     {
-      "path": "tests/demo-pserver-aaui.test.ts",
+      "path": "tests/demo-cdc-aa.test.ts",
       "runner": "backend-node-test",
       "responsibilityIds": [
         "SG02",
@@ -426,7 +426,7 @@
       ]
     },
     {
-      "path": "tests/f03-sserver-routing.test.ts",
+      "path": "tests/f03-spa-routing.test.ts",
       "runner": "backend-node-test",
       "responsibilityIds": [
         "M04",
@@ -492,6 +492,29 @@
         "timeSensitive": false
       },
       "profiles": [
+        "full"
+      ]
+    },
+    {
+      "path": "tests/host-binding.test.ts",
+      "runner": "backend-node-test",
+      "responsibilityIds": [
+        "M01",
+        "M02"
+      ],
+      "businessFlows": [
+        "M02"
+      ],
+      "layer": "integration",
+      "requirements": {
+        "listener": true,
+        "nativeSQLite": false,
+        "filesystem": false,
+        "process": false,
+        "timeSensitive": false
+      },
+      "profiles": [
+        "integration",
         "full"
       ]
     },
@@ -775,7 +798,7 @@
       ]
     },
     {
-      "path": "tests/pserver-aaui-task-roundtrip.test.ts",
+      "path": "tests/cdc-aa-task-roundtrip.test.ts",
       "runner": "backend-node-test",
       "responsibilityIds": [
         "M03",
@@ -797,7 +820,7 @@
       ]
     },
     {
-      "path": "tests/pserver-protocol.test.ts",
+      "path": "tests/cdc-protocol.test.ts",
       "runner": "backend-node-test",
       "responsibilityIds": [
         "M03",
@@ -817,7 +840,7 @@
       ]
     },
     {
-      "path": "tests/pserver-session.test.ts",
+      "path": "tests/cdc-session.test.ts",
       "runner": "backend-node-test",
       "responsibilityIds": [
         "M03",

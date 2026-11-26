@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { analyzeDependencies } from '../scripts/check-architecture.js';
+import { analyzeDependencies, discoverSourceFiles } from '../scripts/check-architecture.js';
 
 async function analyzeFixture(files: Record<string, string>) {
-  const root = await mkdtemp(join(tmpdir(), 'aab-architecture-'));
+  const root = await mkdtemp(join(tmpdir(), 'as-architecture-'));
   try {
     await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', strict: true } }));
     for (const [path, contents] of Object.entries(files)) {
@@ -48,7 +49,7 @@ test('named type-only exports remain erased and unresolved relative specifiers f
 test('M01 and M04 infrastructure imports are prohibited even when type-only', async () => {
   const graph = await analyzeFixture({
     'src/config/configuration.ts': "import type { Server } from '../infrastructure/http/http-server.js'; export type Config = Server;",
-    'src/modules/pserver/contracts.ts': "import type { Server } from '../../infrastructure/http/http-server.js'; export type Port = Server;",
+    'src/modules/cdc/contracts.ts': "import type { Server } from '../../infrastructure/http/http-server.js'; export type Port = Server;",
     'src/infrastructure/http/http-server.ts': 'export type Server = { close(): void };'
   });
   assert.equal(graph.errors.filter(error => error.includes('prohibits')).length, 2);
@@ -128,4 +129,65 @@ test('require calls are explicitly rejected as unanalyzed dependency syntax', as
     'src/modules/messaging/route-registry.ts': 'export const value = 1;'
   });
   assert.ok(graph.errors.some(error => error.includes('dynamic import()/require() is unsupported')));
+});
+
+test('source discovery follows the current working tree across Git and filesystem states', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'as-source-discovery-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+  try {
+    await writeFile(join(root, '.gitignore'), 'src/generated/\n');
+    await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', strict: true } }));
+    await mkdir(join(root, 'src/modules/messaging'), { recursive: true });
+    await writeFile(join(root, 'src/modules/messaging/messaging.ts'), 'export const original = true;');
+    git('init', '-q');
+    git('config', 'user.email', 'checker@example.invalid');
+    git('config', 'user.name', 'Checker Fixture');
+    git('add', '.');
+    git('commit', '-qm', 'fixture baseline');
+
+    assert.deepEqual(discoverSourceFiles(root), ['src/modules/messaging/messaging.ts']);
+
+    await writeFile(join(root, 'src/modules/messaging/messaging.ts'), 'export const changed = true;');
+    assert.deepEqual(discoverSourceFiles(root), ['src/modules/messaging/messaging.ts']);
+
+    await mkdir(join(root, 'src/modules/peer-messaging'), { recursive: true });
+    await writeFile(join(root, 'src/modules/peer-messaging/contracts.ts'), "import { value } from '../../infrastructure/http/http-server.js'; export const result = value;");
+    git('add', 'src/modules/peer-messaging/contracts.ts');
+    assert.ok(discoverSourceFiles(root).includes('src/modules/peer-messaging/contracts.ts'));
+
+    await mkdir(join(root, 'src/new-place'), { recursive: true });
+    await writeFile(join(root, 'src/new-place/file.ts'), 'export const value = 1;');
+    assert.ok(discoverSourceFiles(root).includes('src/new-place/file.ts'));
+
+    await mkdir(join(root, 'src/modules/cdc'), { recursive: true });
+    await mkdir(join(root, 'src/infrastructure/http'), { recursive: true });
+    await writeFile(join(root, 'src/modules/cdc/cdc-protocol.ts'), "import type { Server } from '../../infrastructure/http/http-server.js'; export type Protocol = Server;");
+    await writeFile(join(root, 'src/infrastructure/http/http-server.ts'), 'export type Server = { close(): void };');
+    const discoveredGraph = analyzeDependencies(root, discoverSourceFiles(root));
+    assert.ok(discoveredGraph.errors.some(error => error.includes('source ownership is unmapped')));
+    assert.ok(discoveredGraph.errors.some(error => error.includes('prohibits M04 imports of any kind into infrastructure')));
+
+    await mkdir(join(root, 'src/generated'), { recursive: true });
+    await writeFile(join(root, 'src/generated/output.ts'), 'export const generated = true;');
+    assert.ok(!discoverSourceFiles(root).includes('src/generated/output.ts'));
+
+    git('mv', 'src/modules/messaging/messaging.ts', 'src/modules/messaging/renamed.ts');
+    assert.deepEqual(discoverSourceFiles(root), [
+      'src/infrastructure/http/http-server.ts',
+      'src/modules/cdc/cdc-protocol.ts',
+      'src/modules/messaging/renamed.ts',
+      'src/modules/peer-messaging/contracts.ts',
+      'src/new-place/file.ts'
+    ].sort());
+
+    await rm(join(root, 'src/modules/messaging/renamed.ts'));
+    assert.deepEqual(discoverSourceFiles(root), [
+      'src/modules/peer-messaging/contracts.ts',
+      'src/infrastructure/http/http-server.ts',
+      'src/modules/cdc/cdc-protocol.ts',
+      'src/new-place/file.ts'
+    ].sort());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

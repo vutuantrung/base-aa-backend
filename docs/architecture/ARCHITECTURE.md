@@ -1,4 +1,6 @@
-# AAB — System architecture at R6.4.E
+# AS — System architecture at R6.4.E
+
+> **Current runtime overlay (NM.2.1–NM.2.3):** The R6.4.E description below is retained as historical architecture evidence. In the current local source, AS listens on port 3000, accepts EServer/SPA/AA on `/peers` (when the peer feature gate is enabled), and connects as Socket.IO client to CDC on Engine.IO path `/ws`, namespace `/`. CDC is the server on port 3001. EServer, SPA and AA are local consumers on ports 3002, 3003 and 3004. The current peer identities are `as`, `cdc`, `eserver`, `spa`, and `aa`; AS emits `as:welcome`. Generic `/session`, `/worker`, `peer:message`, and `peer:ping` names remain unchanged. See [current Socket.IO inventory](SOCKET_IO_HOSTS_NAMESPACES_EVENTS_INVENTORY.md) and [PROJECT_STATE](PROJECT_STATE.md). The historical R6.4.E description and referenced R6/R7 decisions below are not rewritten.
 
 Prepared from R0–R8 conversation handoff and R6 implementation evidence. Design targets are not guarantees of current conformance. See PROJECT_STATE for baseline and evidence status.
 
@@ -32,4 +34,4 @@ R0–R5: System Context, Responsibility Discovery, L2 Decomposition, Module Boun
 R8.1–5: architecture conformance, external compatibility, runtime reliability, environment isolation, final review/documentation. Earlier E1–E6 suspended; no experimental branch merge. R7 changes must be scoped and explicitly approved; decisions are in ARCHITECTURE_DECISIONS.
 
 ## Detailed references (on demand)
-`../PSERVER_SESSION_PROTOCOL.md`, `../MULTIPLE_ESERVERS.md`, `../PEER_MESSAGE_TRANSFORMATION.md`, `../PHASE_2_MESSAGE_ROUTING.md`, `../DEMO_PSERVER_AAUI.md`, `../HTTP_API_DESIGN.md`. Existing documents can contain legacy descriptions; source/tests govern current behavior. Historical reports remain at repo root. Dynamic event library in `../upcomming-features/AAB_DYNAMIC_EVENT_LIBRARY_HANDOFF.md` is deferred.
+`../CDC_SESSION_PROTOCOL.md`, `../MULTIPLE_ESERVERS.md`, `../PEER_MESSAGE_TRANSFORMATION.md`, `../PHASE_2_MESSAGE_ROUTING.md`, `../DEMO_CDC_AA.md`, `../HTTP_API_DESIGN.md`. Existing R6/R7 reports remain historical evidence. Dynamic event library discussion in `../upcomming-features/AS_DYNAMIC_EVENT_LIBRARY_HANDOFF.md` is deferred.

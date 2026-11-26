@@ -19,11 +19,11 @@ const record: StoredSelection = {
   deliveryStatus: 'pending'
 };
 const message = (data: unknown = originalSelection, extras: object = {}) => ({
-  version: '1.0', kind: 'request', from: 'aaui', to: 'pserver', channel: 'worker', event: 'message',
+  version: '1.0', kind: 'request', from: 'aa', to: 'cdc', channel: 'worker', event: 'message',
   payload: { type: 'demo.resource-selection', version: '1.0', data }, ...extras
 });
 const processedMessage: PeerMessage = {
-  version: '1.0', kind: 'request', from: 'aaui', to: 'pserver', channel: 'worker', event: 'message',
+  version: '1.0', kind: 'request', from: 'aa', to: 'cdc', channel: 'worker', event: 'message',
   payload: { type: 'demo.resource-selection', version: '1.0', data: record.selection },
   id: 'd2cbad1e-9c33-4000-8000-000000000001', timestamp: 1
 };
@@ -32,12 +32,12 @@ function harness(options: {
   save?: (selection: ResourceSelection) => Promise<StoredSelection>;
   updateDelivery?: (id: string, status: ForwardStatus, reason?: string) => Promise<void>;
   listRecent?: (limit: number) => Promise<StoredSelection[]>;
-  processMessage?: (value: unknown, from: 'aaui') => Promise<PeerMessage>;
+  processMessage?: (value: unknown, from: 'aa') => Promise<PeerMessage>;
   outbox?: ResourceSelectionWorkflowCapabilities['outbox'];
 } = {}) {
   const notifications: StoredSelection[] = [];
   const schedules: Array<() => Promise<void>> = [];
-  const processCalls: Array<{ value: unknown; from: 'aaui' }> = [];
+  const processCalls: Array<{ value: unknown; from: 'aa' }> = [];
   const writes: Array<{ id: string; status: ForwardStatus; reason?: string }> = [];
   const order: string[] = [];
   const capabilities: ResourceSelectionWorkflowCapabilities = {
@@ -67,7 +67,7 @@ function harness(options: {
       if (options.processMessage) return options.processMessage(value, from);
       return processedMessage;
     },
-    isPServerConnected: () => true,
+    isCdcConnected: () => true,
     defer(work) { order.push('defer'); schedules.push(work); },
     publishUpdated(updated) { order.push(`publish:${updated.deliveryStatus}`); notifications.push(updated); }
   };
@@ -130,7 +130,7 @@ test('selection receipt waits for persistence, publishes normalized record, and 
   assert.equal(setup.processCalls.length, 0);
 
   await setup.schedules[0]?.();
-  assert.equal(setup.processCalls[0]?.from, 'aaui');
+  assert.equal(setup.processCalls[0]?.from, 'aa');
   const outbound = setup.processCalls[0]?.value;
   assert.ok(outbound && typeof outbound === 'object');
   assert.equal(Reflect.get(outbound, 'id'), peerMessageId);
@@ -178,7 +178,7 @@ test('ambiguous delivery outcome remains pending and uncertain instead of unsafe
 });
 
 test('redelivery with a stable message ID replays the canonical ACK without duplicate receipt or send', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-selection-redelivery-'));
+  const directory = await mkdtemp(join(tmpdir(), 'as-selection-redelivery-'));
   const store = new JsonResourceSelectionStore(directory);
   try {
     const schedules: Array<() => Promise<void>> = [];
@@ -188,7 +188,7 @@ test('redelivery with a stable message ID replays the canonical ACK without dupl
       outbox: store.reliability,
       projectLegacyReceipt: saved => store.projectLegacyReceipt(saved),
       async processMessage() { return processedMessage; },
-      isPServerConnected: () => true,
+      isCdcConnected: () => true,
       defer(work) { schedules.push(work); },
       publishUpdated(record) { notifications.push(record); }
     };

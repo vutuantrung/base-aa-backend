@@ -31,7 +31,7 @@ test('snapshot adapter guards before lookup and delivers successful projection t
   assert.deepEqual(emitted, [{ event: 'task:lifecycle:snapshot', payload: snapshot }]);
 });
 
-test('snapshot success is not delivered to a disconnected or replaced AAUI after async history read', async () => {
+test('snapshot success is not delivered to a disconnected or replaced Aa after async history read', async () => {
   for (const replacement of ['disconnected', 'replaced']) {
     const { target, emitted } = connection();
     let current = true;
@@ -47,7 +47,7 @@ test('snapshot success is not delivered to a disconnected or replaced AAUI after
   }
 });
 
-test('snapshot failure fallback is delivered only while the requesting AAUI remains current', async () => {
+test('snapshot failure fallback is delivered only while the requesting Aa remains current', async () => {
   const originalError = console.error;
   console.error = () => {};
   try {

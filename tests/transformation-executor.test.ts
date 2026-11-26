@@ -7,7 +7,7 @@ import {
 import type { PeerMessage } from '../src/modules/peer-messaging/contracts.js';
 
 const original: PeerMessage = {
-  version: '1.0', kind: 'event', from: 'pserver', to: 'aaui', channel: 'worker', event: 'message',
+  version: '1.0', kind: 'event', from: 'cdc', to: 'aa', channel: 'worker', event: 'message',
   correlationId: 'correlation-1', causationId: 'cause-1',
   payload: { type: 'original.type', version: '1.0', data: { nested: { count: 1 } } },
   id: 'efc7d1b2-38e3-42b3-9b14-b35620f27a77', timestamp: 10, sourceInstanceId: 'source-1'
@@ -50,8 +50,8 @@ test('registry keeps the registered rule object by reference and observes later 
   registry.register(mutableRule);
   registry.register(secondRule);
 
-  mutableRule.from = 'pserver';
-  mutableRule.to = 'aaui';
+  mutableRule.from = 'cdc';
+  mutableRule.to = 'aa';
   mutableRule.payloadType = 'original.type';
   mutableRule.priority = 1;
   mutableRule.transformer.transform = message => {
@@ -71,11 +71,11 @@ test('matching uses original envelope fields even after an earlier transform cha
   registry.register({ ...rule('change-type', message => {
     executed.push('change-type');
     return { ...message.payload, type: 'replacement.type' };
-  }), from: 'pserver', to: 'aaui', payloadType: 'original.type', priority: 1 });
+  }), from: 'cdc', to: 'aa', payloadType: 'original.type', priority: 1 });
   registry.register({ ...rule('still-matches-original', message => {
     executed.push('still-matches-original');
     return message.payload;
-  }), from: 'pserver', to: 'aaui', payloadType: 'original.type', priority: 2 });
+  }), from: 'cdc', to: 'aa', payloadType: 'original.type', priority: 2 });
   registry.register({ ...rule('matches-output-only', () => {
     executed.push('matches-output-only');
     return { type: 'unexpected', version: '1.0', data: {} };
@@ -93,19 +93,19 @@ test('executor awaits async rules sequentially with fresh context and isolated e
   registry.register(rule('first', async (message, context) => {
     order.push('first-start');
     await Promise.resolve();
-    Object.assign(message, { from: 'sserver', to: 'aab' });
+    Object.assign(message, { from: 'spa', to: 'as' });
     if (message.payload.data !== null && typeof message.payload.data === 'object')
       Object.assign(message.payload.data, { nested: { count: 99 } });
     order.push('first-end');
-    assert.deepEqual(context, { from: 'pserver', to: 'aaui' });
+    assert.deepEqual(context, { from: 'cdc', to: 'aa' });
     return { ...message.payload, type: 'changed.type', data: { nested: { count: 2 } } };
   }, 1));
   registry.register(rule('second', async (message, context) => {
     order.push('second-start');
-    assert.equal(message.from, 'pserver');
-    assert.equal(message.to, 'aaui');
+    assert.equal(message.from, 'cdc');
+    assert.equal(message.to, 'aa');
     assert.equal(message.payload.type, 'changed.type');
-    assert.deepEqual(context, { from: 'pserver', to: 'aaui' });
+    assert.deepEqual(context, { from: 'cdc', to: 'aa' });
     await Promise.resolve();
     order.push('second-end');
     return message.payload;
@@ -209,9 +209,9 @@ test('resolution occurs once and already-resolved rule references survive unregi
 
 test('wildcard matching applies independently to sender, destination, and payload type', () => {
   const registry = new TransformationRegistry();
-  registry.register({ ...rule('any-from', message => message.payload), from: '*', to: 'aaui', payloadType: 'original.type' });
-  registry.register({ ...rule('any-to', message => message.payload), from: 'pserver', to: '*', payloadType: 'original.type' });
-  registry.register({ ...rule('any-type', message => message.payload), from: 'pserver', to: 'aaui', payloadType: '*' });
-  registry.register({ ...rule('no-match', message => message.payload), from: 'eserver', to: 'aaui', payloadType: 'original.type' });
+  registry.register({ ...rule('any-from', message => message.payload), from: '*', to: 'aa', payloadType: 'original.type' });
+  registry.register({ ...rule('any-to', message => message.payload), from: 'cdc', to: '*', payloadType: 'original.type' });
+  registry.register({ ...rule('any-type', message => message.payload), from: 'cdc', to: 'aa', payloadType: '*' });
+  registry.register({ ...rule('no-match', message => message.payload), from: 'eserver', to: 'aa', payloadType: 'original.type' });
   assert.deepEqual(registry.resolve(original).map(entry => entry.id), ['any-from', 'any-to', 'any-type']);
 });

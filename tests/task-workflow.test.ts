@@ -18,20 +18,20 @@ function task(id = 'task-workflow-1', status: StoredTask['status'] = 'inProgress
 
 function taskRequest(value = task(), extras: object = {}) {
   return {
-    version: '1.0', kind: 'request', from: 'pserver', to: 'eserver',
+    version: '1.0', kind: 'request', from: 'cdc', to: 'eserver',
     payload: { type: 'demo.task.request', version: '1.0', data: value }, ...extras
   };
 }
 
 function taskResult(value = task('task-workflow-1', 'finished'), extras: object = {}) {
   return {
-    version: '1.0', kind: 'response', from: 'eserver', to: 'pserver',
+    version: '1.0', kind: 'response', from: 'eserver', to: 'cdc',
     payload: { type: 'demo.task.result', version: '1.0', data: value }, ...extras
   };
 }
 
 const processedMessage: PeerMessage = {
-  version: '1.0', kind: 'event', from: 'pserver', to: 'aab', channel: 'worker', event: 'message',
+  version: '1.0', kind: 'event', from: 'cdc', to: 'as', channel: 'worker', event: 'message',
   payload: { type: 'test.processed', version: '1.0', data: {} },
   id: '8a97dbe2-d7f9-4c9b-9dcb-5fd0a3798708', timestamp: 1
 };
@@ -40,7 +40,7 @@ function harness(options: {
   store?: TaskFileStore;
   instances?: Array<{ instanceId?: string }>;
   eServerReady?: boolean;
-  pServerReady?: boolean;
+  cdcReady?: boolean;
   processMessage?: TaskWorkflowCapabilities['processMessage'];
   prepareForDurableDelivery?: TaskWorkflowCapabilities['prepareForDurableDelivery'];
   deliverPreparedMessage?: TaskWorkflowCapabilities['deliverPreparedMessage'];
@@ -65,7 +65,7 @@ function harness(options: {
     } : {}),
     listEServerInstances: () => options.instances ?? [],
     isEServerConnectionReady: () => options.eServerReady ?? true,
-    isPServerConnected: () => options.pServerReady ?? true,
+    isCdcConnected: () => options.cdcReady ?? true,
     async processMessage(value, from, instanceId) {
       processed.push({ value, from, instanceId });
       if (options.processMessage) return options.processMessage(value, from, instanceId);
@@ -91,12 +91,12 @@ test('invalid F08/F09 envelopes and task payloads return exact ACKs without side
   };
   const setup = harness({ store });
   assert.deepEqual(await setup.workflow.receiveTask({ ...taskRequest(), from: 'eserver' }), {
-    ok: false, code: 'INVALID_MESSAGE', error: 'Invalid PServer task envelope'
+    ok: false, code: 'INVALID_MESSAGE', error: 'Invalid Cdc task envelope'
   });
   assert.deepEqual(await setup.workflow.receiveTask(taskRequest(task('task-invalid', 'finished'))), {
     ok: false, code: 'INVALID_MESSAGE', error: 'Invalid inProgress task payload'
   });
-  assert.deepEqual(await setup.workflow.receiveTaskResult({ ...taskResult(), to: 'aaui' }, undefined), {
+  assert.deepEqual(await setup.workflow.receiveTaskResult({ ...taskResult(), to: 'aa' }, undefined), {
     ok: false, code: 'INVALID_MESSAGE', error: 'Invalid EServer task result envelope'
   });
   assert.deepEqual(await setup.workflow.receiveTaskResult(taskResult(task('task-invalid', 'inProgress')), undefined), {
@@ -154,7 +154,7 @@ test('F08 waits for persistence, captures explicit target and retains ambiguous 
   assert.equal(setup.taskEvents.length, 1);
   failDelivery?.();
   await deferredForward;
-  assert.equal(setup.processed[0]?.from, 'pserver');
+  assert.equal(setup.processed[0]?.from, 'cdc');
   assert.equal(setup.processed[0]?.instanceId, undefined);
   const outbound = setup.processed[0]?.value;
   assert.ok(outbound && typeof outbound === 'object');
@@ -173,7 +173,7 @@ test('F08 falls back to the sole registered EServer when no target is supplied',
   if (!receipt.ok) return;
   assert.equal(receipt.data.toInstanceId, 'sole-worker');
   await setup.deferred[0]?.();
-  assert.equal(setup.processed[0]?.from, 'pserver');
+  assert.equal(setup.processed[0]?.from, 'cdc');
   const delivered = setup.processed[0]?.value;
   assert.ok(delivered && typeof delivered === 'object');
   assert.equal(Reflect.get(delivered, 'toInstanceId'), 'sole-worker');
@@ -233,7 +233,7 @@ test('F08 capacity rejection has no receipt notification or forwarding', async (
 });
 
 test('F08 duplicate task ID replays the exact receipt ACK without replacing or rescheduling the first', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-workflow-f08-duplicate-'));
+  const directory = await mkdtemp(join(tmpdir(), 'as-workflow-f08-duplicate-'));
   const store = new JsonTaskFileStore(directory);
   try {
     const original = task(`task-${randomUUID()}`);
@@ -305,7 +305,7 @@ test('concurrent same-key F08 arrivals may both transform before commit but only
 });
 
 test('F09 validates original correlation, writes compatible result file exclusively and propagates authenticated instance', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-workflow-f09-'));
+  const directory = await mkdtemp(join(tmpdir(), 'as-workflow-f09-'));
   try {
     const store = new JsonTaskFileStore(directory);
     const original = task(`task-${randomUUID()}`);
@@ -313,7 +313,7 @@ test('F09 validates original correlation, writes compatible result file exclusiv
     const setup = harness({ store });
     const mismatched = { ...original, status: 'finished' as const, config: 'different', updatedTime: 200 };
     assert.deepEqual(await setup.workflow.receiveTaskResult(taskResult(mismatched), 'worker-1'), {
-      ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB'
+      ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AS'
     });
     assert.equal(setup.resultEvents.length, 0);
     assert.equal(setup.deferred.length, 0);
@@ -355,8 +355,8 @@ test('F08 request and F09 result for the same task ID occupy distinct idempotenc
     [`F08:${original.id}`, `F09:${original.id}`].sort());
 });
 
-test('F09 receipt succeeds while offline PServer delivery remains retryable and unreported as failure', async () => {
-  const setup = harness({ pServerReady: false });
+test('F09 receipt succeeds while offline Cdc delivery remains retryable and unreported as failure', async () => {
+  const setup = harness({ cdcReady: false });
   const receipt = await setup.workflow.receiveTaskResult(taskResult(), 'worker-9');
   assert.equal(receipt.ok, true);
   if (!receipt.ok) return;

@@ -8,27 +8,27 @@ let base: string;
 before(async () => { base = `http://127.0.0.1:${await app.listen(0)}`; });
 after(async () => { await app.close(); });
 
-test('EServer, SServer and AAUI connect inbound to AAB', async () => {
-  for (const peerId of ['eserver', 'sserver', 'aaui']) {
+test('EServer, Spa and Aa connect inbound to AS', async () => {
+  for (const peerId of ['eserver', 'spa', 'aa']) {
     const socket = io(`${base}/peers`, { transports: ['websocket'], reconnection: false,
       auth: { peerId, token: 'dev-key' } });
     try {
       const welcome = await new Promise<{ from: string; to: string }>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('connect timeout')), 3000);
-        socket.once('aab:welcome', message => { clearTimeout(timeout); resolve(message); });
+        socket.once('as:welcome', message => { clearTimeout(timeout); resolve(message); });
         socket.once('connect_error', error => { clearTimeout(timeout); reject(error); });
       });
       assert.equal(welcome.to, peerId);
-      assert.equal(welcome.from, 'aab');
+      assert.equal(welcome.from, 'as');
       const ping = await socket.timeout(2000).emitWithAck('peer:ping', { from: peerId }) as { ok: boolean };
       assert.equal(ping.ok, true);
     } finally { socket.disconnect(); }
   }
 });
 
-test('PServer cannot connect inbound; AAB must initiate its connection', async () => {
+test('Cdc cannot connect inbound; AS must initiate its connection', async () => {
   for (const auth of [
-    { peerId: 'pserver', token: 'dev-key' },
+    { peerId: 'cdc', token: 'dev-key' },
     { peerId: 'unknown', token: 'dev-key' },
     { peerId: 'eserver', token: 'wrong' }
   ]) {
@@ -49,8 +49,8 @@ test('peer message ingress without an ACK callback is skipped; ACK-bearing ingre
   const ruleId = 'r73-a-peer-ingress-ack-characterization';
   app.transformations.register({
     id: ruleId,
-    from: 'aaui',
-    to: 'aab',
+    from: 'aa',
+    to: 'as',
     payloadType: 'r73.a.ingress',
     priority: 1,
     transformer: {
@@ -62,11 +62,11 @@ test('peer message ingress without an ACK callback is skipped; ACK-bearing ingre
   });
 
   const socket = io(`${base}/peers`, { transports: ['websocket'], reconnection: false,
-    auth: { peerId: 'aaui', token: 'dev-key' } });
+    auth: { peerId: 'aa', token: 'dev-key' } });
   const noAckId = 'b733a000-0000-4000-8000-000000000001';
   const withAckId = 'b733a000-0000-4000-8000-000000000002';
   const incoming = (id: string) => ({
-    version: '1.0', kind: 'event', from: 'aaui', to: 'aab', channel: 'worker', event: 'message',
+    version: '1.0', kind: 'event', from: 'aa', to: 'as', channel: 'worker', event: 'message',
     id, payload: { type: 'r73.a.ingress', version: '1.0', data: {} }
   });
 

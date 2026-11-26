@@ -13,14 +13,14 @@ test('directory registers multiple EServer instances and keeps the default ident
   assert.equal(directory.listInstances('eserver').length, 2);
 });
 
-test('directory rejects duplicate EServer instances and duplicate SServer/AAUI identities', () => {
+test('directory rejects duplicate EServer instances and duplicate Spa/Aa identities', () => {
   const directory = new PeerDirectory();
   directory.register('eserver', 'first', 'same');
-  directory.register('sserver', 'status-one');
-  directory.register('aaui', 'ui-one');
+  directory.register('spa', 'status-one');
+  directory.register('aa', 'ui-one');
   assert.throws(() => directory.register('eserver', 'second', 'same'), DuplicatePeerIdentityError);
-  assert.throws(() => directory.register('sserver', 'status-two'), { message: 'peer already connected' });
-  assert.throws(() => directory.register('aaui', 'ui-two'), { message: 'peer already connected' });
+  assert.throws(() => directory.register('spa', 'status-two'), { message: 'peer already connected' });
+  assert.throws(() => directory.register('aa', 'ui-two'), { message: 'peer already connected' });
 });
 
 test('directory lookup, presence and removal follow the current connection identity', () => {
@@ -44,12 +44,12 @@ test('directory lookup, presence and removal follow the current connection ident
 test('directory enforces single-peer registration and removal without Socket.IO state', () => {
   const first = new PeerDirectory();
   const second = new PeerDirectory();
-  const identity = first.register('aaui', 'ui-connection');
-  first.register('sserver', 'status-connection');
-  assert.equal(first.lookup('aaui'), identity);
-  assert.equal(first.lookup('sserver')?.connectionId, 'status-connection');
-  assert.equal(second.lookup('aaui'), undefined);
-  assert.equal(second.lookup('sserver'), undefined);
+  const identity = first.register('aa', 'ui-connection');
+  first.register('spa', 'status-connection');
+  assert.equal(first.lookup('aa'), identity);
+  assert.equal(first.lookup('spa')?.connectionId, 'status-connection');
+  assert.equal(second.lookup('aa'), undefined);
+  assert.equal(second.lookup('spa'), undefined);
   assert.equal(first.remove(identity), true);
-  assert.equal(first.lookup('aaui'), undefined);
+  assert.equal(first.lookup('aa'), undefined);
 });

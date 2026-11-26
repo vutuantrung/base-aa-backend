@@ -26,31 +26,31 @@ export interface PeerSocketDelivery {
   deliver(peerId: DirectoryPeerId, connectionId: string, message: PeerMessage): Promise<void>;
 }
 
-export interface PServerPeerTransport {
+export interface CdcPeerTransport {
   isConnected(): boolean;
   deliver(message: PeerMessage): Promise<void>;
 }
 
 /** M10 destination policy over M06 identity and transport delivery capabilities. */
 export class PeerDestinationPolicy implements PeerDelivery {
-  private pserverTransport: PServerPeerTransport | undefined;
+  private cdcTransport: CdcPeerTransport | undefined;
 
   constructor(
     private readonly directory: PeerDirectoryCapabilities,
     private readonly socketDelivery: PeerSocketDelivery
   ) {}
 
-  registerPServerTransport(transport: PServerPeerTransport): void {
-    this.pserverTransport = transport;
+  registerCdcTransport(transport: CdcPeerTransport): void {
+    this.cdcTransport = transport;
   }
 
-  isPServerConnected(): boolean {
-    return this.pserverTransport?.isConnected() ?? false;
+  isCdcConnected(): boolean {
+    return this.cdcTransport?.isConnected() ?? false;
   }
 
   isConnected(peer: PeerId, toInstanceId?: string, context?: PeerDeliveryContext): boolean {
-    if (peer === 'aab') return true;
-    if (peer === 'pserver') return this.pserverTransport?.isConnected() ?? false;
+    if (peer === 'as') return true;
+    if (peer === 'cdc') return this.cdcTransport?.isConnected() ?? false;
     if (peer === 'eserver') {
       const boundContext = this.asEServerContext(context);
       return boundContext
@@ -77,11 +77,11 @@ export class PeerDestinationPolicy implements PeerDelivery {
   }
 
   async deliver(message: PeerMessage, context?: PeerDeliveryContext): Promise<void> {
-    if (message.to === 'pserver') {
-      const transport = this.pserverTransport;
-      if (!transport?.isConnected()) throw new ProvenUnsentDeliveryError('PServer is offline');
+    if (message.to === 'cdc') {
+      const transport = this.cdcTransport;
+      if (!transport?.isConnected()) throw new ProvenUnsentDeliveryError('Cdc is offline');
       await transport.deliver(message);
-    } else if (message.to !== 'aab') {
+    } else if (message.to !== 'as') {
       let identity: PeerIdentity | undefined;
       if (message.to === 'eserver') {
         const boundContext = this.asEServerContext(context);
@@ -101,7 +101,7 @@ export class PeerDestinationPolicy implements PeerDelivery {
       }
       await this.socketDelivery.deliver(message.to, identity.connectionId, message);
     }
-    console.log(`[AAB] FORWARD id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} toInstance=${message.toInstanceId ?? '-'} type=${message.payload.type}`);
+    console.log(`[AS] FORWARD id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} toInstance=${message.toInstanceId ?? '-'} type=${message.payload.type}`);
   }
 
   private asEServerContext(context: PeerDeliveryContext | undefined): EServerDeliveryContext | undefined {

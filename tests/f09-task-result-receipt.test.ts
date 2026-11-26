@@ -15,20 +15,20 @@ let oldDirectory: string | undefined;
 
 before(async () => {
   directory = await mkdtemp(join(tmpdir(), 'f09-result-offline-'));
-  oldDirectory = process.env.AAB_TASK_STORE_DIR;
-  process.env.AAB_TASK_STORE_DIR = directory;
-  // Intentionally omit the PServer connector: AAB must still acknowledge a durable F09 receipt.
+  oldDirectory = process.env.AS_TASK_STORE_DIR;
+  process.env.AS_TASK_STORE_DIR = directory;
+  // Intentionally omit the Cdc connector: AS must still acknowledge a durable F09 receipt.
   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true });
   base = `http://127.0.0.1:${await app.listen(0)}`;
 });
 after(async () => {
   if (app) await app.close();
-  if (oldDirectory === undefined) delete process.env.AAB_TASK_STORE_DIR;
-  else process.env.AAB_TASK_STORE_DIR = oldDirectory;
+  if (oldDirectory === undefined) delete process.env.AS_TASK_STORE_DIR;
+  else process.env.AS_TASK_STORE_DIR = oldDirectory;
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-test('F09 persists and ACKs EServer while an offline PServer delivery remains pending', async () => {
+test('F09 persists and ACKs EServer while an offline Cdc delivery remains pending', async () => {
   const store = new JsonTaskFileStore(directory);
   const original = {
     id: 'task-' + randomUUID(), status: 'inProgress' as const,
@@ -37,7 +37,7 @@ test('F09 persists and ACKs EServer while an offline PServer delivery remains pe
   await store.save(original);
   const finished = { ...original, status: 'finished' as const, updatedTime: original.updatedTime + 100 };
   const ui = io(`${base}/peers`, {
-    transports: ['websocket'], reconnection: false, auth: { peerId: 'aaui' }
+    transports: ['websocket'], reconnection: false, auth: { peerId: 'aa' }
   });
   const e = io(`${base}/peers`, {
     transports: ['websocket'], reconnection: false,
@@ -56,7 +56,7 @@ test('F09 persists and ACKs EServer while an offline PServer delivery remains pe
     });
 
     const ack: any = await e.timeout(3000).emitWithAck('peer:message', {
-      version: '1.0', kind: 'response', from: 'eserver', to: 'pserver',
+      version: '1.0', kind: 'response', from: 'eserver', to: 'cdc',
       payload: { type: 'demo.task.result', version: '1.0', data: finished }
     });
     assert.equal(ack.ok, true);
@@ -86,7 +86,7 @@ test('F09 rejects invalid result without persisting it', async () => {
       e.once('connect_error', reject);
     });
     const ack: any = await e.timeout(3000).emitWithAck('peer:message', {
-      kind: 'response', from: 'eserver', to: 'pserver',
+      kind: 'response', from: 'eserver', to: 'cdc',
       payload: { type: 'demo.task.result', data: {
         id: 'task-' + randomUUID(), status: 'inProgress',
         config: 'invalid', createdTime: Date.now(), updatedTime: Date.now()

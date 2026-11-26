@@ -15,7 +15,7 @@ export function startScheduledPeerMessages({ socket, intervalMs, timeoutMs = 800
   const tick = async () => {
     if (stopped) return;
     if (!socket.connected) {
-      log('[scheduler] SCHEDULE SKIPPED: AAB disconnected');
+      log('[scheduler] SCHEDULE SKIPPED: AS disconnected');
       return;
     }
     if (inFlight) {

@@ -5,7 +5,7 @@ import { ResourceSelectionWorkflow } from '../../modules/resource-selection/reso
 import type { Server } from 'socket.io';
 import type { PeerId, PeerMessageAck } from '../../modules/peer-messaging/contracts.js';
 import { PeerMessageService, processPeerMessageForAck } from '../../modules/peer-messaging/peer-message-service.js';
-import { PeerDestinationPolicy, type PServerPeerTransport } from '../../modules/peer-messaging/peer-destination-policy.js';
+import { PeerDestinationPolicy, type CdcPeerTransport } from '../../modules/peer-messaging/peer-destination-policy.js';
 import type { TransformationRegistry } from '../../modules/peer-messaging/transformation-registry.js';
 import { PeerDirectory } from '../../modules/peer-messaging/peer-directory.js';
 import { createSocketPeerGateway, type PeerSocketConnection } from './socket-peer-gateway.js';
@@ -16,13 +16,13 @@ import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-
 import { DEFAULT_RELIABILITY_LIMITS } from '../../shared/persistence/atomic-json-record-store.js';
 import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
-export interface ExternalPeerTransport extends PServerPeerTransport {}
+export interface ExternalPeerTransport extends CdcPeerTransport {}
 
 export interface PeerMessageHandlerCapabilities {
   receiveResourceSelection(value: unknown): Promise<PeerMessageAck>;
   receiveTaskRequest(value: unknown): Promise<PeerMessageAck>;
   receiveTaskResult(value: unknown, authenticatedInstanceId?: string): Promise<PeerMessageAck>;
-  notifyPServerReady?(): void;
+  notifyCdcReady?(): void;
   processGenericMessage(
     value: unknown,
     authenticatedFrom: PeerId,
@@ -55,10 +55,10 @@ export function createPeerMessageHandler(capabilities: PeerMessageHandlerCapabil
   return async (value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessageAck> => {
     const operationType = getRawPayloadType(value);
 
-    if (authenticatedFrom === 'aaui' && operationType === 'demo.resource-selection') {
+    if (authenticatedFrom === 'aa' && operationType === 'demo.resource-selection') {
       return await capabilities.receiveResourceSelection(value);
     }
-    if (authenticatedFrom === 'pserver' && operationType === 'demo.task.request') {
+    if (authenticatedFrom === 'cdc' && operationType === 'demo.task.request') {
       return await capabilities.receiveTaskRequest(value);
     }
     if (authenticatedFrom === 'eserver' && operationType === 'demo.task.result') {
@@ -78,7 +78,7 @@ function getRawPayloadType(value: unknown): unknown {
 
 /**
  * EServer instances have separate authenticated sockets keyed by instanceId.
- * SServer and AAUI retain their single-connection behavior.
+ * Spa and Aa retain their single-connection behavior.
  */
 export function attachPeerGateway(
   io: Server, apiKey: string | undefined, transformations: TransformationRegistry,
@@ -97,20 +97,20 @@ export function attachPeerGateway(
   const taskStore = new JsonTaskFileStore(undefined, workflowCapacity);
   const selectionStore = new JsonResourceSelectionStore(undefined, workflowCapacity);
 
-  function getConnection(peerId: 'eserver' | 'sserver' | 'aaui', instanceId?: string): PeerSocketConnection | undefined {
+  function getConnection(peerId: 'eserver' | 'spa' | 'aa', instanceId?: string): PeerSocketConnection | undefined {
     const identity = directory.lookup(peerId, instanceId);
     return identity ? connections.getConnection(identity.connectionId) : undefined;
   }
 
   // Transport presence is distinct from the 10s/20s application message streams.
-  // Socket.IO events for each AAUI connection are sent in order.
+  // Socket.IO events for each Aa connection are sent in order.
   function presenceSnapshot() {
     return directory.presenceSnapshot();
   }
 
   function publishPresence(instanceId: string, status: 'online' | 'offline', socketId: string, reason?: string): void {
     if (coordinator && !coordinator.isAccepting()) return;
-    const target = getConnection('aaui');
+    const target = getConnection('aa');
     if (!target?.connected) return;
     target.emit('peer:status', {
       peerId: 'eserver', instanceId, status, socketId,
@@ -126,7 +126,7 @@ export function attachPeerGateway(
     projectLegacyOperation: payload => taskStore.projectLegacyOperation(payload),
     listEServerInstances: () => directory.listInstances('eserver'),
     isEServerConnectionReady: instanceId => getConnection('eserver', instanceId)?.connected ?? false,
-    isPServerConnected: () => destinationPolicy.isPServerConnected(),
+    isCdcConnected: () => destinationPolicy.isCdcConnected(),
     processMessage: (value, authenticatedFrom, authenticatedInstanceId) =>
       service.process(value, authenticatedFrom, authenticatedInstanceId),
     prepareForDurableDelivery: (value, authenticatedFrom, authenticatedInstanceId) =>
@@ -134,8 +134,8 @@ export function attachPeerGateway(
     deliverPreparedMessage: message => service.deliverPreparedMessage(message),
     reliabilityPolicy,
     defer: work => { setImmediate(() => { void work(); }); },
-    publishTaskLifecycle: notification => getConnection('aaui')?.emit('task:lifecycle', notification),
-    publishTaskResultLifecycle: notification => getConnection('aaui')?.emit('task:result:lifecycle', notification)
+    publishTaskLifecycle: notification => getConnection('aa')?.emit('task:lifecycle', notification),
+    publishTaskResultLifecycle: notification => getConnection('aa')?.emit('task:result:lifecycle', notification)
   });
   const selectionWorkflow = new ResourceSelectionWorkflow({
     store: selectionStore,
@@ -144,18 +144,18 @@ export function attachPeerGateway(
     processMessage: (value, authenticatedFrom) => service.process(value, authenticatedFrom),
     prepareForDurableDelivery: (value, authenticatedFrom) => service.prepareForDurableDelivery(value, authenticatedFrom),
     deliverPreparedMessage: message => service.deliverPreparedMessage(message),
-    isPServerConnected: () => destinationPolicy.isPServerConnected(),
+    isCdcConnected: () => destinationPolicy.isCdcConnected(),
     reliabilityPolicy,
     defer: work => { setImmediate(() => { void work(); }); },
-    publishUpdated: record => getConnection('aaui')?.emit('resource-selection:updated', record)
+    publishUpdated: record => getConnection('aa')?.emit('resource-selection:updated', record)
   });
 
-  function isCurrentAaui(connection: PeerSocketConnection): boolean {
-    return connection.peerId === 'aaui' && directory.lookup('aaui')?.connectionId === connection.connectionId;
+  function isCurrentAa(connection: PeerSocketConnection): boolean {
+    return connection.peerId === 'aa' && directory.lookup('aa')?.connectionId === connection.connectionId;
   }
 
   async function sendSelectionSnapshot(connection: PeerSocketConnection): Promise<void> {
-    await sendResourceSelectionSnapshot(connection, () => isCurrentAaui(connection), selectionWorkflow);
+    await sendResourceSelectionSnapshot(connection, () => isCurrentAa(connection), selectionWorkflow);
   }
 
   const handleMessage = createPeerMessageHandler({
@@ -177,47 +177,47 @@ export function attachPeerGateway(
     }
   }
 
-  async function processPServerIngress(value: unknown, acknowledge: (ack: PeerMessageAck) => void): Promise<void> {
-    await processAdmittedPeerMessage(coordinator, value, 'pserver', undefined, handleMessage, acknowledge);
+  async function processCdcIngress(value: unknown, acknowledge: (ack: PeerMessageAck) => void): Promise<void> {
+    await processAdmittedPeerMessage(coordinator, value, 'cdc', undefined, handleMessage, acknowledge);
   }
 
   function runSnapshot(operation: () => Promise<void>): void {
     const work = coordinator ? coordinator.run('snapshot', operation) : operation();
     void work.catch(error => {
       if (!(error instanceof Error && error.message === 'APPLICATION_DRAINING'))
-        console.error('[AAB] SNAPSHOT FAILED', error instanceof Error ? error.message : 'unknown');
+        console.error('[AS] SNAPSHOT FAILED', error instanceof Error ? error.message : 'unknown');
     });
   }
 
   async function sendTaskSnapshot(connection: PeerSocketConnection): Promise<void> {
-    await sendTaskHistorySnapshot(connection, () => isCurrentAaui(connection), taskWorkflow);
+    await sendTaskHistorySnapshot(connection, () => isCurrentAa(connection), taskWorkflow);
   }
 
   connections.onConnection(connection => {
     if (coordinator && !coordinator.isAccepting()) { connection.disconnect(); return; }
     const peerId = connection.peerId;
     const instanceId = connection.instanceId;
-    console.log(`[AAB] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${connection.connectionId}`);
+    console.log(`[AS] CONNECT peer=${peerId} instance=${instanceId ?? '-'} socket=${connection.connectionId}`);
     if (peerId === 'eserver') {
       void taskWorkflow.destinationReady();
       publishPresence(instanceId!, 'online', connection.connectionId);
-    } else if (peerId === 'aaui') {
-      // Late AAUI connections and reconnects always receive the online set.
+    } else if (peerId === 'aa') {
+      // Late Aa connections and reconnects always receive the online set.
       connection.emit('peer:status:snapshot', presenceSnapshot());
       // Task lifecycle events are transient; rehydrate the dashboard from disk.
       runSnapshot(() => sendTaskSnapshot(connection));
       runSnapshot(() => sendSelectionSnapshot(connection));
     }
-    connection.emit('aab:welcome', { from: 'aab', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
+    connection.emit('as:welcome', { from: 'as', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
-    if (peerId === 'aaui') {
+    if (peerId === 'aa') {
       connection.on('task:lifecycle:refresh', () => { runSnapshot(() => sendTaskSnapshot(connection)); });
       connection.on('resource-selection:refresh', () => { runSnapshot(() => sendSelectionSnapshot(connection)); });
     }
 
     connection.on('peer:ping', (payload, ackCandidate) => {
-      console.log(`[AAB] RECEIVE peer=${peerId} instance=${instanceId ?? '-'} event=peer:ping payload=${JSON.stringify(payload)}`);
-      if (typeof ackCandidate === 'function') ackCandidate({ ok: true, from: 'aab', timestamp: Date.now() });
+      console.log(`[AS] RECEIVE peer=${peerId} instance=${instanceId ?? '-'} event=peer:ping payload=${JSON.stringify(payload)}`);
+      if (typeof ackCandidate === 'function') ackCandidate({ ok: true, from: 'as', timestamp: Date.now() });
     });
     connection.on('peer:message', async (value, ackCandidate) => {
       if (typeof ackCandidate !== 'function') return;
@@ -227,7 +227,7 @@ export function attachPeerGateway(
       if (peerId === 'eserver' && removedCurrentIdentity) {
         publishPresence(instanceId!, 'offline', connection.connectionId, reason);
       }
-      console.log(`[AAB] DISCONNECT peer=${peerId} instance=${instanceId ?? '-'} reason=${reason}`);
+      console.log(`[AS] DISCONNECT peer=${peerId} instance=${instanceId ?? '-'} reason=${reason}`);
     });
   });
 
@@ -265,11 +265,11 @@ export function attachPeerGateway(
         selectionStore.reliability.close(preserveLock)
       ]);
     },
-    notifyPServerReady(): void {
+    notifyCdcReady(): void {
       void Promise.all([taskWorkflow.destinationReady(), selectionWorkflow.destinationReady()]);
     },
-    registerPServerTransport(transport: ExternalPeerTransport): void { destinationPolicy.registerPServerTransport(transport); },
-    receiveFromPServer(value: unknown): Promise<PeerMessageAck> { return receiveAdmittedMessage(value, 'pserver'); },
-    processPServerIngress
+    registerCdcTransport(transport: ExternalPeerTransport): void { destinationPolicy.registerCdcTransport(transport); },
+    receiveFromCdc(value: unknown): Promise<PeerMessageAck> { return receiveAdmittedMessage(value, 'cdc'); },
+    processCdcIngress
   };
 }

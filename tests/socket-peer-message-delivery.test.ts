@@ -6,7 +6,7 @@ import type { PeerMessage } from '../src/modules/peer-messaging/contracts.js';
 
 test('socket peer delivery preserves event, 5-second timeout and ACK interpretation', async () => {
   const message: PeerMessage = {
-    version: '1.0', kind: 'event', from: 'aaui', to: 'eserver', channel: 'worker', event: 'message',
+    version: '1.0', kind: 'event', from: 'aa', to: 'eserver', channel: 'worker', event: 'message',
     payload: { type: 'test', version: '1.0', data: {} }, id: '867fa91d-4a18-4018-8f34-f3c626d07460', timestamp: 1
   };
   const emitted: Array<{ event: string; payload: unknown; timeoutMs: number }> = [];

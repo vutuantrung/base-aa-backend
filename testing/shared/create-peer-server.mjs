@@ -6,19 +6,19 @@ import taskFlow from './task-flow.cjs';
 const { TASK_REQUEST_TYPE, TASK_RESULT_TYPE, TASK_STATUS, isTask, finishTask } = taskFlow;
 
 /**
- * Shared infrastructure for EServer / SServer.
- * Each runs its own Express + Socket.IO server and one outgoing AAB client.
- * PServer has a separate inbound Socket.IO implementation in testing/pserver.mjs.
+ * Shared infrastructure for EServer / SPA.
+ * Each runs its own Express + Socket.IO server and one outgoing AS client.
+ * CDC has a separate inbound Socket.IO implementation in testing/cdc.mjs.
  * Business communication channels are intentionally NOT defined here.
  */
 export async function startPeerServer({ peerId, port, instanceId }) {
-  const aabUrl = process.env.AAB_URL ?? 'http://127.0.0.1:3000';
+  const asUrl = process.env.AS_URL ?? 'http://127.0.0.1:3000';
   const host = process.env.PEER_HOST ?? '127.0.0.1';
   const app = express();
   app.disable('x-powered-by');
   const server = createServer(app);
   const ioServer = new Server(server, { cors: { origin: false } });
-  const socket = io(`${aabUrl.replace(/\/$/, '')}/peers`, {
+  const socket = io(`${asUrl.replace(/\/$/, '')}/peers`, {
     autoConnect: false,
     reconnection: true,
     transports: ['websocket'],
@@ -30,12 +30,12 @@ export async function startPeerServer({ peerId, port, instanceId }) {
     server: peerId,
     instanceId: instanceId ?? null,
     port,
-    aabConnected: socket.connected,
+    asConnected: socket.connected,
     status: 'running'
   }));
 
   app.post('/messages', async (req, res) => {
-    if (!socket.connected) { res.status(503).json({ ok: false, error: 'AAB is offline' }); return; }
+    if (!socket.connected) { res.status(503).json({ ok: false, error: 'AS is offline' }); return; }
     try {
       const response = await socket.timeout(8000).emitWithAck('peer:message', req.body);
       console.log(`[${peerId}] SEND peer:message`, req.body, 'ACK', response);
@@ -45,7 +45,7 @@ export async function startPeerServer({ peerId, port, instanceId }) {
     }
   });
 
-  // Local diagnostic Socket.IO server. Inbound only; intentionally no relay to AAB.
+  // Local diagnostic Socket.IO server. Inbound only; intentionally no relay to AS.
   ioServer.on('connection', client => {
     console.log(`[${peerId}] LOCAL SOCKET CONNECT id=${client.id}`);
     client.emit('peer:local-welcome', { from: peerId, message: 'connected locally' });
@@ -53,7 +53,7 @@ export async function startPeerServer({ peerId, port, instanceId }) {
   });
 
   socket.on('connect', () => {
-    console.log(`[${peerId}] CONNECT to AAB instance=${instanceId ?? '-'} socket=${socket.id}`);
+    console.log(`[${peerId}] CONNECT to AS instance=${instanceId ?? '-'} socket=${socket.id}`);
     socket.timeout(5000).emit('peer:ping', { from: peerId }, (error, response) => {
       if (error) { console.error(`[${peerId}] PING FAILED`, error.message); return; }
       console.log(`[${peerId}] RECEIVE peer:ping ACK`, response);
@@ -64,7 +64,7 @@ export async function startPeerServer({ peerId, port, instanceId }) {
   const receivedTasks = new Map();
   socket.on('peer:message', (message, ack) => {
     console.log(`[${peerId}] RECEIVE peer:message`, JSON.stringify(message));
-    if (peerId === 'eserver' && message?.from === 'pserver' && message?.to === 'eserver' &&
+    if (peerId === 'eserver' && message?.from === 'cdc' && message?.to === 'eserver' &&
         message.payload?.type === TASK_REQUEST_TYPE) {
       const task = message.payload.data;
       if (!isTask(task, TASK_STATUS.inProgress) || receivedTasks.has(task.id)) {
@@ -77,7 +77,7 @@ export async function startPeerServer({ peerId, port, instanceId }) {
     ack?.({ ok: true, status: 'received' });
   });
   // Explicit F09 trigger; no automatic 5-second completion.
-  // EServer posts the result to AAB; receipt ACK does not wait for PServer.
+  // EServer posts the result to AS; receipt ACK does not wait for CDC.
   if (peerId === 'eserver') {
     app.post('/demo/tasks/:id/finish', async (req, res) => {
       const original = receivedTasks.get(req.params.id);
@@ -86,13 +86,13 @@ export async function startPeerServer({ peerId, port, instanceId }) {
         return;
       }
       if (!socket.connected) {
-        res.status(503).json({ ok: false, error: 'AAB is offline' });
+        res.status(503).json({ ok: false, error: 'AS is offline' });
         return;
       }
       const task = finishTask(original);
       try {
         const response = await socket.timeout(8000).emitWithAck('peer:message', {
-          version: '1.0', kind: 'response', from: 'eserver', to: 'pserver',
+          version: '1.0', kind: 'response', from: 'eserver', to: 'cdc',
           payload: { type: TASK_RESULT_TYPE, version: '1.0', data: task }
         });
         console.log(`[eserver:${instanceId}] TASK RESULT RECEIPT ACK`, JSON.stringify(response));
@@ -103,16 +103,16 @@ export async function startPeerServer({ peerId, port, instanceId }) {
         receivedTasks.delete(task.id);
         res.status(202).json({ ok: true, status: response.status, task, messageId: response.data?.id });
       } catch (error) {
-        res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'AAB receipt failed' });
+        res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'AS receipt failed' });
       }
     });
     app.get('/demo/tasks', (_req, res) => {
       res.json({ tasks: [...receivedTasks.values()] });
     });
   }
-  socket.on('aab:welcome', message => console.log(`[${peerId}] RECEIVE aab:welcome`, message));
-  socket.on('connect_error', error => console.error(`[${peerId}] AAB CONNECT ERROR`, error.message));
-  socket.on('disconnect', reason => console.log(`[${peerId}] AAB DISCONNECT reason=${reason}`));
+  socket.on('as:welcome', message => console.log(`[${peerId}] RECEIVE as:welcome`, message));
+  socket.on('connect_error', error => console.error(`[${peerId}] AS CONNECT ERROR`, error.message));
+  socket.on('disconnect', reason => console.log(`[${peerId}] AS DISCONNECT reason=${reason}`));
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);

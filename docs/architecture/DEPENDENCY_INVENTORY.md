@@ -1,5 +1,9 @@
 # Dependency inventory — R7.1.0
 
+## Current naming overlay (NM.2.1–NM.2.3)
+
+This R7.1 dependency audit is retained as historical evidence. Current source paths use `src/modules/cdc/`, `src/infrastructure/socket/cdc-{connector,transport}.ts`, and `src/examples/cdc-to-aa.ts`; configuration uses `application.cdc` and `cdcConnector`. Logical module IDs M03/M04 and all dependency enforcement rules are unchanged. Old names in the audit body identify the source and decisions at its recorded R7.1 checkpoint, not current source paths.
+
 Historical R7.1.0 audit of tracked TypeScript in `src/`, NodeNext resolution, source baseline `08614077a92946ac2718ac5a3c5c46d5d30467fe`; inventory commit `0bae390fa871aa4797c4d0b44f3cf083f84fdc8e`, closure `61742f6ee7519612f6b412574a147429e4ab84f7`, environment verification `534419855148800e14180f45d719f0e3d9252080`. Its 109 resolved internal edges / 53 runtime-containing edges are historical R7.1.0 metrics, not current graph counts. Fresh executable R7.1.E metrics are recorded below. The static graph is not runtime proof.
 
 ## File ownership map

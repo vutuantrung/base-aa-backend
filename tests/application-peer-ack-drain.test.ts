@@ -8,11 +8,11 @@ import { io, type Socket } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
 import { JsonTaskFileStore } from '../src/modules/task-workflow/task-file-store.js';
 import { JsonResourceSelectionStore } from '../src/modules/resource-selection/resource-selection-store.js';
-import { createMockPServer } from './support/mock-pserver.js';
+import { createMockCdc } from './support/mock-cdc.js';
 
 let root: string;
 let app: ReturnType<typeof createApplication>;
-let pserver: Awaited<ReturnType<typeof createMockPServer>>;
+let cdc: Awaited<ReturnType<typeof createMockCdc>>;
 let base: string;
 
 function deferred<T = void>() {
@@ -40,37 +40,37 @@ function connectPeer(peerId: string, instanceId?: string): { socket: Socket; con
 }
 
 before(async () => {
-  root = await mkdtemp(join(tmpdir(), 'aab-r76-peer-drain-'));
-  process.env.AAB_TASK_STORE_DIR = join(root, 'tasks');
-  process.env.AAB_SELECTION_STORE_DIR = join(root, 'selections');
-  pserver = await createMockPServer();
+  root = await mkdtemp(join(tmpdir(), 'as-r76-peer-drain-'));
+  process.env.AS_TASK_STORE_DIR = join(root, 'tasks');
+  process.env.AS_SELECTION_STORE_DIR = join(root, 'selections');
+  cdc = await createMockCdc();
   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true, apiKey: 'test',
-    pserver: { url: pserver.url, vmInfo: { udid: 'drain-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } } });
+    cdc: { url: cdc.url, vmInfo: { udid: 'drain-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } } });
   base = `http://127.0.0.1:${await app.listen(0)}`;
-  await withTimeout(pserver.arrival.then(() => undefined), 'AAB did not connect to local PServer');
+  await withTimeout(cdc.arrival.then(() => undefined), 'AS did not connect to local Cdc');
   await withTimeout((async () => {
-    while (!app.pserverConnector?.connected) await new Promise<void>(resolve => setImmediate(resolve));
-  })(), 'PServer peer session did not become ready');
+    while (!app.cdcConnector?.connected) await new Promise<void>(resolve => setImmediate(resolve));
+  })(), 'Cdc peer session did not become ready');
 });
 
 after(async () => {
   if (app) await app.close().catch(() => undefined);
-  if (pserver) await pserver.close();
-  delete process.env.AAB_TASK_STORE_DIR;
-  delete process.env.AAB_SELECTION_STORE_DIR;
+  if (cdc) await cdc.close();
+  delete process.env.AS_TASK_STORE_DIR;
+  delete process.env.AS_SELECTION_STORE_DIR;
   if (root) await rm(root, { recursive: true, force: true });
 });
 
 test('live peer ingress and outbound ACK settle before drain cleanup; new business ingress is rejected', async () => {
   const eserver = connectPeer('eserver', 'drain-e1');
-  const aaui = connectPeer('aaui');
+  const aa = connectPeer('aa');
   await Promise.all([
     withTimeout(eserver.connected, 'EServer did not authenticate/connect'),
-    withTimeout(aaui.connected, 'AAUI did not authenticate/connect')
+    withTimeout(aa.connected, 'Aa did not authenticate/connect')
   ]);
 
-  const pserverSocket = pserver.connected;
-  assert.ok(pserverSocket, 'local PServer session socket missing');
+  const cdcSocket = cdc.connected;
+  assert.ok(cdcSocket, 'local Cdc session socket missing');
   const outboundEntered = deferred();
   const releaseOutboundAck = deferred();
   const ingressEntered = deferred();
@@ -89,27 +89,27 @@ test('live peer ingress and outbound ACK settle before drain cleanup; new busine
     ingressEntered.resolve();
     void releaseIngressAck.promise.then(() => { ingressAckSent = true; ack?.({ ok: true }); });
   };
-  pserverSocket.on('peer:message', outboundHandler);
+  cdcSocket.on('peer:message', outboundHandler);
   eserver.socket.on('peer:message', ingressHandler);
 
-  const selectionAck = aaui.socket.timeout(5000).emitWithAck('peer:message', {
-    id: randomUUID(), kind: 'request', from: 'aaui', to: 'pserver',
+  const selectionAck = aa.socket.timeout(5000).emitWithAck('peer:message', {
+    id: randomUUID(), kind: 'request', from: 'aa', to: 'cdc',
     payload: { type: 'demo.resource-selection', data: {
       browserProfileId: 'browser-1', proxyId: 'proxy-1', accountId: 'account-1'
     } }
   });
   const task = { id: `task-${randomUUID()}`, status: 'inProgress', config: 'drain-test', createdTime: Date.now(), updatedTime: Date.now() };
-  const ingressAck = pserverSocket.timeout(5000).emitWithAck('peer:message', {
-    kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'drain-e1',
+  const ingressAck = cdcSocket.timeout(5000).emitWithAck('peer:message', {
+    kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'drain-e1',
     payload: { type: 'demo.task.request', data: task }
   });
 
   try {
-    await withTimeout(outboundEntered.promise, 'outbound PServer ACK barrier was not entered');
+    await withTimeout(outboundEntered.promise, 'outbound Cdc ACK barrier was not entered');
     await withTimeout(ingressEntered.promise, 'inbound EServer ACK barrier was not entered');
     const shutdown = app.close();
-    const rejected = await withTimeout(aaui.socket.timeout(2000).emitWithAck('peer:message', {
-      kind: 'request', from: 'aaui', to: 'pserver',
+    const rejected = await withTimeout(aa.socket.timeout(2000).emitWithAck('peer:message', {
+      kind: 'request', from: 'aa', to: 'cdc',
       payload: { type: 'demo.resource-selection', data: {
         browserProfileId: 'browser-new', proxyId: 'proxy-new', accountId: 'account-new'
       } }
@@ -117,7 +117,7 @@ test('live peer ingress and outbound ACK settle before drain cleanup; new busine
     assert.deepEqual(rejected, { ok: false, code: 'DELIVERY_FAILED', error: 'APPLICATION_DRAINING' });
 
     releaseIngressAck.resolve();
-    const ingressResult = await withTimeout(ingressAck, 'admitted PServer ingress ACK did not settle');
+    const ingressResult = await withTimeout(ingressAck, 'admitted Cdc ingress ACK did not settle');
     assert.equal(ingressResult.ok, true);
     assert.equal(ingressAckSent, true);
     releaseOutboundAck.resolve();
@@ -142,9 +142,9 @@ test('live peer ingress and outbound ACK settle before drain cleanup; new busine
   } finally {
     releaseIngressAck.resolve();
     releaseOutboundAck.resolve();
-    pserverSocket.off('peer:message', outboundHandler);
+    cdcSocket.off('peer:message', outboundHandler);
     eserver.socket.off('peer:message', ingressHandler);
     eserver.socket.disconnect();
-    aaui.socket.disconnect();
+    aa.socket.disconnect();
   }
 });

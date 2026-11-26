@@ -7,10 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { io, type Socket } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
 import { JsonTaskFileStore } from '../src/modules/peer-messaging/task-file-store.js';
-import { createMockPServer } from './support/mock-pserver.js';
+import { createMockCdc } from './support/mock-cdc.js';
 
 let directory: string;
-let pserver: Awaited<ReturnType<typeof createMockPServer>>;
+let cdc: Awaited<ReturnType<typeof createMockCdc>>;
 let app: ReturnType<typeof createApplication>;
 let base: string;
 
@@ -27,34 +27,34 @@ function connection(peerId: string, instanceId?: string) {
 }
 
 before(async () => {
-  directory = await mkdtemp(join(tmpdir(), 'aab-task-tests-'));
-  process.env.AAB_TASK_STORE_DIR = directory;
-  pserver = await createMockPServer();
+  directory = await mkdtemp(join(tmpdir(), 'as-task-tests-'));
+  process.env.AS_TASK_STORE_DIR = directory;
+  cdc = await createMockCdc();
   app = createApplication({
     dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true,
-    pserver: { url: pserver.url, vmInfo: {
+    cdc: { url: cdc.url, vmInfo: {
       udid: 'task-test-vm', sdk: '', model: '', abi: '',
       forSearch: false, platforms: []
     } }
   });
   base = `http://127.0.0.1:${await app.listen(0)}`;
-  await pserver.waitForArrival();
-  for (let attempt = 0; attempt < 100 && !app.pserverConnector?.connected; attempt++) {
+  await cdc.waitForArrival();
+  for (let attempt = 0; attempt < 100 && !app.cdcConnector?.connected; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
-  assert.equal(app.pserverConnector?.connected, true);
+  assert.equal(app.cdcConnector?.connected, true);
 });
 after(async () => {
   if (app) await app.close();
-  if (pserver) await pserver.close();
-  delete process.env.AAB_TASK_STORE_DIR;
+  if (cdc) await cdc.close();
+  delete process.env.AS_TASK_STORE_DIR;
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notified', async () => {
+test('Cdc -> AS: persisted, EServer delivery and received ACK; Aa notified', async () => {
   const e = connection('eserver', 'e-task-1');
   await e.ready;
-  const ui = connection('aaui');
+  const ui = connection('aa');
   await ui.ready;
   try {
     const task = {
@@ -72,11 +72,11 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
       });
     });
     const lifecycle = new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('AAUI lifecycle event missing')), 3000);
+      const timer = setTimeout(() => reject(new Error('Aa lifecycle event missing')), 3000);
       ui.client.once('task:lifecycle', value => { clearTimeout(timer); resolve(value); });
     });
-    const result: any = await pserver.connected!.timeout(3000).emitWithAck('peer:message', {
-      kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'e-task-1',
+    const result: any = await cdc.connected!.timeout(3000).emitWithAck('peer:message', {
+      kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'e-task-1',
       payload: { type: 'demo.task.request', data: task }
     });
     assert.equal(result.ok, true);
@@ -89,11 +89,11 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
     assert.equal(event.instanceId, 'e-task-1');
     assert.deepEqual(event.task, task);
     // The returned EServer task message is also saved to a distinct file,
-    // forwarded to PServer and observed by AAUI after delivery.
+    // forwarded to Cdc and observed by Aa after delivery.
     const finished = { ...task, status: 'finished', updatedTime: task.updatedTime + 5000 };
     const returned = new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('PServer did not receive result')), 3000);
-      pserver.connected!.once('peer:message', (value, ack) => {
+      const timer = setTimeout(() => reject(new Error('Cdc did not receive result')), 3000);
+      cdc.connected!.once('peer:message', (value, ack) => {
         clearTimeout(timer);
         ack?.({ ok: true });
         resolve(value);
@@ -112,7 +112,7 @@ test('PServer -> AAB: persisted, EServer delivery and received ACK; AAUI notifie
       });
     });
     const finishAck: any = await e.client.timeout(3000).emitWithAck('peer:message', {
-      kind: 'response', from: 'eserver', to: 'pserver',
+      kind: 'response', from: 'eserver', to: 'cdc',
       payload: { type: 'demo.task.result', data: finished }
     });
     assert.equal(finishAck.ok, true);
@@ -131,13 +131,13 @@ test('offline EServer still gets persisted/received ACK while delivery remains p
     id: 'task-' + randomUUID(), status: 'inProgress', config: 'offline',
     createdTime: Date.now(), updatedTime: Date.now()
   };
-  const ui = connection('aaui');
+  const ui = connection('aa');
   await ui.ready;
   try {
     const events: any[] = [];
     ui.client.on('task:lifecycle', value => events.push(value));
-    const result: any = await pserver.connected!.timeout(3000).emitWithAck('peer:message', {
-      kind: 'request', from: 'pserver', to: 'eserver', toInstanceId: 'not-online',
+    const result: any = await cdc.connected!.timeout(3000).emitWithAck('peer:message', {
+      kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'not-online',
       payload: { type: 'demo.task.request', data: task }
     });
     assert.equal(result.ok, true);

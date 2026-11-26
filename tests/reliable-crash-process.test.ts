@@ -352,10 +352,10 @@ test('directory aliases still encounter the exclusive writer lock', async () => 
 test('partial application startup failure releases the store that started successfully', async () => {
   const taskDirectory = await mkdtemp(join(tmpdir(), 'r75-startup-task-'));
   const selectionDirectory = await mkdtemp(join(tmpdir(), 'r75-startup-selection-'));
-  const priorTaskDirectory = process.env.AAB_TASK_STORE_DIR;
-  const priorSelectionDirectory = process.env.AAB_SELECTION_STORE_DIR;
-  process.env.AAB_TASK_STORE_DIR = taskDirectory;
-  process.env.AAB_SELECTION_STORE_DIR = selectionDirectory;
+  const priorTaskDirectory = process.env.AS_TASK_STORE_DIR;
+  const priorSelectionDirectory = process.env.AS_SELECTION_STORE_DIR;
+  process.env.AS_TASK_STORE_DIR = taskDirectory;
+  process.env.AS_SELECTION_STORE_DIR = selectionDirectory;
   const staleLock = join(selectionDirectory, '.r7.5-outbox', '.writer.lock');
   await mkdir(join(selectionDirectory, '.r7.5-outbox'), { recursive: true });
   const staleHandle = await open(staleLock, 'wx', 0o600);
@@ -376,10 +376,10 @@ test('partial application startup failure releases the store that started succes
     assert.equal(app.httpServer.listening, false);
   } finally {
     await app.close().catch(() => undefined);
-    if (priorTaskDirectory === undefined) delete process.env.AAB_TASK_STORE_DIR;
-    else process.env.AAB_TASK_STORE_DIR = priorTaskDirectory;
-    if (priorSelectionDirectory === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
-    else process.env.AAB_SELECTION_STORE_DIR = priorSelectionDirectory;
+    if (priorTaskDirectory === undefined) delete process.env.AS_TASK_STORE_DIR;
+    else process.env.AS_TASK_STORE_DIR = priorTaskDirectory;
+    if (priorSelectionDirectory === undefined) delete process.env.AS_SELECTION_STORE_DIR;
+    else process.env.AS_SELECTION_STORE_DIR = priorSelectionDirectory;
     await rm(taskDirectory, { recursive: true, force: true });
     await rm(selectionDirectory, { recursive: true, force: true });
   }

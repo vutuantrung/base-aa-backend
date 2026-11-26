@@ -2,13 +2,13 @@
 
 ## State directories and writer ownership
 
-- Task operations use `${AAB_TASK_STORE_DIR}/.r7.5-outbox`; default legacy root is
+- Task operations use `${AS_TASK_STORE_DIR}/.r7.5-outbox`; default legacy root is
   `./data/tasks`.
-- Selection operations use `${AAB_SELECTION_STORE_DIR}/.r7.5-outbox`; default legacy root
+- Selection operations use `${AS_SELECTION_STORE_DIR}/.r7.5-outbox`; default legacy root
   is `./data/resource-selections`.
-- Directories must be isolated per AAB deployment and reside on a local filesystem that
+- Directories must be isolated per AS deployment and reside on a local filesystem that
   supports same-directory hard links and atomic replacement. New files use mode `0600`.
-- Run exactly one active AAB writer per state directory. `.writer.lock` is exclusive and
+- Run exactly one active AS writer per state directory. `.writer.lock` is exclusive and
   contains the owner PID/start time. A lock conflict fails startup. For stale-lock recovery,
   stop the service; resolve the canonical directory and filesystem/mount identity; verify
   through the service manager and host/container process namespaces that no owner is active;

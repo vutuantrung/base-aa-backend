@@ -14,7 +14,7 @@ npm run build
 npm test
 ```
 
-For local environment configuration, export the values in `.env` using your shell or use Node's `--env-file=.env` when launching the compiled app. Default HTTP port is `3000` and default database is `./data/app.db`.
+For local environment configuration, export the values in `.env` using your shell or use Node's `--env-file=.env` when launching the compiled app. Default HTTP port is `3000` and default database is `./data/app.db`. Optional `HOST` accepts an IPv4 or IPv6 literal and binds the shared HTTP/Socket.IO listener to that address; unset `HOST` preserves Node's prior unspecified-host behavior. Empty, whitespace-only, non-IP, or padded values are rejected. For standalone loopback-only use, set `HOST=127.0.0.1`.
 
 ## Business boundaries
 
@@ -110,28 +110,38 @@ See [Phase 2 design and test guide](docs/PHASE_2_MESSAGE_ROUTING.md) for routing
 Added the six GET endpoints specified in `api-data.json`. See [HTTP API design](docs/HTTP_API_DESIGN.md) for contracts and limitations. Records are stored locally in SQLite and can be populated via the internal `app.catalog.upsert*` repository methods; no additional public write API or mock records have been introduced.
 
 
-## Five-server integration playground (no new database functionality)
+## Local integration playground
 
-The playground consists of AAB (:3000), PServer (:3001), EServer (:3002), SServer (:3003), and Electron AAUI (:3004). PServer exposes Socket.IO `/aab` at port 3001 and **AAB connects outbound to PServer**. EServer, SServer and AAUI continue connecting outbound to AAB's `/peers` namespace. AAUI also calls AAB's HTTP health API. No business forwarding between peers is configured yet.
+The playground uses AS (:3000), CDC (:3001), EServer (:3002), SPA (:3003), and Electron AA (:3004). AS connects outbound to CDC over Socket.IO Engine.IO path `/ws` in the root namespace `/`. EServer, SPA, and AA connect to AS's `/peers` namespace. AA also calls AS's HTTP health API. These are local demo endpoints, not production deployment instructions.
 
-See [testing/README.md](testing/README.md). For AAB: `ENABLE_TEST_PEERS=1 npm run dev`. For the four peers, install dependencies within `testing/` and start each script in its own terminal. Keep this playground on localhost; use API_KEY for shared environments.
+See [testing/README.md](testing/README.md) for prerequisites and terminals. Start AS with `ENABLE_TEST_PEERS=1 npm run dev`, then start CDC, EServer, SPA, and AA with `npm --prefix testing run cdc`, `eserver`, `spa`, and `aa`. Electron requires a graphical desktop session. Keep this playground on localhost; use API_KEY for shared environments.
 
 
 ## Peer message transformation (new)
 
-The opt-in `/peers` test gateway accepts `peer:message` with `from`, `to`, `kind`, `payload.type` and `payload.data`. AAB validates FROM against the authenticated connection, runs optional business transforms selected by FROM/TO/type, then forwards the transformed envelope to TO. Peer receives/logs and acknowledges. This contract is separate from the legacy Phase 2 channels. See [peer message design](docs/PEER_MESSAGE_TRANSFORMATION.md).
+The opt-in `/peers` test gateway accepts `peer:message` with `from`, `to`, `kind`, `payload.type` and `payload.data`. AS validates FROM against the authenticated connection, runs optional business transforms selected by FROM/TO/type, then forwards the transformed envelope to TO. Peer receives/logs and acknowledges. This contract is separate from the legacy Phase 2 channels. See [peer message design](docs/PEER_MESSAGE_TRANSFORMATION.md).
 
 
 ### End-to-end demonstration
 
-For a concrete PServer -> AAB -> transformed payload -> AAUI example, run the testing environment and use `POST /demo/send-to-aaui` on PServer. [Step-by-step guide](docs/DEMO_PSERVER_AAUI.md).
+For a concrete CDC → AS → transformed payload → AA example, run the testing environment and use `POST /demo/send-to-aa` on CDC. [Step-by-step guide](docs/DEMO_CDC_AA.md).
 
 
-### PServer connection topology
+### CDC connection topology
 
-AAB initiates a Socket.IO client connection to `PSERVER_URL` (default `http://127.0.0.1:3001`) Socket.IO path `/ws` (namespace `/`). PServer is a Socket.IO server and no longer connects as a client to AAB. Other peers use `/peers` as before. PServer can still send messages through AAB and receive routed messages on the same AAB-established socket. See [testing guide](testing/README.md).
+AS initiates a Socket.IO client connection to `CDC_URL` (default `http://127.0.0.1:3001`) using Engine.IO path `CDC_SOCKET_PATH` (default `/ws`) and namespace `/`. CDC is a Socket.IO server and does not connect as a client to AS. Other peers use `/peers`. CDC can still send messages through AS and receive routed messages on the same AS-established socket. See [testing guide](testing/README.md).
 
 
-### PServer session registration
+### CDC session registration
 
-AAB now follows the connection protocol from `connect-socket-example.js`: Socket.IO `path: '/ws'`, namespace `/`, `automation_vm:session:connect` on connect, retained session ID on reconnect, and validation of incoming `activity:task:dispatch` by session and VM UDID. See [PServer protocol](docs/PSERVER_SESSION_PROTOCOL.md). The existing `peer:message` demo remains available after session registration.
+AS follows the connection protocol from `connect-socket-example.js`: Socket.IO Engine.IO path `/ws`, namespace `/`, `automation_vm:session:connect` on connect, retained session ID on reconnect, and validation of incoming `activity:task:dispatch` by session and VM UDID. See [CDC protocol](docs/CDC_SESSION_PROTOCOL.md). The existing `peer:message` demo remains available after session registration.
+
+The peer feature gate is enabled with `ENABLE_TEST_PEERS=1`. Current backend storage configuration includes `AS_TASK_STORE_DIR` (default `./data/tasks`) and `AS_SELECTION_STORE_DIR` (default `./data/resource-selections`); the CDC connection uses `CDC_URL` (default `http://127.0.0.1:3001`) and `CDC_SOCKET_PATH` (default `/ws`). Values in the environment override documented defaults. Automated integration tests passed in the NM.2.2 checkpoint; actual standalone process and graphical Electron startup remain pending.
+
+### ARM packages
+
+Generate local ARM ZIP packages with `bash scripts/package-for-arm.sh`. The script runs the backend typecheck and build, then writes `as-1.0.0.zip`, `cdc-1.0.0.zip`, `eserver-1-1.0.0.zip`, `eserver-2-1.0.0.zip`, and `spa-1.0.0.zip` under `arm-packages/`. Set `VERSION` to select the package version. To keep output isolated from existing releases, set `ARM_PACKAGE_OUTPUT` to a new empty directory, for example `ARM_PACKAGE_OUTPUT=/tmp/as-arm-packages VERSION=1.0.0 bash scripts/package-for-arm.sh`.
+
+The AS package reads `HOST`, `CDC_URL`, `CDC_SOCKET_PATH`, `AS_TASK_STORE_DIR`, and `AS_SELECTION_STORE_DIR`; the two storage defaults are `./data/tasks` and `./data/resource-selections`, each with a `.r7.5-outbox` subdirectory. SQLite remains controlled by `ENABLE_SQLITE` and `DB_PATH` (default `./data/app.db`). For ARM-managed AS, omit application-config `HOST`; ARM supplies trusted `HOST=127.0.0.1`. Configure `PORT=3000` for AS, `PORT=3001` for CDC, `PORT=3002` and `PORT=3012` for EServer 1/2, and `PORT=3003` for SPA. EServers preserve `PORT`-first source precedence; their ARM templates should not use redundant `ESERVER_PORT`. ARM's `process.port` is assigned metadata, not proof of a bound listener; verify actual addresses and ports from the operating system. The package script does not package AA Electron.
+
+Package generation verifies local artifacts only. Before any fresh ARM installation, an operator must prepare new isolated state directories and update deployment configuration; no existing state is automatically removed or migrated. ARM installation/activation and supervisor cross-repository compatibility remain pending NM.3.3 verification. Do not install or activate these packages as part of NM.3.1.

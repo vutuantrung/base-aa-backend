@@ -29,7 +29,7 @@ function startSchedules() {
         version: '1.0',
         kind: 'event',
         from: 'eserver',
-        to: 'aaui',
+        to: 'aa',
         channel: 'worker',
         event: 'message',
         payload: {
@@ -41,7 +41,7 @@ function startSchedules() {
       })
     })
   ];
-  console.log(`[eserver:${instanceId}] Scheduled messages: VM info ${SEND_VM_INFO_TIME / 1000}s (status update moved to SServer)`);
+  console.log(`[eserver:${instanceId}] Scheduled messages: VM info ${SEND_VM_INFO_TIME / 1000}s (status update moved to SPA)`);
 }
 
 // Each connection begins a fresh scheduling period; no messages are queued offline.

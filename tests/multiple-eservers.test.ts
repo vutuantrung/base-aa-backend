@@ -27,38 +27,38 @@ const msg = (from: string, to: string, extras: object = {}) => ({
   kind: 'event', from, to, payload: { type: 'demo.multi-eserver', data: { test: true } }, ...extras
 });
 
-test('multiple EServers connect and independently send to AAUI', async () => {
+test('multiple EServers connect and independently send to Aa', async () => {
   const e1 = await connect('eserver', 'worker-1');
   const e2 = await connect('eserver', 'worker-2');
-  const aaui = await connect('aaui');
+  const aa = await connect('aa');
   try {
     const received: any[] = [];
-    aaui.on('peer:message', (message, ack) => { received.push(message); ack({ ok: true }); });
-    const r1 = await send(e1, msg('eserver', 'aaui'));
-    const r2 = await send(e2, msg('eserver', 'aaui'));
+    aa.on('peer:message', (message, ack) => { received.push(message); ack({ ok: true }); });
+    const r1 = await send(e1, msg('eserver', 'aa'));
+    const r2 = await send(e2, msg('eserver', 'aa'));
     assert.equal(r1.ok, true);
     assert.equal(r2.ok, true);
     assert.notEqual(r1.data.id, r2.data.id);
     assert.deepEqual(received.map(x => x.sourceInstanceId), ['worker-1', 'worker-2']);
     assert.deepEqual(received.map(x => x.from), ['eserver', 'eserver']);
-  } finally { e1.disconnect(); e2.disconnect(); aaui.disconnect(); }
+  } finally { e1.disconnect(); e2.disconnect(); aa.disconnect(); }
 });
 
 test('ambiguous EServer destination is rejected; targeted delivery works', async () => {
   const e1 = await connect('eserver', 'worker-1');
   const e2 = await connect('eserver', 'worker-2');
-  const aaui = await connect('aaui');
+  const aa = await connect('aa');
   try {
     const receives: string[] = [];
     e1.on('peer:message', (_value, ack) => { receives.push('worker-1'); ack({ ok: true }); });
     e2.on('peer:message', (_value, ack) => { receives.push('worker-2'); ack({ ok: true }); });
-    const ambiguous = await send(aaui, msg('aaui', 'eserver'));
+    const ambiguous = await send(aa, msg('aa', 'eserver'));
     assert.equal(ambiguous.ok, false);
     assert.equal(ambiguous.code, 'AMBIGUOUS_DESTINATION');
-    const response = await send(aaui, msg('aaui', 'eserver', { toInstanceId: 'worker-2' }));
+    const response = await send(aa, msg('aa', 'eserver', { toInstanceId: 'worker-2' }));
     assert.equal(response.ok, true);
     assert.deepEqual(receives, ['worker-2']);
-  } finally { e1.disconnect(); e2.disconnect(); aaui.disconnect(); }
+  } finally { e1.disconnect(); e2.disconnect(); aa.disconnect(); }
 });
 
 test('duplicate instance IDs are rejected and other instances remain online', async () => {
@@ -71,12 +71,12 @@ test('duplicate instance IDs are rejected and other instances remain online', as
 
 test('one EServer still supports legacy destination without toInstanceId', async () => {
   const e1 = await connect('eserver', 'single-worker');
-  const aaui = await connect('aaui');
+  const aa = await connect('aa');
   try {
     let delivered = false;
     e1.on('peer:message', (_value, ack) => { delivered = true; ack({ ok: true }); });
-    const response = await send(aaui, msg('aaui', 'eserver'));
+    const response = await send(aa, msg('aa', 'eserver'));
     assert.equal(response.ok, true);
     assert.equal(delivered, true);
-  } finally { e1.disconnect(); aaui.disconnect(); }
+  } finally { e1.disconnect(); aa.disconnect(); }
 });

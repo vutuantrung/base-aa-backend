@@ -21,7 +21,7 @@ function sampleDistinct(values, minimum = 1, maximum = values.length, random = M
 }
 
 /**
- * Create a mock VM list with the exact fields requested by AAUI.
+ * Create a mock VM list with the exact fields requested by AA.
  * The caller's authenticated EServer instanceId is used for stable mock IDs.
  * No source of real VM data is consulted.
  */

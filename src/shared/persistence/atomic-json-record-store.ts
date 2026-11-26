@@ -350,7 +350,7 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
       }
       try { await unlink(temporary); }
       catch (error) {
-        console.warn('[AAB] RELIABILITY TEMPORARY LINK CLEANUP FAILED', temporary.split(/[\\/]/).at(-1),
+        console.warn('[AS] RELIABILITY TEMPORARY LINK CLEANUP FAILED', temporary.split(/[\\/]/).at(-1),
           error instanceof Error ? error.message : 'unknown');
       }
       this.records.set(record.key, record);
@@ -535,7 +535,7 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
       await rename(path, target);
       this.quarantinedRecords += 1;
       this.quarantinedBytes += size;
-      console.error('[AAB] RELIABILITY RECORD QUARANTINED', target.split(/[\\/]/).at(-1), reason);
+      console.error('[AS] RELIABILITY RECORD QUARANTINED', target.split(/[\\/]/).at(-1), reason);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
@@ -555,7 +555,7 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
       const knownUnsupported = code === 'EINVAL' || code === 'ENOTSUP' || code === 'EOPNOTSUPP' || code === 'EBADF' ||
         (process.platform === 'win32' && (code === 'EISDIR' || code === 'EPERM'));
       if (knownUnsupported) {
-        console.warn('[AAB] RELIABILITY DIRECTORY SYNC UNSUPPORTED', context, code);
+        console.warn('[AS] RELIABILITY DIRECTORY SYNC UNSUPPORTED', context, code);
         return;
       }
       throw error;
@@ -584,7 +584,7 @@ export class AtomicJsonRecordStore<TPayload, TAck> implements ReliableRecordStor
       await activeWriter.handle.close();
       processWriters.delete(writerKey);
       if (activeWriter.preserveLock) {
-        console.error('[AAB] RELIABILITY WRITER LOCK PRESERVED', this.directory);
+        console.error('[AS] RELIABILITY WRITER LOCK PRESERVED', this.directory);
         return;
       }
       try { await unlink(join(this.directory, '.writer.lock')); }

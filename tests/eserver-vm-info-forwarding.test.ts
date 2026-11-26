@@ -19,13 +19,13 @@ async function connect(peerId: string, instanceId?: string): Promise<Socket> {
   return socket;
 }
 
-test('multiple EServer instances can forward VM info array to AAUI via AAB', async () => {
+test('multiple EServer instances can forward VM info array to Aa via AS', async () => {
   const e1 = await connect('eserver', 'e-1');
   const e2 = await connect('eserver', 'e-2');
-  const aaui = await connect('aaui');
+  const aa = await connect('aa');
   try {
     const received: any[] = [];
-    aaui.on('peer:message', (message, ack) => {
+    aa.on('peer:message', (message, ack) => {
       received.push(message);
       ack({ ok: true });
     });
@@ -50,7 +50,7 @@ test('multiple EServer instances can forward VM info array to AAUI via AAB', asy
       }];
 
       const ack: any = await socket.timeout(3000).emitWithAck('peer:message', {
-        kind: 'event', from: 'eserver', to: 'aaui',
+        kind: 'event', from: 'eserver', to: 'aa',
         payload: { type: 'eserver.vm-info', version: '1.0', data: vmInfo }
       });
       assert.equal(ack.ok, true);
@@ -64,6 +64,6 @@ test('multiple EServer instances can forward VM info array to AAUI via AAB', asy
   } finally {
     e1.disconnect();
     e2.disconnect();
-    aaui.disconnect();
+    aa.disconnect();
   }
 });

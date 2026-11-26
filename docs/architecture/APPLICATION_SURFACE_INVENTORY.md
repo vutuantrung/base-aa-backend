@@ -1,5 +1,9 @@
 # Application surface audit — R7.1.D.1
 
+## Current naming overlay (NM.2.1–NM.2.3)
+
+This R7.1.D.1 surface audit is retained as historical evidence. Current source exposes the CDC connection as `cdcConnector`, with types and protocol under `src/modules/cdc/`; current configuration uses `application.cdc` and CDC/AS-prefixed environment names. The current demo registration is `registerCdcToAaDemo` in `src/examples/cdc-to-aa.ts`. Old names below describe the audit's recorded source checkpoint and are not current APIs.
+
 Evidence is tracked source/tests/docs at the R7.1.C baseline. “No tracked use found” does not establish that an external embedder has no use.
 
 ## Returned `ApplicationInstance` properties

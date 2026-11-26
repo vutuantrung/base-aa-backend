@@ -9,7 +9,7 @@ export interface ResourceSelectionSnapshotReader {
   createSnapshot(): Promise<ResourceSelectionSnapshot>;
 }
 
-/** Infrastructure guards the original AAUI connection around M13 history reads. */
+/** Infrastructure guards the original Aa connection around M13 history reads. */
 export async function sendResourceSelectionSnapshot(
   connection: ResourceSelectionSnapshotConnection,
   isCurrent: () => boolean,
@@ -21,7 +21,7 @@ export async function sendResourceSelectionSnapshot(
     if (!connection.connected || !isCurrent()) return;
     connection.emit('resource-selection:snapshot', snapshot);
   } catch (error) {
-    console.error('[AAB] RESOURCE SELECTION SNAPSHOT FAILED', error);
+    console.error('[AS] RESOURCE SELECTION SNAPSHOT FAILED', error);
     if (connection.connected && isCurrent()) {
       connection.emit('resource-selection:snapshot', {
         records: [], timestamp: Date.now(), error: 'Could not load saved selections'

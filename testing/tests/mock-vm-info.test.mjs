@@ -59,7 +59,7 @@ test('scheduled sender forwards an array payload without assuming a sequence fie
     intervalMs: 10,
     createMessage: () => ({
       from: 'eserver',
-      to: 'aaui',
+      to: 'aa',
       payload: { type: 'eserver.vm-info', data: createMockVmInfo('e-1') }
     }),
     log: (...values) => logs.push(values)

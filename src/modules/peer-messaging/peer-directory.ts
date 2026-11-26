@@ -1,6 +1,6 @@
 import type { ClientPeerId } from './contracts.js';
 
-export type DirectoryPeerId = Exclude<ClientPeerId, 'pserver'>;
+export type DirectoryPeerId = Exclude<ClientPeerId, 'cdc'>;
 
 export interface PeerIdentity {
   readonly peerId: DirectoryPeerId;
@@ -17,7 +17,7 @@ export class DuplicatePeerIdentityError extends Error {
 
 /** Transport-independent ownership of logical peer identity and presence. */
 export class PeerDirectory {
-  private readonly singlePeers = new Map<'sserver' | 'aaui', PeerIdentity>();
+  private readonly singlePeers = new Map<'spa' | 'aa', PeerIdentity>();
   private readonly eservers = new Map<string, PeerIdentity>();
 
   register(peerId: DirectoryPeerId, connectionId: string, requestedInstanceId?: string): PeerIdentity {

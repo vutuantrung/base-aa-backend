@@ -53,7 +53,7 @@ export class JsonResourceSelectionStore implements ResourceSelectionStore {
   private readonly directory: string;
   readonly reliability: AtomicJsonRecordStore<SelectionOperationPayload, PeerMessageAck>;
 
-  constructor(directory = process.env.AAB_SELECTION_STORE_DIR ?? './data/resource-selections', limits?: ReliabilityLimits) {
+  constructor(directory = process.env.AS_SELECTION_STORE_DIR ?? './data/resource-selections', limits?: ReliabilityLimits) {
     this.directory = resolve(directory);
     this.reliability = new AtomicJsonRecordStore(
       join(this.directory, '.r7.5-outbox'), isSelectionOperationPayload, isPeerMessageAck, limits

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:;">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AA · System Monitor</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">A</div><div><strong>AA</strong><span>Integration Console</span></div></div>
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav aria-label="Main navigation">
+        <button class="nav-item active" data-page="overview"><span class="nav-icon">▦</span> Overview</button>
+        <button class="nav-item" data-page="inventory"><span class="nav-icon">▤</span> VM Inventory</button>
+        <button class="nav-item" data-page="tasks"><span class="nav-icon">◎</span> Task Monitoring</button>
+        <button class="nav-item" data-page="resources"><span class="nav-icon">◈</span> Resource Selection</button>
+        <button class="nav-item" data-page="instance-logs"><span class="nav-icon">☷</span> Instance Logs</button>
+        <button class="nav-item" data-page="activity"><span class="nav-icon">≡</span> Event Activity</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-label">CONNECTION</div>
+        <div class="connection-card"><span class="status-dot" id="sidebar-dot"></span><div><strong id="sidebar-connection">Connecting</strong><span>AS · localhost:3000</span></div></div>
+        <div class="sidebar-caption">Local integration playground<br>Socket.IO /peers · AA :3004</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb-current">Overview</strong></div>
+        <div class="top-actions">
+          <span class="live-indicator"><span class="pulse-dot"></span> Live telemetry</span>
+          <button class="btn btn-outline" id="health" type="button">↻ Check AS health</button>
+        </div>
+      </header>
+      <div class="page-inner">
+        <div class="page-heading">
+          <div><div class="eyebrow">SYSTEM MONITORING</div><h1 id="page-title">System Overview</h1><p id="page-description">SPA status updates every 10 seconds and EServer VM inventory every 20 seconds.</p></div>
+          <div class="toolbar"><label class="visually-hidden" for="instance-filter">EServer instance</label><select id="instance-filter"><option value="all">All EServer instances</option></select></div>
+        </div>
+
+        <section class="page-section" data-section="overview">
+          <div class="stats-grid">
+            <article class="stat-card"><span class="stat-icon teal">⌘</span><span class="stat-label">Online EServers</span><div class="stat-number" id="stat-instances">0</div><span class="stat-note" id="stat-presence-note">0 known instances</span></article>
+            <article class="stat-card"><span class="stat-icon violet">▣</span><span class="stat-label">VMs discovered</span><div class="stat-number" id="stat-vms">0</div><span class="stat-note">From latest VM inventory</span></article>
+            <article class="stat-card"><span class="stat-icon blue">↗</span><span class="stat-label">Status messages</span><div class="stat-number" id="stat-status">0</div><span class="stat-note">SPA · 10s scheduled stream</span></article>
+            <article class="stat-card"><span class="stat-icon amber">◷</span><span class="stat-label">VM info updates</span><div class="stat-number" id="stat-vm-updates">0</div><span class="stat-note">20s scheduled stream</span></article>
+          </div>
+          <div class="section-title"><div><h2>Message Streams</h2><p>Delivery freshness based on messages observed by AA</p></div></div>
+          <div class="stream-grid">
+            <article class="panel stream-panel"><div class="stream-header"><span class="stream-icon blue">↗</span><div><strong>Status Update</strong><span>SPA · spa.scheduled-update</span></div><span class="pill" id="status-stream-pill">Waiting</span></div><div class="stream-meta"><div><span>Schedule</span><strong>Every 10s</strong></div><div><span>Last received</span><strong id="status-last">No data</strong></div></div><div class="stream-chart" id="status-stream-chart" aria-label="Recent status update arrivals"></div><div class="stream-foot"><span>Recent arrivals</span><span id="status-stream-count">0 received</span></div></article>
+            <article class="panel stream-panel"><div class="stream-header"><span class="stream-icon violet">▣</span><div><strong>VM Information</strong><span>eserver.vm-info</span></div><span class="pill" id="vm-stream-pill">Waiting</span></div><div class="stream-meta"><div><span>Schedule</span><strong>Every 20s</strong></div><div><span>Last received</span><strong id="vm-last">No data</strong></div></div><div class="stream-chart" id="vm-stream-chart" aria-label="Recent VM information arrivals"></div><div class="stream-foot"><span>Recent arrivals</span><span id="vm-stream-count">0 received</span></div></article>
+          </div>
+          <div class="section-title"><div><h2>EServer Instances</h2><p>Latest VM inventory and connectivity by EServer instance</p></div><span class="count-label" id="instance-count">0 instances</span></div>
+          <div class="instances-grid" id="instances-overview"></div>
+        </section>
+
+        <section class="page-section hidden" data-section="tasks">
+          <div class="activity-toolbar">
+            <div><h2>Task Receipts</h2><p>CDC → AS → EServer · AS persists task and publishes received status</p></div>
+            <div class="filters">
+              <span class="pill" id="task-summary">No tasks received</span>
+              <button class="btn btn-outline" id="refresh-tasks" type="button">↻ Refresh Tasks</button>
+            </div>
+          </div>
+          <div class="task-grid" id="task-grid"></div>
+        </section>
+        <section class="page-section hidden" data-section="resources">
+          <div class="selection-heading">
+            <div><h2>Select Resources</h2><p>Choose exactly one Browser Profile, one Proxy and one Platform Account, then submit the three IDs to CDC.</p></div>
+            <span class="pill">AA → AS → CDC</span>
+          </div>
+          <div class="selection-grid">
+            <article class="panel selection-panel">
+              <div class="selection-panel-head"><span class="selection-icon">▣</span><div><h3>Browser Profile</h3><p>Browser version &amp; user agent</p></div><span class="selection-required">Required</span></div>
+              <div class="selection-options" id="browser-profile-options" role="radiogroup" aria-label="Browser Profile"></div>
+            </article>
+            <article class="panel selection-panel">
+              <div class="selection-panel-head"><span class="selection-icon">◈</span><div><h3>Proxy</h3><p>HTTP and HTTPS endpoints</p></div><span class="selection-required">Required</span></div>
+              <div class="selection-options" id="proxy-options" role="radiogroup" aria-label="Proxy"></div>
+            </article>
+            <article class="panel selection-panel">
+              <div class="selection-panel-head"><span class="selection-icon">◎</span><div><h3>Platform Account</h3><p>Choose an account &amp; platform</p></div><span class="selection-required">Required</span></div>
+              <div class="selection-options" id="platform-account-options" role="radiogroup" aria-label="Platform Account"></div>
+            </article>
+          </div>
+          <div class="panel selection-summary">
+            <div><h3>Selection Summary</h3><p>Only record identifiers will be sent. Proxy URLs and user agents stay in AA.</p></div>
+            <div class="selection-review" id="selection-review"></div>
+            <div class="selection-actions">
+              <span class="selection-feedback" id="selection-feedback" role="status" aria-live="polite">Select one record in each category to continue.</span>
+              <button class="btn selection-submit" id="selection-submit" type="button" disabled>Submit to CDC</button>
+            </div>
+          </div>
+          <div class="selection-history panel">
+            <div class="selection-history-heading">
+              <div><h3>Saved Selections</h3><p>Recent submissions persisted by AS, with CDC delivery status.</p></div>
+              <div class="filters">
+                <span class="pill" id="saved-selections-count">0 records</span>
+                <button type="button" class="btn btn-outline" id="refresh-selections">↻ Refresh List</button>
+              </div>
+            </div>
+            <div class="selection-history-list" id="saved-selections-list"></div>
+          </div>
+        </section>
+        <section class="page-section hidden" data-section="inventory">
+          <div class="inventory-toolbar"><div><h2>VM Inventory</h2><p>Browser identities, supported platforms, features and parsers</p></div><label class="search-field"><span>⌕</span><input id="vm-search" type="search" placeholder="Search VM, browser, platform..." autocomplete="off"></label></div>
+          <div id="vm-inventory" class="inventory-grid"></div>
+        </section>
+
+        <section class="page-section hidden" data-section="instance-logs">
+          <div class="activity-toolbar"><div><h2>EServer Instance Logs</h2><p>Each instance has its own connection and data event history (latest 10 per instance)</p></div>
+            <button class="btn btn-outline" id="clear-instance-logs" type="button">Clear instance logs</button></div>
+          <div class="instance-log-grid" id="instance-logs"></div>
+        </section>
+        <section class="page-section hidden" data-section="activity">
+          <div class="activity-toolbar"><div><h2>Event Activity</h2><p>Most recent 200 events retained in memory</p></div><div class="filters"><select id="event-filter" aria-label="Event filter"><option value="all">All events</option><option value="status">Status updates</option><option value="vm">VM info updates</option><option value="presence">Connection changes</option><option value="system">Connection / other</option></select><button class="btn btn-outline" id="clear-logs" type="button">Clear view</button></div></div>
+          <div class="panel activity-list" id="activity-list"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script src="/dashboard-state.js"></script>
+  <script src="/renderer.js"></script>
+</body>
+</html>

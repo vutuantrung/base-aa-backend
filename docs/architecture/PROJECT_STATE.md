@@ -1,4 +1,102 @@
-# AAB — Current checkpoint
+# AS — Current checkpoint
+
+## NM.3.3.V-R startup diagnosis (PASS for read-only scope; runtime remains unresolved)
+
+- Read-only source and installed AS 1.1.1 inspection confirm HOST resolution reaches `server.listen(port, host)`; AS awaits filesystem-backed task/selection outbox initialization before bind. Retained stdout later records successful HTTP listen and CDC session ACK in the same run after the immediate no-listener probe. ARM returns RUNNING after spawn for this readiness-disabled package; HTTP 200 does not mean listener-ready.
+- RF-26 is confirmed as a premature verification/readiness-semantics discrepancy. RF-22 remains OPEN because no actual listener address was recorded; RF-23 remains OPEN; RF-24 partial; RF-25 containment upheld. V-R.1 was read-only. The later authorized V-R.2 attempt was blocked before startup because host network isolation could not be verified. See [V-R report](../../NM_3_3_V_R_STARTUP_DIAGNOSIS_AND_VERIFICATION_RECOVERY_REPORT.md); historical [V closure report](../../NM_3_3_V_RUNTIME_VERIFICATION_CLOSURE_REPORT.md) is unchanged. No NM.4 work started.
+
+## NM.3.3.V-R.2 controlled observation (BLOCKED before app startup)
+
+- Operator authorization received. Revalidation confirmed the approved persistent storage, Supervisor PID 81410/Node 22.23.5 and storage root, authenticated inventory, expected releases, owner-only credentials/configs, all five apps STOPPED, corrected fixed PORT configs, and no listener on app ports. No app mutation occurred.
+- Safety isolation could not be established: host Wi-Fi `wlp3s0` is UP with a default route; `nft list ruleset` was denied for lack of root; `unshare --user --map-root-user --net true` was denied. No sudo/firewall changes or Supervisor replacement were allowed or attempted. See appended V-R.2 evidence in [V-R report](../../NM_3_3_V_R_STARTUP_DIAGNOSIS_AND_VERIFICATION_RECOVERY_REPORT.md). All five apps remain STOPPED; RF-22/RF-23 remain unresolved, RF-26 confirmed. No NM.4 work started.
+
+## NM.3.3.V runtime verification closure (PARTIAL; AS listener gate failed)
+
+- Authorized environment revalidation passed. Installed and activated AS 1.1.1 (approved checksum); applied fixed PORT configs with protected backups. CDC 1.1.0 passed its assigned/observed loopback gate at 3001.
+- AS 1.1.1 ARM start returned RUNNING and logs recorded CDC session ACK, but immediate OS check found no listener on assigned port 3000 and health returned HTTP 000. AS was stopped; CDC was stopped for containment. EServers/SPA were not started. All five apps now STOPPED; persistent state/evidence preserved.
+- RF-22 remains OPEN; RF-23 remains OPEN/unverified for EServers; RF-24 partial; RF-25 contained with no deviation. See [NM.3.3.V report](../../NM_3_3_V_RUNTIME_VERIFICATION_CLOSURE_REPORT.md). No NM.4 work started.
+
+## NM.3.3.D targeted remediation (PARTIAL; candidate ready for NM.3.3.V)
+
+- Added optional IPv4/IPv6 literal HOST configuration and threaded it through AS startup to the shared HTTP/Socket.IO listener; unset HOST preserves prior behavior. Focused actual-address/lifecycle tests pass. RF-22 is not runtime-resolved until AS 1.1.1 is observed loopback-bound.
+- Prepared corrected ARM templates/runbook: `PORT` values 3000/3001/3002/3012/3003; ARM trusted HOST remains out of app config. ARM docs clarify fixed vs dynamic assignment and `process.port` ASSIGNED semantics. ARM production code/tests remain unchanged; its pre-existing docs/Note.txt edit is preserved.
+- Candidate AS `1.1.1` archive/checksum are in [verified candidate output](../../arm-packages/nm33d-v1.1.1-verified); runtime release availability is pending authenticated inventory in NM.3.3.V. RF-23 remains runtime-unresolved pending listener verification. See [NM.3.3.D report](../../NM_3_3_D_TARGETED_REMEDIATION_REPORT.md). No deployment actions occurred.
+
+## NM.3.3.B ARM fresh deployment & runtime verification (PARTIAL; runtime safety blockers)
+
+- NM-D05 persistent isolated environment was explicitly approved and prepared at `/home/parker/nm-verification/naming-migration-v1.1.0/`; RF-21 is resolved for durability. All five approved 1.1.0 archives matched both SHA256SUMS and recorded hashes, installed with ARM HTTP 201 receipts, and activated separately from startup.
+- CDC, AS, EServer 1/2 and SPA started in dependency order. Logs verified AS-to-CDC session ACK, migrated peer registrations, distinct EServer IDs, SPA registration, `as:welcome`, ping ACKs, and reconnection after AS/EServer lifecycle operations. SQLite stayed disabled; state remained in fresh isolated directories.
+- Runtime safety blocked continued operation: AS bound `*:3000`; EServer configured ports 3002/3012 did not match actual dynamic child ports. All five managed apps were stopped. The isolated Supervisor remains loopback-bound on 3300; detailed evidence, process ownership and operator commands are in [NM.3.3.B report](../../NM_3_3_B_ARM_FRESH_DEPLOYMENT_AND_RUNTIME_VERIFICATION_REPORT.md).
+- Acceptance recommendation: PARTIAL pending approved AS bind and package/configuration port remediation. AA-dependent flows remain unverified; no NM.4 work started.
+
+## NM.3.3.A-R isolated deployment environment preparation (PARTIAL; ready for review)
+
+- AS `main` HEAD `72b31e54e266743fbfd18b6169e4a85c843ddeb7`; ARM `arm-supervisor` HEAD `4e887715d4576e6fa64644778f0072bc94c018b4`; Node `v22.23.5` / npm `10.9.9`. Existing migration changes were preserved.
+- New isolated ARM SupervisorHost runs at `127.0.0.1:3300`, PID `52820`, using `/tmp/nm33ar-isolated-verification/arm-storage`; authenticated inventory returned empty app/release lists for inspected IDs, and unauthenticated access returned 401. Fresh writable empty task/selection paths and logs/secrets are under the same new `/tmp` root. No application configuration was written.
+- Version `1.1.0` was confirmed unused in that isolated root. Five packages were generated from current worktree source at [persistent package output](../../arm-packages/nm33ar-v1.1.0-verified); ZIP/manifest/dependency metadata/naming validation passed and `SHA256SUMS` verified 5/5. No ARM installation or app activation occurred.
+- **Execution deviation:** ARM `npm run dev:supervisor` maps to a demo ProcessManager app, not `SupervisorHost`; it briefly launched example-app PID `49654` and created `.arm-state`. It was stopped and its newly created footprint removed. Correct host entrypoint is `npm run dev:management`. See [NM.3.3.A-R report](../../NM_3_3_A_R_ISOLATED_DEPLOYMENT_ENVIRONMENT_PREPARATION_REPORT.md). Recommend PARTIAL for review of the deviation; do not start NM.3.3.B automatically.
+
+## NM.3.3.A deployment preflight verification (BLOCKED for deployment readiness)
+
+- AS `main` HEAD `72b31e54e266743fbfd18b6169e4a85c843ddeb7`; ARM `arm-supervisor` HEAD `4e887715d4576e6fa64644778f0072bc94c018b4`. Existing migration worktrees were preserved. Current shell is Node `v24.21.0` / npm `11.19.0`; NM.3.1 evidence used Node `v22.23.5` / npm `10.9.9`.
+- No local ARM Supervisor process/executable or application-port listener was found; no target host supplied, so no runtime API query or app inventory was possible. ARM source contracts were inspected: loopback management API default port 3300, bearer auth, separate upload/install and activation/start/stop actions, file-based per-app config; exact evidence and proposed command plan are in [NM.3.3.A report](../../NM_3_3_A_DEPLOYMENT_PREFLIGHT_VERIFICATION_REPORT.md).
+- NM.3.1 artifact directory is absent. Three packages are unavailable; two local EServer ZIP hashes mismatch the recorded NM.3.1 checksums and are rejected. Target release inventory and availability of `1.1.0` are unknown. Local proposed ports were closed at check time, but target port availability is unknown. Fresh state paths remain operator placeholders and were not checked or created.
+- Read-only/documentation only: no package regeneration, runtime query, config write, state access, installation, activation, process operation, source/test change, staging, commit or push. **BLOCKED; stop at NM.3.3.A. Do not begin NM.3.3.B automatically.**
+
+## NM.3.2 controlled fresh-state preparation (PASS for documentation/preparation)
+
+- AS branch `main`, committed HEAD `72b31e54e266743fbfd18b6169e4a85c843ddeb7`; pre-existing NM migration worktree changes and untracked NM/R8 planning artifacts were preserved. ARM checkout `../base-arm-app` is `arm-supervisor` at `4e887715d4576e6fa64644778f0072bc94c018b4`, with its pre-existing `docs/Note.txt` edit preserved.
+- Prepared source-verified AS state-path inventory, absolute-path isolation template, ARM per-app JSON templates for `as`, `cdc`, `eserver-1`, `eserver-2`, `spa`, standalone AA startup settings, port/connection matrix, cutover and rollback procedures, and NM.3.3 gate. See [NM.3.2 report](../../NM_3_2_CONTROLLED_FRESH_STATE_PREPARATION_REPORT.md) and [maintained deployment runbook](../operations/NAMING_MIGRATION_DEPLOYMENT_RUNBOOK.md).
+- ARM application config is per-ID `application-config.json`; release identity is `(applicationId, version)` and a different SHA-256 at an existing version is rejected. CDC port 3001 and SPA port 3003 are fixed in current source; AS/EServer have supported port settings. No live injection was verified.
+- Documentation only: no production/test/ARM source change, package install, activation, process operation, runtime record inspection, state directory creation, data mutation, staging, commit or push. Stop at NM.3.2; NM.3.3 remains unstarted and requires operator values/authorization.
+
+## NM.3.1 ARM packaging & deployment configuration migration (PASS for local package gate)
+
+- Branch `main`, committed HEAD `72b31e54e266743fbfd18b6169e4a85c843ddeb7`; Node `v22.23.5` / npm `10.9.9`. Existing NM.2 worktree changes and the related ARM checkout's pre-existing `docs/Note.txt` modification were preserved.
+- ARM package IDs/artifacts now use `as`, `cdc`, `spa`, `eserver-1`, `eserver-2`. `scripts/package-for-arm.sh` produces the AS build in isolated staging to avoid stale old-path files; `ARM_PACKAGE_OUTPUT` allows isolated artifact output. Five archives were generated and passed ZIP/manifest/entrypoint checks and isolated `npm ci` install checks. Checksums and exact results are in [NM.3.1 report](../../NM_3_1_ARM_PACKAGING_AND_DEPLOYMENT_CONFIGURATION_MIGRATION_REPORT.md).
+- Current README documents package names, existing environment keys and fresh-state requirements. ARM source was inspected only; no ARM code or deployed configuration was changed. Local package verification is complete; actual installation/activation is not verified.
+- NM.3.2 operator-controlled fresh-state preparation and NM.3.3 target ARM install/activation/config validation remain pending. No runtime data or ARM application was touched. Stop at NM.3.1; do not advance automatically.
+
+## NM.2.3.V verification closure (PASS; RF-09 bounded gate closed)
+
+- Branch `main`, HEAD `72b31e54e266743fbfd18b6169e4a85c843ddeb7`; Node `v22.23.5` / npm `10.9.9`. Existing migration worktree remains unstaged and preserved.
+- Two consecutive serial backend `npm test` runs passed 260/260 each, exit 0, zero skips. Full logs: `/tmp/nm23v.ru5IW9/backend-run-1.log` and `/tmp/nm23v.ru5IW9/backend-run-2.log`.
+- The original 259/260 failure log was not recovered; its identity/root cause remain unknown and are not inferred. Two clean current runs close RF-09's bounded verification gate but do not prove what caused the historical event. See [NM.2.3.V report](../../NM_2_3_V_VERIFICATION_CLOSURE_REPORT.md).
+- NM.2.3 verification recommendation is PASS with that historical caveat. NM.3 remains unstarted; stop here.
+
+## NM.2.3 tooling and documentation migration (implemented; initial verification PARTIAL, superseded by NM.2.3.V)
+
+- Branch `main`, committed HEAD `72b31e54e266743fbfd18b6169e4a85c843ddeb7`; Node `v22.23.5` / npm `10.9.9`. Existing NM.2.1/NM.2.2 worktree changes and planning artifacts were preserved. No staging, commit or push.
+- Current guides/inventories use AS/CDC/SPA/AA, active docs were renamed to CDC/AA paths, and current Socket.IO docs specify Engine.IO `/ws`, namespace `/`. Historical R6/R7 evidence, prompts and test inventory maps remain unchanged. ARM package identifiers remain for NM.3.
+- Architecture checker source discovery now has temporary-Git-fixture coverage for clean, modified, staged/untracked, renamed, deleted, ignored/generated and new boundary-violating source cases. M03/M04 mappings and rules remain; graph is 59 files / 145 edges, zero runtime file SCCs, unchanged module SCCs/warning.
+- Typecheck/build/architecture/manifest passed; Fast 90/90; captured Full 260 backend + 32 playground, zero skips; manifest 55/55; diff check and updated relative links passed. The initial NM.2.3 checkpoint was PARTIAL after a serial run reported 259/260 without retaining failure identity. Two consecutive verification runs later passed 260/260; see [NM.2.3.V report](../../NM_2_3_V_VERIFICATION_CLOSURE_REPORT.md) for current disposition and the explicit historical caveat.
+- Actual standalone-process/graphical Electron verification remains NM.4; ARM packaging and fresh deployment remain NM.3. No runtime data changed. Stop after NM.2.3; do not start NM.3 automatically.
+
+## NM.2.2 demo and consumer migration (implemented; automated verification complete)
+
+- Source HEAD remains `72b31e54e266743fbfd18b6169e4a85c843ddeb7` on `main`; all NM.2.1 worktree changes and entry planning artifacts were preserved. Node `v22.23.5` used.
+- CDC/SPA demo files and AA Electron directory/API/IPC are renamed; EServer and shared demo consumers now use AS contracts. Demo commands and test manifest paths use `cdc`, `spa`, `aa`; generic protocol events, ports, M03/M04 boundaries, existing F03/F08/F09 behavior and ACK semantics remain.
+- Typecheck/build/architecture/manifest passed; Fast 89/89; Integration 69 backend + 32 playground; Full 259 backend + 32 playground; standalone AA tests 3/3; zero skips. No manual standalone five-process or graphical Electron startup, ARM verification, or runtime data migration was performed. See [NM.2.2 report](../../NM_2_2_DEMO_AND_CONSUMER_MIGRATION_REPORT.md).
+- Active demo README and flow documents remain for NM.2.3; ARM packaging/deployment remains NM.3. No runtime records were deleted, migrated, or replayed. No commit/push. Stop at NM.2.2.
+
+## NM.2.1 core naming and contract migration (implemented; verification complete)
+
+- Baseline remains `72b31e54e266743fbfd18b6169e4a85c843ddeb7` on `main`. Entry modifications to this file and `testing/pserver.mjs`, plus untracked planning artifacts, were preserved. Node `v22.23.5` used for verification.
+- Local backend core names/contracts now use CDC/AS/SPA/AA: CDC module/transport/protocol and example paths, peer IDs and `as:welcome`, CDC/AS configuration keys, and M12/M13 identity-dependent keys. M03/M04 IDs, ownership boundaries, generic protocol fields/events/paths, SQLite schema, and workflow semantics remain unchanged. The architecture checker now discovers unstaged/renamed source paths from the worktree while retaining cached tracked paths.
+- See [NM.2.1 migration report](../../NM_2_1_CORE_NAMING_AND_CONTRACT_MIGRATION_REPORT.md) for changed paths, residual standalone consumer inventory and exact verification. Typecheck/build/architecture/manifest passed; Fast 89/89; affected backend loopback integration 21/21 after sandbox `listen EPERM` required authorized execution. No playground suite, external rollout or ARM package run.
+- Standalone `testing/pserver.mjs`, Electron `testing/aaui/`, package/deployment scripts and active docs remain for NM.2.2/NM.2.3/NM.3; no intermediate state may be deployed. No runtime records were deleted, migrated or replayed; controlled fresh state remains required. M12/M13 TBD, M14/M15 APP, M02 extraction deferred. No commit/push; stop at NM.2.1.
+
+## NM.1 naming inventory and impact discovery (prepared; no rename scope authorized)
+
+- Read-only inventory performed against `git ls-files` (328 tracked paths) and `git grep` at `72b31e54e266743fbfd18b6169e4a85c843ddeb` on `main`. Entry worktree already had modifications to this file and `testing/pserver.mjs`, plus untracked R8.0 planning docs and a Socket.IO inventory; preserved and excluded from indexed search evidence.
+- Naming families and impact surfaces are recorded in [NM.1 report](../../NM_1_NAMING_INVENTORY_AND_IMPACT_DISCOVERY_REPORT.md): peer IDs, message fields/channels/events, namespaces, PServer protocol, HTTP/config, SQLite/persisted data, exported TS symbols, module paths and demo/test consumers. External consumers/deployments and runtime databases remain outside evidence; no target rename was specified.
+- No runtime behavior, names, APIs or data were changed; no tests/typecheck/build run. No staging, commit or push. Report is the compact delta record; proceed only with a bounded, explicitly selected rename scope.
+
+## R8.0 roadmap reconciliation & scope planning (prepared; PENDING ARCHITECTURE OWNER REVIEW)
+
+- Baseline `72b31e54e266743fbfd18b6169e4a85c843ddeb7` on `main`; Node `v22.23.5`/npm `10.9.9`. Repository contains only a historical high-level R8.1–R8.5 outline; no detailed accepted scopes/decisions. TD18→R8.3/R8.4 and TD19→R8.2/R8.4/R8.5 are explicit debt-registry mappings; other destinations are labeled proposed inference. TD01–TD21 and R7.5–R7.10 residuals are traceable in the [reconciliation matrix](R8_0_ROADMAP_RECONCILIATION_MATRIX.md).
+- Candidate gated scopes and R8-D01–D06 (all **PENDING OWNER APPROVAL**) are in the [bounded plan](R8_0_BOUNDED_SCOPE_AND_EXECUTION_PLAN.md) and [decision policy](R8_0_ARCHITECTURE_OWNER_DECISION_POLICY.md); see [R8.0 report](../../R8_0_ROADMAP_RECONCILIATION_SCOPE_PLANNING_REPORT.md). No next checkpoint or implementation is authorized.
+- R7.10 is accepted CLOSED within approved scope by Architecture Owner direction and the committed final-closure baseline; older R7.10 `PROJECT_STATE` entries still say pending review and are preserved as historical snapshots. This is a documentary-lag annotation, not a reopening. R7.5–R7.10 contracts, unknown ownership, debts and proof limits remain unchanged. Docs/read-only only; no staging, commit or push. **Stop for owner review.**
 
 ## R7.10 final architecture closure & verification (prepared; PENDING FINAL ARCHITECTURE OWNER REVIEW)
 

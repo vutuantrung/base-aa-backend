@@ -21,7 +21,7 @@ export function discoverTestFiles() {
   return [
     ...matchingFiles('tests', /\.test\.ts$/),
     ...matchingFiles('testing/tests', /\.test\.mjs$/),
-    ...matchingFiles('testing/aaui/tests', /\.test\.cjs$/)
+    ...matchingFiles('testing/aa/tests', /\.test\.cjs$/)
   ].sort();
 }
 

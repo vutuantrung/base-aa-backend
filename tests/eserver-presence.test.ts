@@ -29,21 +29,21 @@ function event<T>(socket: Socket, name: string): Promise<T> {
 type Presence = { peerId: string; instanceId: string; status: 'online' | 'offline'; socketId: string; reason?: string };
 type Snapshot = { peerId: string; instances: Presence[] };
 
-test('AAUI receives snapshot for existing EServers and subsequent connection events', async () => {
+test('Aa receives snapshot for existing EServers and subsequent connection events', async () => {
   const e1 = connect('eserver', 'presence-1');
   const e2 = connect('eserver', 'presence-2');
   await Promise.all([e1.connected, e2.connected]);
 
-  const aaui = connect('aaui');
+  const aa = connect('aa');
   try {
-    const snapPromise = event<Snapshot>(aaui.socket, 'peer:status:snapshot');
-    await aaui.connected;
+    const snapPromise = event<Snapshot>(aa.socket, 'peer:status:snapshot');
+    await aa.connected;
     const snapshot = await snapPromise;
     assert.equal(snapshot.peerId, 'eserver');
     assert.deepEqual(snapshot.instances.map(i => i.instanceId).sort(), ['presence-1', 'presence-2']);
     assert.ok(snapshot.instances.every(i => i.status === 'online'));
 
-    const offlinePromise = event<Presence>(aaui.socket, 'peer:status');
+    const offlinePromise = event<Presence>(aa.socket, 'peer:status');
     e1.socket.disconnect();
     const offline = await offlinePromise;
     assert.equal(offline.instanceId, 'presence-1');
@@ -51,7 +51,7 @@ test('AAUI receives snapshot for existing EServers and subsequent connection eve
     assert.ok(offline.reason);
 
     const reconnect = connect('eserver', 'presence-1');
-    const onlinePromise = event<Presence>(aaui.socket, 'peer:status');
+    const onlinePromise = event<Presence>(aa.socket, 'peer:status');
     await reconnect.connected;
     const online = await onlinePromise;
     assert.equal(online.status, 'online');
@@ -60,25 +60,25 @@ test('AAUI receives snapshot for existing EServers and subsequent connection eve
     reconnect.socket.disconnect();
 
   } finally {
-    aaui.socket.disconnect();
+    aa.socket.disconnect();
     e1.socket.disconnect();
     e2.socket.disconnect();
   }
 });
 
-test('AAUI reconnect receives fresh snapshot without waiting for EServer messages', async () => {
+test('Aa reconnect receives fresh snapshot without waiting for EServer messages', async () => {
   const e = connect('eserver', 'late-eserver');
   await e.connected;
-  const first = connect('aaui');
+  const first = connect('aa');
   try {
     const snapshot = event<Snapshot>(first.socket, 'peer:status:snapshot');
     await first.connected;
     assert.ok((await snapshot).instances.some(i => i.instanceId === 'late-eserver'));
   } finally { first.socket.disconnect(); }
 
-  // Wait for disconnect to be processed before new AAUI connection.
+  // Wait for disconnect to be processed before new Aa connection.
   await new Promise(resolve => setTimeout(resolve, 25));
-  const second = connect('aaui');
+  const second = connect('aa');
   try {
     const snapshot = event<Snapshot>(second.socket, 'peer:status:snapshot');
     await second.connected;

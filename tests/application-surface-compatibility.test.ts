@@ -25,21 +25,22 @@ const broadUsage: SqliteProcessUsageRepository | undefined = disabledSqlite.usag
 const broadCatalog: SqliteAaCatalogRepository | undefined = dynamicSqliteDisabled.catalog;
 const configuration: ResolvedConfiguration = {
   port: 0,
+  host: undefined,
   enableTestPeers: false,
   application: {
     dbPath: ':memory:', corsOrigin: '*', apiKey: undefined,
-    enableSqlite: false, enableTestPeers: false, pserver: undefined, shutdownTimeoutMs: 15_000
+    enableSqlite: false, enableTestPeers: false, cdc: undefined, shutdownTimeoutMs: 15_000
   }
 };
 const compatibleApplication: ApplicationInstance = createApplication(configuration.application);
 
 void [concreteSessions, concreteUsage, concreteCatalog, broadSessions, broadUsage, broadCatalog, compatibleApplication];
 
-const pserverConfig = {
+const cdcConfig = {
   url: 'http://127.0.0.1:1',
   vmInfo: { udid: 'compat-vm', sdk: '', model: '', abi: '', forSearch: false, platforms: [] }
 };
-const exampleProbe = { from: 'pserver', to: 'aaui', payload: { type: 'demo.modified-param', version: '1.0', data: {} },
+const exampleProbe = { from: 'cdc', to: 'aa', payload: { type: 'demo.modified-param', version: '1.0', data: {} },
   version: '1.0', kind: 'event', channel: 'worker', event: 'message', id: 'compatibility-probe', timestamp: 0 } as const;
 
 test('SQLite overloads and runtime values preserve concrete and optional repository handles', async () => {
@@ -69,23 +70,23 @@ test('SQLite overloads and runtime values preserve concrete and optional reposit
   }
 });
 
-test('PServer connector exists only when peer gateway and PServer config are both supplied', async () => {
-  const disabledPeers = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, pserver: pserverConfig });
-  const missingPserver = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true });
-  const enabled = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true, pserver: pserverConfig });
+test('Cdc connector exists only when peer gateway and Cdc config are both supplied', async () => {
+  const disabledPeers = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, cdc: cdcConfig });
+  const missingCdc = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true });
+  const enabled = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true, cdc: cdcConfig });
   try {
-    assert.equal(disabledPeers.pserverConnector, undefined);
-    assert.equal(missingPserver.pserverConnector, undefined);
-    assert.deepEqual(missingPserver.transformations.resolve(exampleProbe), []);
-    assert.ok(enabled.pserverConnector);
-    assert.equal(enabled.pserverConnector.connected, false);
+    assert.equal(disabledPeers.cdcConnector, undefined);
+    assert.equal(missingCdc.cdcConnector, undefined);
+    assert.deepEqual(missingCdc.transformations.resolve(exampleProbe), []);
+    assert.ok(enabled.cdcConnector);
+    assert.equal(enabled.cdcConnector.connected, false);
   } finally {
-    await Promise.all([disabledPeers.close(), missingPserver.close(), enabled.close()]);
+    await Promise.all([disabledPeers.close(), missingCdc.close(), enabled.close()]);
   }
 });
 
 test('duplicate route IDs fail construction and the acquired SQLite database can be reopened', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'aab-r79d-duplicate-route-'));
+  const root = await mkdtemp(join(tmpdir(), 'as-r79d-duplicate-route-'));
   const dbPath = join(root, 'app.db');
   const route = { id: 'duplicate', source: 'worker' as const, event: 'message',
     destinations: [{ transport: 'socket' as const, channel: 'worker' as const }] };
@@ -108,11 +109,11 @@ test('duplicate route IDs fail construction and the acquired SQLite database can
   }
 });
 
-test('blank PServer UDID fails construction with the public connector validation error', () => {
+test('blank Cdc UDID fails construction with the public connector validation error', () => {
   assert.throws(() => createApplication({
     dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true,
-    pserver: { url: 'http://127.0.0.1:1', vmInfo: { udid: '  ', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } }
-  }), { name: 'Error', message: 'PServer VM UDID is required' });
+    cdc: { url: 'http://127.0.0.1:1', vmInfo: { udid: '  ', sdk: '', model: '', abi: '', forSearch: false, platforms: [] } }
+  }), { name: 'Error', message: 'CDC VM UDID is required' });
 });
 
 test('startApplication registers the example after onCreated and before listen using the top-level flag', async () => {
@@ -137,24 +138,24 @@ test('startApplication registers the example after onCreated and before listen u
     assert.equal(createdApp, app);
     assert.deepEqual(visibleWhenCreated, []);
     assert.equal(visibleWhenListening.length, 1);
-    assert.equal(visibleWhenListening[0]?.id, 'demo-pserver-to-aaui-modified-param');
+    assert.equal(visibleWhenListening[0]?.id, 'demo-cdc-to-aa-modified-param');
     assert.equal(visibleWhenListening[0]?.priority, 10);
-    assert.equal(app.pserverConnector, undefined);
+    assert.equal(app.cdcConnector, undefined);
   } finally {
     await app.close();
   }
 });
 
 test('startApplication keeps nested peer mode enabled when top-level demo registration is disabled', async () => {
-  const priorTasks = process.env.AAB_TASK_STORE_DIR;
-  const priorSelections = process.env.AAB_SELECTION_STORE_DIR;
-  const root = await mkdtemp(join(tmpdir(), 'aab-r710b-mode-mismatch-'));
-  process.env.AAB_TASK_STORE_DIR = join(root, 'tasks');
-  process.env.AAB_SELECTION_STORE_DIR = join(root, 'selections');
+  const priorTasks = process.env.AS_TASK_STORE_DIR;
+  const priorSelections = process.env.AS_SELECTION_STORE_DIR;
+  const root = await mkdtemp(join(tmpdir(), 'as-r710b-mode-mismatch-'));
+  process.env.AS_TASK_STORE_DIR = join(root, 'tasks');
+  process.env.AS_SELECTION_STORE_DIR = join(root, 'selections');
   const nestedOnly: ResolvedConfiguration = {
     ...configuration,
     enableTestPeers: false,
-    application: { ...configuration.application, enableTestPeers: true, pserver: undefined }
+    application: { ...configuration.application, enableTestPeers: true, cdc: undefined }
   };
   let visibleWhenCreated: ReturnType<ApplicationInstance['transformations']['resolve']> = [];
   let app: ApplicationInstance | undefined;
@@ -165,12 +166,12 @@ test('startApplication keeps nested peer mode enabled when top-level demo regist
     });
     assert.deepEqual(visibleWhenCreated, []);
     assert.deepEqual(app.transformations.resolve(exampleProbe), []);
-    assert.equal(app.pserverConnector, undefined);
+    assert.equal(app.cdcConnector, undefined);
 
     const address = app.httpServer.address();
     assert.ok(address && typeof address === 'object');
     peer = io(`http://127.0.0.1:${address.port}/peers`, {
-      transports: ['websocket'], reconnection: false, auth: { peerId: 'aaui' }
+      transports: ['websocket'], reconnection: false, auth: { peerId: 'aa' }
     });
     await new Promise<void>((resolve, reject) => {
       peer?.once('connect', resolve);
@@ -180,10 +181,10 @@ test('startApplication keeps nested peer mode enabled when top-level demo regist
   } finally {
     peer?.disconnect();
     if (app) await app.close();
-    if (priorTasks === undefined) delete process.env.AAB_TASK_STORE_DIR;
-    else process.env.AAB_TASK_STORE_DIR = priorTasks;
-    if (priorSelections === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
-    else process.env.AAB_SELECTION_STORE_DIR = priorSelections;
+    if (priorTasks === undefined) delete process.env.AS_TASK_STORE_DIR;
+    else process.env.AS_TASK_STORE_DIR = priorTasks;
+    if (priorSelections === undefined) delete process.env.AS_SELECTION_STORE_DIR;
+    else process.env.AS_SELECTION_STORE_DIR = priorSelections;
     await rm(root, { recursive: true, force: true });
   }
 });

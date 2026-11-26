@@ -19,20 +19,20 @@ const selection = {
 };
 
 before(async () => {
-  oldDirectory = process.env.AAB_SELECTION_STORE_DIR;
-  directory = await mkdtemp(join(tmpdir(), 'aab-selections-'));
-  process.env.AAB_SELECTION_STORE_DIR = directory;
+  oldDirectory = process.env.AS_SELECTION_STORE_DIR;
+  directory = await mkdtemp(join(tmpdir(), 'as-selections-'));
+  process.env.AS_SELECTION_STORE_DIR = directory;
   app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true });
   base = `http://127.0.0.1:${await app.listen(0)}`;
 });
 after(async () => {
   if (app) await app.close();
-  if (oldDirectory === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
-  else process.env.AAB_SELECTION_STORE_DIR = oldDirectory;
+  if (oldDirectory === undefined) delete process.env.AS_SELECTION_STORE_DIR;
+  else process.env.AS_SELECTION_STORE_DIR = oldDirectory;
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-function connect(peerId: 'aaui') {
+function connect(peerId: 'aa') {
   const socket = io(`${base}/peers`, {
     transports: ['websocket'], reconnection: false, auth: { peerId }
   });
@@ -43,14 +43,14 @@ function connect(peerId: 'aaui') {
   return { socket, ready };
 }
 
-test('AAB persists selection and ACKs received while an offline PServer delivery remains pending', async () => {
-  const ui = connect('aaui');
+test('AS persists selection and ACKs received while an offline Cdc delivery remains pending', async () => {
+  const ui = connect('aa');
   await ui.ready;
   try {
     const events: any[] = [];
     ui.socket.on('resource-selection:updated', record => events.push(record));
     const ack: any = await ui.socket.timeout(3000).emitWithAck('peer:message', {
-      kind: 'request', from: 'aaui', to: 'pserver',
+      kind: 'request', from: 'aa', to: 'cdc',
       payload: { type: 'demo.resource-selection', data: selection }
     });
     assert.equal(ack.ok, true);
@@ -65,7 +65,7 @@ test('AAB persists selection and ACKs received while an offline PServer delivery
     assert.equal(saved.id, events[0].id);
     assert.equal((await readdir(directory)).filter(name => /^[0-9a-f-]{36}\.json$/.test(name)).length, 1);
 
-    // Request a snapshot through the same AAUI connection.
+    // Request a snapshot through the same Aa connection.
     const refreshed = new Promise<any>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Missing selection snapshot')), 3000);
       ui.socket.once('resource-selection:snapshot', value => {
@@ -81,11 +81,11 @@ test('AAB persists selection and ACKs received while an offline PServer delivery
   } finally { ui.socket.disconnect(); }
 });
 
-test('new AAUI connection recovers saved records from AAB disk', async () => {
-  const ui = connect('aaui');
+test('new Aa connection recovers saved records from AS disk', async () => {
+  const ui = connect('aa');
   try {
     const snapshot = new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Snapshot missing on AAUI connect')), 3000);
+      const timer = setTimeout(() => reject(new Error('Snapshot missing on Aa connect')), 3000);
       ui.socket.once('resource-selection:snapshot', value => {
         clearTimeout(timer);
         resolve(value);

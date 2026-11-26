@@ -31,7 +31,7 @@ test('selection snapshot checks identity before querying and emits M13 projectio
   assert.deepEqual(emitted, [{ event: 'resource-selection:snapshot', payload: snapshot }]);
 });
 
-test('selection snapshot success is suppressed for disconnected or replaced requesting AAUI', async () => {
+test('selection snapshot success is suppressed for disconnected or replaced requesting Aa', async () => {
   for (const disconnected of [false, true]) {
     const { target, emitted } = connection();
     let current = true;

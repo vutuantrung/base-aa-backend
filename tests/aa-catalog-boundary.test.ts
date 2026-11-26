@@ -168,7 +168,7 @@ test('SQLite catalog preserves query ordering, tie selection, wrappers, nested D
 });
 
 test('catalog rows survive database reopen and malformed JSON continues to propagate', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-aa-catalog-'));
+  const directory = await mkdtemp(join(tmpdir(), 'as-aa-catalog-'));
   const path = join(directory, 'catalog.sqlite');
   try {
     const firstDatabase = openDatabase(path);

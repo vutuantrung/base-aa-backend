@@ -34,8 +34,8 @@ test('authenticated special operations select one workflow in the established pr
     { payload: { type: 'demo.task.result' } }
   ];
 
-  assert.equal(await recorder.handler(messages[0], 'aaui'), recorder.acknowledgements.selection);
-  assert.equal(await recorder.handler(messages[1], 'pserver'), recorder.acknowledgements.request);
+  assert.equal(await recorder.handler(messages[0], 'aa'), recorder.acknowledgements.selection);
+  assert.equal(await recorder.handler(messages[1], 'cdc'), recorder.acknowledgements.request);
   assert.equal(await recorder.handler(messages[2], 'eserver', 'worker-authenticated'), recorder.acknowledgements.result);
   assert.deepEqual(recorder.calls.map(({ name }) => name), ['selection', 'request', 'result']);
   assert.equal(recorder.calls[2]?.instanceId, 'worker-authenticated');
@@ -44,14 +44,14 @@ test('authenticated special operations select one workflow in the established pr
 
 test('wrong sender, unknown and malformed input preserve raw selection and generic fallback behavior', async () => {
   const recorder = createRecorder();
-  const spoofedEnvelope = { from: 'aaui', payload: { type: 'demo.resource-selection' } };
+  const spoofedEnvelope = { from: 'aa', payload: { type: 'demo.resource-selection' } };
   const malformedMatchingEnvelope = { payload: { type: 'demo.task.result' } };
   const ordinaryEnvelope = { payload: { type: 'ordinary.message' } };
 
   assert.equal(await recorder.handler(spoofedEnvelope, 'eserver', 'worker-real'), recorder.acknowledgements.generic);
-  assert.equal(await recorder.handler(ordinaryEnvelope, 'aaui'), recorder.acknowledgements.generic);
+  assert.equal(await recorder.handler(ordinaryEnvelope, 'aa'), recorder.acknowledgements.generic);
   assert.equal(await recorder.handler(malformedMatchingEnvelope, 'eserver', 'worker-real'), recorder.acknowledgements.result);
-  assert.equal(await recorder.handler(null, 'pserver'), recorder.acknowledgements.generic);
+  assert.equal(await recorder.handler(null, 'cdc'), recorder.acknowledgements.generic);
 
   assert.deepEqual(recorder.calls.map(({ name }) => name), ['generic', 'generic', 'result', 'generic']);
   assert.equal(recorder.calls[0]?.peer, 'eserver');

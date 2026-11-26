@@ -8,10 +8,10 @@ import { io } from 'socket.io-client';
 import { createApplication } from '../src/app/create-app.js';
 import { JsonTaskFileStore } from '../src/modules/peer-messaging/task-file-store.js';
 
-test('persisted tasks appear in AAUI snapshot after AAUI connects late', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-history-'));
-  const old = process.env.AAB_TASK_STORE_DIR;
-  process.env.AAB_TASK_STORE_DIR = directory;
+test('persisted tasks appear in Aa snapshot after Aa connects late', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'as-history-'));
+  const old = process.env.AS_TASK_STORE_DIR;
+  process.env.AS_TASK_STORE_DIR = directory;
   let app: ReturnType<typeof createApplication> | undefined;
   try {
     const store = new JsonTaskFileStore(directory);
@@ -24,17 +24,17 @@ test('persisted tasks appear in AAUI snapshot after AAUI connects late', async (
 
     app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableTestPeers: true });
     const port = await app.listen(0);
-    const aaui = io(`http://127.0.0.1:${port}/peers`, {
-      transports: ['websocket'], reconnection: false, auth: { peerId: 'aaui' }
+    const aa = io(`http://127.0.0.1:${port}/peers`, {
+      transports: ['websocket'], reconnection: false, auth: { peerId: 'aa' }
     });
     try {
       const snapshot = new Promise<any>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('AAUI snapshot missing')), 3000);
-        aaui.once('task:lifecycle:snapshot', value => {
+        const timeout = setTimeout(() => reject(new Error('Aa snapshot missing')), 3000);
+        aa.once('task:lifecycle:snapshot', value => {
           clearTimeout(timeout);
           resolve(value);
         });
-        aaui.once('connect_error', reject);
+        aa.once('connect_error', reject);
       });
       const received = await snapshot;
       assert.equal(received.error, undefined);
@@ -43,16 +43,16 @@ test('persisted tasks appear in AAUI snapshot after AAUI connects late', async (
       // UI can recover the same task again without restarting Electron.
       const replay = new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Manual refresh snapshot missing')), 3000);
-        aaui.once('task:lifecycle:snapshot', value => {
+        aa.once('task:lifecycle:snapshot', value => {
           clearTimeout(timeout);
           resolve(value);
         });
       });
-      aaui.emit('task:lifecycle:refresh');
+      aa.emit('task:lifecycle:refresh');
       const refreshed = await replay;
       assert.ok(refreshed.tasks.some((entry: any) => entry.task.id === task.id));
     } finally {
-      aaui.disconnect();
+      aa.disconnect();
     }
 
     const finished = { ...task, status: 'finished' as const, updatedTime: task.updatedTime + 5000 };
@@ -60,13 +60,13 @@ test('persisted tasks appear in AAUI snapshot after AAUI connects late', async (
     assert.deepEqual(await store.listRecent(), [finished]);
   } finally {
     if (app) await app.close();
-    if (old === undefined) delete process.env.AAB_TASK_STORE_DIR;
-    else process.env.AAB_TASK_STORE_DIR = old;
+    if (old === undefined) delete process.env.AS_TASK_STORE_DIR;
+    else process.env.AS_TASK_STORE_DIR = old;
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test('task history returns an empty list for missing directory', async () => {
-  const missing = join(tmpdir(), 'aab-nonexistent-' + randomUUID());
+  const missing = join(tmpdir(), 'as-nonexistent-' + randomUUID());
   assert.deepEqual(await new JsonTaskFileStore(missing).listRecent(), []);
 });

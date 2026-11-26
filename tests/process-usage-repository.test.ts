@@ -81,7 +81,7 @@ test('runtime caller-supplied id overwrites the immediate create result but not 
 });
 
 test('process-usage rows persist after the SQLite database is closed and reopened', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'aab-process-usage-'));
+  const directory = await mkdtemp(join(tmpdir(), 'as-process-usage-'));
   const path = join(directory, 'usage.sqlite');
   try {
     const firstDatabase = openDatabase(path);

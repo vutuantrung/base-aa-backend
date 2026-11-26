@@ -21,12 +21,12 @@ test('isolated middleware-gap simulation leaves the registered identity when con
   createSocketPeerGateway(fakeIo, 'local-key', directory);
 
   let middlewareError: Error | undefined;
-  middlewares[0]?.({ id: 'fake-aaui-socket', handshake: { auth: { peerId: 'aaui', token: 'local-key' } } }, error => {
+  middlewares[0]?.({ id: 'fake-aa-socket', handshake: { auth: { peerId: 'aa', token: 'local-key' } } }, error => {
     middlewareError = error;
   });
 
   assert.equal(middlewareError, undefined);
-  assert.equal(directory.lookup('aaui')?.connectionId, 'fake-aaui-socket');
+  assert.equal(directory.lookup('aa')?.connectionId, 'fake-aa-socket');
   // Deliberately do not invoke the namespace connection handler. This models a sequence only;
   // it does not establish that Socket.IO can reach or retain this state on a real handshake.
 });
@@ -68,7 +68,7 @@ test('downstream namespace rejection retains identity and blocks retry', async (
     });
     const client = createSocketClient(`http://127.0.0.1:${address.port}/peers`, {
       transports: ['websocket'], reconnection: false,
-      auth: { peerId: 'aaui', token: 'local-key' }
+      auth: { peerId: 'aa', token: 'local-key' }
     });
     try {
       assert.equal(client.io, sessionClient.io);
@@ -78,12 +78,12 @@ test('downstream namespace rejection retains identity and blocks retry', async (
       assert.equal(sessionClient.connected, true);
       assert.equal(socketDisconnectFired, false);
       assert.equal(transportCloseFired, false);
-      const rejectedIdentity = directory.lookup('aaui');
+      const rejectedIdentity = directory.lookup('aa');
       assert.ok(rejectedIdentity);
-      assert.equal(rejectedIdentity.peerId, 'aaui');
+      assert.equal(rejectedIdentity.peerId, 'aa');
       assert.ok(rejectedIdentity.connectionId.length > 0);
-      assert.notEqual(rejectedIdentity.connectionId, 'retry-aaui-socket');
-      assert.throws(() => directory.register('aaui', 'retry-aaui-socket'), { message: 'peer already connected' });
+      assert.notEqual(rejectedIdentity.connectionId, 'retry-aa-socket');
+      assert.throws(() => directory.register('aa', 'retry-aa-socket'), { message: 'peer already connected' });
     } finally {
       client.disconnect();
       sessionClient.disconnect();

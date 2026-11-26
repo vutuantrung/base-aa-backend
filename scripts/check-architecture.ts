@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
@@ -21,8 +21,8 @@ function assign(owner: string, category: Ownership['category'], paths: string[])
 }
 assign('M01', 'module', ['src/config/configuration.ts']);
 assign('M02', 'module', ['src/app/application-coordinator.ts', 'src/app/create-app.ts', 'src/app/lifecycle-test-seam.ts', 'src/app/lifecycle.ts', 'src/app/shutdown-signals.ts', 'src/main.ts']);
-assign('M03', 'module', ['src/infrastructure/socket/pserver-connector.ts', 'src/infrastructure/socket/pserver-transport.ts']);
-assign('M04', 'module', ['src/modules/pserver/contracts.ts', 'src/modules/pserver/pserver-protocol.ts']);
+assign('M03', 'module', ['src/infrastructure/socket/cdc-connector.ts', 'src/infrastructure/socket/cdc-transport.ts']);
+assign('M04', 'module', ['src/modules/cdc/contracts.ts', 'src/modules/cdc/cdc-protocol.ts']);
 assign('M05', 'module', [
   'src/infrastructure/socket/peer-gateway.ts', 'src/infrastructure/socket/resource-selection-snapshot.ts',
   'src/infrastructure/socket/socket-gateway.ts', 'src/infrastructure/socket/socket-outbound-adapter.ts',
@@ -60,7 +60,7 @@ assign('Support', 'support', [
   'src/shared/contracts/application-admission.ts', 'src/shared/contracts/message.ts', 'src/shared/transport/connectable-client.ts',
   'src/shared/transport/connectable-message-client.ts', 'src/shared/transport/message-bus.ts', 'src/tools/utils.ts'
 ]);
-assign('Example', 'example', ['src/examples/pserver-to-aaui.ts']);
+assign('Example', 'example', ['src/examples/cdc-to-aa.ts']);
 
 const infrastructureRoots = ['src/infrastructure/'];
 const neutralContracts = new Set([
@@ -132,7 +132,7 @@ function checkRules(edges: DependencyEdge[], ownership: Map<string, Ownership>, 
     const target = edge.target;
     const targetIsInfrastructure = infrastructureRoots.some(root => target.startsWith(root));
     const owner = ownerFor(ownership, source);
-    if ((source === 'src/config/configuration.ts' || source.startsWith('src/modules/pserver/')) && targetIsInfrastructure) {
+    if ((source === 'src/config/configuration.ts' || source.startsWith('src/modules/cdc/')) && targetIsInfrastructure) {
       errors.push(`${source} -> ${target}: rule prohibits ${owner?.owner} imports of any kind into infrastructure`);
     }
     if (neutralContracts.has(source) && targetIsInfrastructure && owner?.owner !== 'M08') {
@@ -216,14 +216,14 @@ export function analyzeDependencies(rootDir: string, inputFiles: string[]): Anal
   return { errors, warnings, edges, files, runtimeSccs, moduleRuntimeSccs: moduleSccs, moduleAllImportSccs };
 }
 
-function trackedSourceFiles(root: string): string[] {
-  return execFileSync('git', ['ls-files', '--cached', '--', 'src/**/*.ts'], { cwd: root, encoding: 'utf8' })
-    .split(/\r?\n/).filter(Boolean);
+export function discoverSourceFiles(root: string): string[] {
+  return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/**/*.ts'], { cwd: root, encoding: 'utf8' })
+    .split(/\r?\n/).filter(file => file && existsSync(resolve(root, file))).sort();
 }
 
 function main(): void {
   const root = realpathSync(resolve(process.cwd()));
-  const result = analyzeDependencies(root, trackedSourceFiles(root));
+  const result = analyzeDependencies(root, discoverSourceFiles(root));
   const runtimeEdges = result.edges.filter(edge => edge.kind === 'runtime').length;
   const typeEdges = result.edges.length - runtimeEdges;
   console.log(`Architecture graph: ${result.files.length} files, ${result.edges.length} resolved import/export edges (${runtimeEdges} runtime, ${typeEdges} type-only)`);

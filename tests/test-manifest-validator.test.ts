@@ -4,8 +4,8 @@ import { discoverTestFiles, loadAndValidateManifest, validateManifest } from '..
 
 test('maintained manifest matches discovered backend and playground tests', () => {
   const manifest = loadAndValidateManifest();
-  assert.equal(manifest.entries.length, 55);
-  assert.equal(discoverTestFiles().length, 55);
+  assert.equal(manifest.entries.length, 56);
+  assert.equal(discoverTestFiles().length, 56);
 });
 
 test('validator rejects duplicate, missing, orphaned, malformed, and empty profile entries', () => {

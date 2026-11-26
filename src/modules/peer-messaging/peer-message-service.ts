@@ -30,7 +30,7 @@ export class PeerMessageService {
 
   async process(value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessage> {
     const prepared = await this.prepare(value, authenticatedFrom, authenticatedInstanceId, true);
-    if (prepared.message.to === 'aab') return prepared.message;
+    if (prepared.message.to === 'as') return prepared.message;
     await this.deliverPreparedMessage(prepared.message, prepared.deliveryContext);
     return prepared.message;
   }
@@ -54,7 +54,7 @@ export class PeerMessageService {
     const input = { ...parsed.data, payload: message.payload };
     if (!retainedContext) this.delivery.validateDestination?.(input);
     const deliveryContext = retainedContext ?? this.delivery.bindDestination?.(input);
-    if (input.to !== 'aab' && !this.delivery.isConnected(input.to, input.toInstanceId, deliveryContext))
+    if (input.to !== 'as' && !this.delivery.isConnected(input.to, input.toInstanceId, deliveryContext))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${input.to} is offline`, 'unsent');
     try {
       await this.delivery.beforeDeliver?.(message);
@@ -85,7 +85,7 @@ export class PeerMessageService {
       throw new PeerMessageError('INVALID_MESSAGE', 'toInstanceId is currently supported only for EServer');
     this.delivery.validateDestination?.(input);
     const deliveryContext = this.delivery.bindDestination?.(input);
-    if (requireInitialConnectivity && input.to !== 'aab' && !this.delivery.isConnected(input.to, input.toInstanceId, deliveryContext))
+    if (requireInitialConnectivity && input.to !== 'as' && !this.delivery.isConnected(input.to, input.toInstanceId, deliveryContext))
       throw new PeerMessageError('DESTINATION_OFFLINE', `Destination ${input.to} is offline`);
 
     const original: PeerMessage = {
@@ -124,11 +124,11 @@ export async function processPeerMessageForAck(
 ): Promise<PeerMessageAck> {
   try {
     const message = await service.process(value, authenticatedFrom, authenticatedInstanceId);
-    console.log(`[AAB] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
+    console.log(`[AS] PROCESSED id=${message.id} from=${message.from} sourceInstance=${message.sourceInstanceId ?? '-'} to=${message.to} type=${message.payload.type} transformers=${message.processing?.processedBy.join(',') || 'none'}`);
     return { ok: true, data: message };
   } catch (error) {
     const code = error instanceof PeerMessageError ? error.code : 'TRANSFORMATION_FAILED';
-    console.error(`[AAB] MESSAGE ERROR from=${authenticatedFrom} instance=${authenticatedInstanceId ?? '-'} code=${code}`, error);
+    console.error(`[AS] MESSAGE ERROR from=${authenticatedFrom} instance=${authenticatedInstanceId ?? '-'} code=${code}`, error);
     return { ok: false, code, error: error instanceof Error ? error.message : 'Internal message error' };
   }
 }

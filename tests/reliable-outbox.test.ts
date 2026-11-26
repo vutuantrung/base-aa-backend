@@ -96,8 +96,8 @@ test('same-process store instances share writer reference ownership and recount 
 test('startup converts an interrupted attempting record to uncertain without replay', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'reliable-recovery-'));
   const firstStore = createDiskStore(directory);
-  await firstStore.create(record('M13:aaui:message-1'));
-  await firstStore.transition('M13:aaui:message-1', 'attempting', { attempts: 1 });
+  await firstStore.create(record('M13:aa:message-1'));
+  await firstStore.transition('M13:aa:message-1', 'attempting', { attempts: 1 });
   await firstStore.close();
 
   const store = createDiskStore(directory);
@@ -110,7 +110,7 @@ test('startup converts an interrupted attempting record to uncertain without rep
   });
   try {
     await runner.start();
-    assert.equal((await store.get('M13:aaui:message-1'))?.state, 'uncertain');
+    assert.equal((await store.get('M13:aa:message-1'))?.state, 'uncertain');
     assert.equal(scheduled.length, 0);
     await runner.wake();
     assert.equal(scheduled.length, 0);
@@ -325,7 +325,7 @@ test('approved retry limits are centralized and injected policy stops at the con
   });
   class UnsentError extends Error { readonly reliabilityOutcome = 'unsent' as const; }
   const store = new MemoryReliableRecordStore<Payload, Ack>();
-  await store.create(record('M13:aaui:bounded'));
+  await store.create(record('M13:aa:bounded'));
   const scheduled: Array<() => Promise<void>> = [];
   let now = 1_000;
   let sends = 0;
@@ -341,12 +341,12 @@ test('approved retry limits are centralized and injected policy stops at the con
   try {
     await runner.start();
     await scheduled.shift()?.();
-    assert.equal((await store.get('M13:aaui:bounded'))?.state, 'retryable');
-    assert.equal((await store.get('M13:aaui:bounded'))?.attempts, 1);
+    assert.equal((await store.get('M13:aa:bounded'))?.state, 'retryable');
+    assert.equal((await store.get('M13:aa:bounded'))?.attempts, 1);
     now = 2_000;
     await runner.wake();
     await scheduled.shift()?.();
-    assert.equal((await store.get('M13:aaui:bounded'))?.state, 'failed');
+    assert.equal((await store.get('M13:aa:bounded'))?.state, 'failed');
     assert.equal(sends, 1);
   } finally {
     runner.close();

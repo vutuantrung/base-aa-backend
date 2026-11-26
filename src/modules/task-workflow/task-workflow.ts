@@ -27,7 +27,7 @@ export interface TaskWorkflowCapabilities {
   projectLegacyOperation?(payload: TaskOperationPayload): Promise<void>;
   listEServerInstances(): Array<{ instanceId?: string }>;
   isEServerConnectionReady(instanceId: string): boolean;
-  isPServerConnected(): boolean;
+  isCdcConnected(): boolean;
   processMessage(value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessage>;
   prepareForDurableDelivery?(value: unknown, authenticatedFrom: PeerId, authenticatedInstanceId?: string): Promise<PeerMessage>;
   deliverPreparedMessage?(message: PeerMessage): Promise<void>;
@@ -47,7 +47,7 @@ export class TaskWorkflow {
     this.runner = new ReliableOutboxRunner(capabilities.outbox, {
       isReady: payload => payload.kind === 'F08'
         ? Boolean(payload.targetId && this.capabilities.isEServerConnectionReady(payload.targetId))
-        : this.capabilities.isPServerConnected(),
+        : this.capabilities.isCdcConnected(),
       deliver: payload => this.deliver(payload),
       onState: record => this.publishState(record.payload, record.state, record.lastError),
       defer: capabilities.defer,
@@ -66,9 +66,9 @@ export class TaskWorkflow {
 
   async receiveTask(value: unknown): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
-    if (!parsed.success || parsed.data.from !== 'pserver' || parsed.data.to !== 'eserver' ||
+    if (!parsed.success || parsed.data.from !== 'cdc' || parsed.data.to !== 'eserver' ||
         parsed.data.payload.type !== 'demo.task.request') {
-      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid PServer task envelope' };
+      return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid Cdc task envelope' };
     }
     const validated = taskSchema.safeParse(parsed.data.payload.data);
     if (!validated.success || validated.data.status !== 'inProgress') {
@@ -86,7 +86,7 @@ export class TaskWorkflow {
     const duplicate = this.matchExisting(existing, fingerprint, 'Conflicting duplicate task operation');
     if (duplicate) return duplicate;
     if (await this.capabilities.hasLegacyOperation?.('F08', task.id))
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AAB' };
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task at AS' };
 
     const messageId = parsed.data.id ?? randomUUID();
     const ackTime = this.now();
@@ -105,7 +105,7 @@ export class TaskWorkflow {
         throw new Error(instances.length > 1 ? 'Multiple EServer instances connected; toInstanceId is required' : 'No unique EServer destination; specify toInstanceId');
       }
       if (this.capabilities.prepareForDurableDelivery)
-        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'pserver');
+        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'cdc');
     } catch (error) {
       preparationError = error instanceof Error ? error.message : String(error);
     }
@@ -117,7 +117,7 @@ export class TaskWorkflow {
       key, fingerprint, createdAt: ackTime, updatedAt: ackTime, state: initialState, attempts: 0,
       ...(preparationError ? { lastError: preparationError } : {}), payload, ack
     });
-    const committed = await this.commit(record, 'Could not persist task at AAB');
+    const committed = await this.commit(record, 'Could not persist task at AS');
     if (committed !== ack) return committed;
     await this.projectLegacy(payload);
     this.publishTaskEvent(task, 'received', targetId);
@@ -128,7 +128,7 @@ export class TaskWorkflow {
 
   async receiveTaskResult(value: unknown, instanceId: string | undefined): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
-    if (!parsed.success || parsed.data.from !== 'eserver' || parsed.data.to !== 'pserver' ||
+    if (!parsed.success || parsed.data.from !== 'eserver' || parsed.data.to !== 'cdc' ||
         parsed.data.payload.type !== 'demo.task.result') {
       return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid EServer task result envelope' };
     }
@@ -146,9 +146,9 @@ export class TaskWorkflow {
     if (duplicate) return duplicate;
     const original = await this.capabilities.store.read(task.id);
     if (!original || original.config !== task.config || original.createdTime !== task.createdTime || task.updatedTime < original.updatedTime)
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB' };
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AS' };
     if (await this.capabilities.hasLegacyOperation?.('F09', task.id))
-      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AAB' };
+      return { ok: false, code: 'DELIVERY_FAILED', error: 'Could not persist task result at AS' };
 
     const messageId = parsed.data.id ?? randomUUID();
     const ackTime = this.now();
@@ -175,7 +175,7 @@ export class TaskWorkflow {
       state: preparationError ? 'failed' : 'queued', attempts: 0,
       ...(preparationError ? { lastError: preparationError } : {}), payload, ack
     });
-    const committed = await this.commit(record, 'Could not persist task result at AAB');
+    const committed = await this.commit(record, 'Could not persist task result at AS');
     if (committed !== ack) return committed;
     await this.projectLegacy(payload);
     this.publishTaskResultEvent(task, 'received', instanceId);
@@ -213,7 +213,7 @@ export class TaskWorkflow {
         return { ok: false, code: 'INVALID_MESSAGE', error: 'Conflicting duplicate task operation' };
       return result.record.ack;
     } catch (error) {
-      console.error('[AAB] TASK PERSIST FAILED', record.payload.task.id, error instanceof Error ? error.message : 'unknown');
+      console.error('[AS] TASK PERSIST FAILED', record.payload.task.id, error instanceof Error ? error.message : 'unknown');
       return { ok: false, code: 'DELIVERY_FAILED', error: error instanceof Error && error.message === 'Reliability queue capacity is full'
         ? 'Reliability queue capacity is full' : failureMessage };
     }
@@ -221,12 +221,12 @@ export class TaskWorkflow {
 
   private async projectLegacy(payload: TaskOperationPayload): Promise<void> {
     try { await this.capabilities.projectLegacyOperation?.(payload); }
-    catch (error) { console.error('[AAB] TASK LEGACY PROJECTION FAILED', payload.task.id, error instanceof Error ? error.message : 'unknown'); }
+    catch (error) { console.error('[AS] TASK LEGACY PROJECTION FAILED', payload.task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
   private async deliver(payload: TaskOperationPayload): Promise<void> {
     if (this.capabilities.deliverPreparedMessage) await this.capabilities.deliverPreparedMessage(payload.outbound);
-    else await this.capabilities.processMessage(payload.outbound, payload.kind === 'F08' ? 'pserver' : 'eserver', payload.sourceInstanceId);
+    else await this.capabilities.processMessage(payload.outbound, payload.kind === 'F08' ? 'cdc' : 'eserver', payload.sourceInstanceId);
   }
 
   private publishState(payload: TaskOperationPayload, state: string, reason?: string): void {
@@ -239,14 +239,14 @@ export class TaskWorkflow {
     try {
       this.capabilities.publishTaskLifecycle({ task, status, instanceId: targetId ?? null,
         event: `task.${status}`, timestamp: this.now(), ...(reason ? { reason } : {}) });
-    } catch (error) { console.error('[AAB] TASK LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
+    } catch (error) { console.error('[AS] TASK LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
   private publishTaskResultEvent(task: StoredTask, status: TaskLifecycleStatus, instanceId?: string, reason?: string): void {
     try {
       this.capabilities.publishTaskResultLifecycle({ task, status, instanceId: instanceId ?? null,
         event: `task.result.${status}`, timestamp: this.now(), ...(reason ? { reason } : {}) });
-    } catch (error) { console.error('[AAB] TASK RESULT LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
+    } catch (error) { console.error('[AS] TASK RESULT LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
   private now(): number { return this.capabilities.now?.() ?? Date.now(); }

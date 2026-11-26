@@ -21,7 +21,7 @@ export async function sendTaskHistorySnapshot(
     if (!connection.connected || !isCurrent()) return;
     connection.emit('task:lifecycle:snapshot', snapshot);
   } catch (error) {
-    console.error('[AAB] TASK SNAPSHOT ERROR', error);
+    console.error('[AS] TASK SNAPSHOT ERROR', error);
     if (connection.connected && isCurrent()) {
       connection.emit('task:lifecycle:snapshot', {
         timestamp: Date.now(), tasks: [], error: 'Unable to load persisted task history'

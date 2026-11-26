@@ -13,10 +13,10 @@ export interface ResourceSelectionWorkflowCapabilities {
   readonly store: Pick<ResourceSelectionStore, 'save' | 'updateDelivery' | 'listRecent'>;
   readonly outbox: ReliableRecordStore<SelectionOperationPayload, PeerMessageAck>;
   projectLegacyReceipt?(record: StoredSelection): Promise<void>;
-  processMessage(value: unknown, authenticatedFrom: 'aaui'): Promise<PeerMessage>;
-  prepareForDurableDelivery?(value: unknown, authenticatedFrom: 'aaui'): Promise<PeerMessage>;
+  processMessage(value: unknown, authenticatedFrom: 'aa'): Promise<PeerMessage>;
+  prepareForDurableDelivery?(value: unknown, authenticatedFrom: 'aa'): Promise<PeerMessage>;
   deliverPreparedMessage?(message: PeerMessage): Promise<void>;
-  isPServerConnected(): boolean;
+  isCdcConnected(): boolean;
   defer(work: () => Promise<void>): void;
   publishUpdated(record: StoredSelection): void;
   now?: () => number;
@@ -30,7 +30,7 @@ export class ResourceSelectionWorkflow {
 
   constructor(private readonly capabilities: ResourceSelectionWorkflowCapabilities) {
     this.runner = new ReliableOutboxRunner(capabilities.outbox, {
-      isReady: () => this.capabilities.isPServerConnected(),
+      isReady: () => this.capabilities.isCdcConnected(),
       deliver: payload => this.deliver(payload),
       onState: operation => this.publishState(operation.payload, operation.state, operation.lastError),
       defer: capabilities.defer,
@@ -49,7 +49,7 @@ export class ResourceSelectionWorkflow {
 
   async receiveSelection(value: unknown): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
-    if (!parsed.success || parsed.data.from !== 'aaui' || parsed.data.to !== 'pserver' ||
+    if (!parsed.success || parsed.data.from !== 'aa' || parsed.data.to !== 'cdc' ||
         parsed.data.payload.type !== 'demo.resource-selection') {
       return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection envelope' };
     }
@@ -57,9 +57,9 @@ export class ResourceSelectionWorkflow {
     if (!selection.success) return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid resource selection IDs' };
 
     const messageId = parsed.data.id ?? randomUUID();
-    const key = parsed.data.id ? `M13:aaui:${parsed.data.id}` : `M13:aaui:unkeyed:${randomUUID()}`;
+    const key = parsed.data.id ? `M13:aa:${parsed.data.id}` : `M13:aa:unkeyed:${randomUUID()}`;
     const fingerprint = fingerprintReliableValue({
-      authenticatedSender: 'aaui', id: parsed.data.id, kind: parsed.data.kind, from: parsed.data.from,
+      authenticatedSender: 'aa', id: parsed.data.id, kind: parsed.data.kind, from: parsed.data.from,
       to: parsed.data.to, toInstanceId: parsed.data.toInstanceId, channel: parsed.data.channel,
       event: parsed.data.event, correlationId: parsed.data.correlationId, causationId: parsed.data.causationId,
       payload: { type: parsed.data.payload.type, version: parsed.data.payload.version, data: selection.data }
@@ -84,7 +84,7 @@ export class ResourceSelectionWorkflow {
     let preparationError: string | undefined;
     try {
       if (this.capabilities.prepareForDurableDelivery)
-        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'aaui');
+        outbound = await this.capabilities.prepareForDurableDelivery(prepareValue, 'aa');
     } catch (error) { preparationError = error instanceof Error ? error.message : String(error); }
 
     const payload: SelectionOperationPayload = { record, outbound };
@@ -97,7 +97,7 @@ export class ResourceSelectionWorkflow {
     let committed: Awaited<ReturnType<typeof this.capabilities.outbox.create>>;
     try { committed = await this.capabilities.outbox.create(operation); }
     catch (error) {
-      console.error('[AAB] RESOURCE SELECTION PERSIST FAILED', error instanceof Error ? error.message : 'unknown');
+      console.error('[AS] RESOURCE SELECTION PERSIST FAILED', error instanceof Error ? error.message : 'unknown');
       return { ok: false, code: 'DELIVERY_FAILED', error: error instanceof Error && error.message === 'Reliability queue capacity is full'
         ? 'Reliability queue capacity is full' : 'Could not persist resource selection' };
     }
@@ -106,7 +106,7 @@ export class ResourceSelectionWorkflow {
     if (!committed.created) return committed.record.ack;
 
     try { await this.capabilities.projectLegacyReceipt?.(record); }
-    catch (error) { console.error('[AAB] RESOURCE SELECTION LEGACY PROJECTION FAILED', record.id, error instanceof Error ? error.message : 'unknown'); }
+    catch (error) { console.error('[AS] RESOURCE SELECTION LEGACY PROJECTION FAILED', record.id, error instanceof Error ? error.message : 'unknown'); }
     this.publishUpdated(record);
     if (preparationError) this.publishUpdated({ ...record, deliveryStatus: 'forwardFailed', deliveryError: preparationError });
     else await this.runner.enqueue(key);
@@ -120,7 +120,7 @@ export class ResourceSelectionWorkflow {
 
   private async deliver(payload: SelectionOperationPayload): Promise<void> {
     if (this.capabilities.deliverPreparedMessage) await this.capabilities.deliverPreparedMessage(payload.outbound);
-    else await this.capabilities.processMessage(payload.outbound, 'aaui');
+    else await this.capabilities.processMessage(payload.outbound, 'aa');
   }
 
   private publishState(payload: SelectionOperationPayload, state: string, reason?: string): void {
@@ -131,7 +131,7 @@ export class ResourceSelectionWorkflow {
 
   private publishUpdated(record: StoredSelection): void {
     try { this.capabilities.publishUpdated(record); }
-    catch (error) { console.error('[AAB] RESOURCE SELECTION PROJECTION FAILED', record.id, error instanceof Error ? error.message : 'unknown'); }
+    catch (error) { console.error('[AS] RESOURCE SELECTION PROJECTION FAILED', record.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
   private now(): number { return this.capabilities.now?.() ?? Date.now(); }

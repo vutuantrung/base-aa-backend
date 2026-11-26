@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUTPUT="$ROOT/arm-packages"
+OUTPUT="${ARM_PACKAGE_OUTPUT:-$ROOT/arm-packages}"
 VERSION="${VERSION:-1.0.0}"
 
 mkdir -p "$OUTPUT"
@@ -98,45 +98,45 @@ EOF
     create_zip "$directory" "$app_id"
 }
 
-# Build AAB
+# Build AS
 cd "$ROOT"
 
 npm run typecheck
-npm run build
+npm run build -- --outDir "$STAGING/build"
 
-test -f "$ROOT/dist/src/main.js"
+test -f "$STAGING/build/src/main.js"
 
-# Package AAB
-AAB_DIR="$STAGING/aab"
+# Package AS
+AS_DIR="$STAGING/as"
 
-mkdir -p "$AAB_DIR/dist"
+mkdir -p "$AS_DIR/dist"
 
-cp -r "$ROOT/dist/src" "$AAB_DIR/dist/"
-cp "$ROOT/package.json" "$AAB_DIR/"
+cp -r "$STAGING/build/src" "$AS_DIR/dist/"
+cp "$ROOT/package.json" "$AS_DIR/"
 
 # ARM Supervisor installs this package with npm ci. Remove the optional native
 # SQLite addon from the deployment manifest and regenerate its matching lockfile.
 (
-    cd "$AAB_DIR"
+    cd "$AS_DIR"
     npm pkg delete optionalDependencies.better-sqlite3
 )
 
 if [[ -f "$ROOT/package-lock.json" ]]; then
-    cp "$ROOT/package-lock.json" "$AAB_DIR/"
+    cp "$ROOT/package-lock.json" "$AS_DIR/"
 fi
 
 (
-    cd "$AAB_DIR"
+    cd "$AS_DIR"
     npm install --package-lock-only --ignore-scripts
 )
 
-create_manifest "$AAB_DIR" "aab" "dist/src/main.js"
-create_zip "$AAB_DIR" "aab"
+create_manifest "$AS_DIR" "as" "dist/src/main.js"
+create_zip "$AS_DIR" "as"
 
 # Package other servers
-package_peer "pserver" "pserver"
+package_peer "cdc" "cdc"
 package_peer "eserver-1" "eserver"
 package_peer "eserver-2" "eserver"
-package_peer "sserver" "sserver"
+package_peer "spa" "spa"
 
 echo "All packages created."

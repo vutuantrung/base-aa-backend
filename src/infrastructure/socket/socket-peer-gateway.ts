@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { PeerDirectory, type PeerIdentity } from '../../modules/peer-messaging/peer-directory.js';
 
 const peerAuth = z.object({
-  peerId: z.enum(['eserver', 'sserver', 'aaui']),
+  peerId: z.enum(['eserver', 'spa', 'aa']),
   instanceId: z.string().trim().min(1).max(100).optional(),
   token: z.string().optional()
 });

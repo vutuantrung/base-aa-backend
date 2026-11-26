@@ -1,16 +1,16 @@
 import type { ApplicationInstance } from './create-app.js';
 import type { ResolvedConfiguration } from '../config/configuration.js';
 import { createApplication } from './create-app.js';
-import { registerPServerToAauiDemo } from '../examples/pserver-to-aaui.js';
+import { registerCdcToAaDemo } from '../examples/cdc-to-aa.js';
 import { consoleDiagnostics, type Diagnostics } from '../observability/diagnostics.js';
 
 export async function startApplication(configuration: ResolvedConfiguration, diagnostics: Diagnostics = consoleDiagnostics,
   onCreated?: (application: ApplicationInstance) => void): Promise<ApplicationInstance> {
   const application = createApplication(configuration.application);
   onCreated?.(application);
-  if (configuration.enableTestPeers) registerPServerToAauiDemo(application.transformations);
+  if (configuration.enableTestPeers) registerCdcToAaDemo(application.transformations);
   try {
-    const port = await application.listen(configuration.port);
+    const port = await application.listen(configuration.port, configuration.host);
     diagnostics.info(`Server listening on http://localhost:${port}`);
     return application;
   } catch (error) {

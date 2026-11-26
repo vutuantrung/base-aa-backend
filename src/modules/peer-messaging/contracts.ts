@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const peerIds = ['aab', 'pserver', 'eserver', 'sserver', 'aaui'] as const;
-export const clientPeerIds = ['pserver', 'eserver', 'sserver', 'aaui'] as const;
+export const peerIds = ['as', 'cdc', 'eserver', 'spa', 'aa'] as const;
+export const clientPeerIds = ['cdc', 'eserver', 'spa', 'aa'] as const;
 export type PeerId = typeof peerIds[number];
 export type ClientPeerId = typeof clientPeerIds[number];
 
@@ -26,7 +26,7 @@ export const incomingPeerMessageSchema = z.object({
 export type IncomingPeerMessage = z.infer<typeof incomingPeerMessageSchema>;
 
 export type PeerMessage = IncomingPeerMessage & {
-  /** Authenticated source instance, assigned by AAB (not trusted from payload). */
+  /** Authenticated source instance, assigned by AS (not trusted from payload). */
   sourceInstanceId?: string;
   id: string;
   timestamp: number;

@@ -38,6 +38,7 @@ test('one-shot lifecycle shares same-port startup and close results and rejects 
   await assert.rejects(app.listen(0), /draining|stopping|stopped/);
 });
 
+
 test('close before listen is terminal and idempotent', async () => {
   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false });
   await Promise.all([app.close(), app.close()]);
@@ -45,13 +46,13 @@ test('close before listen is terminal and idempotent', async () => {
 });
 
 test('EADDRINUSE rolls back optional peer recovery locks and runner startup', async () => {
-  const priorTasks = process.env.AAB_TASK_STORE_DIR;
-  const priorSelections = process.env.AAB_SELECTION_STORE_DIR;
-  const root = await mkdtemp(join(tmpdir(), 'aab-lifecycle-bind-failure-'));
+  const priorTasks = process.env.AS_TASK_STORE_DIR;
+  const priorSelections = process.env.AS_SELECTION_STORE_DIR;
+  const root = await mkdtemp(join(tmpdir(), 'as-lifecycle-bind-failure-'));
   const taskDir = join(root, 'tasks');
   const selectionDir = join(root, 'selections');
-  process.env.AAB_TASK_STORE_DIR = taskDir;
-  process.env.AAB_SELECTION_STORE_DIR = selectionDir;
+  process.env.AS_TASK_STORE_DIR = taskDir;
+  process.env.AS_SELECTION_STORE_DIR = selectionDir;
   const occupied = createServer();
   const port = await listen(occupied);
   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true });
@@ -62,22 +63,22 @@ test('EADDRINUSE rolls back optional peer recovery locks and runner startup', as
   } finally {
     await app.close();
     await close(occupied);
-    if (priorTasks === undefined) delete process.env.AAB_TASK_STORE_DIR;
-    else process.env.AAB_TASK_STORE_DIR = priorTasks;
-    if (priorSelections === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
-    else process.env.AAB_SELECTION_STORE_DIR = priorSelections;
+    if (priorTasks === undefined) delete process.env.AS_TASK_STORE_DIR;
+    else process.env.AS_TASK_STORE_DIR = priorTasks;
+    if (priorSelections === undefined) delete process.env.AS_SELECTION_STORE_DIR;
+    else process.env.AS_SELECTION_STORE_DIR = priorSelections;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test('close during optional-peer recovery fences the late listener start and releases acquired locks', async () => {
-  const priorTasks = process.env.AAB_TASK_STORE_DIR;
-  const priorSelections = process.env.AAB_SELECTION_STORE_DIR;
-  const root = await mkdtemp(join(tmpdir(), 'aab-lifecycle-start-close-'));
+  const priorTasks = process.env.AS_TASK_STORE_DIR;
+  const priorSelections = process.env.AS_SELECTION_STORE_DIR;
+  const root = await mkdtemp(join(tmpdir(), 'as-lifecycle-start-close-'));
   const taskDir = join(root, 'tasks');
   const selectionDir = join(root, 'selections');
-  process.env.AAB_TASK_STORE_DIR = taskDir;
-  process.env.AAB_SELECTION_STORE_DIR = selectionDir;
+  process.env.AS_TASK_STORE_DIR = taskDir;
+  process.env.AS_SELECTION_STORE_DIR = selectionDir;
   const app = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true });
   try {
     const starting = app.listen(0);
@@ -89,20 +90,20 @@ test('close during optional-peer recovery fences the late listener start and rel
     await assert.rejects(readFile(join(selectionDir, '.r7.5-outbox', '.writer.lock')));
   } finally {
     await app.close();
-    if (priorTasks === undefined) delete process.env.AAB_TASK_STORE_DIR;
-    else process.env.AAB_TASK_STORE_DIR = priorTasks;
-    if (priorSelections === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
-    else process.env.AAB_SELECTION_STORE_DIR = priorSelections;
+    if (priorTasks === undefined) delete process.env.AS_TASK_STORE_DIR;
+    else process.env.AS_TASK_STORE_DIR = priorTasks;
+    if (priorSelections === undefined) delete process.env.AS_SELECTION_STORE_DIR;
+    else process.env.AS_SELECTION_STORE_DIR = priorSelections;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test('same-directory second application fails closed without releasing the first runner lock', async () => {
-  const priorTasks = process.env.AAB_TASK_STORE_DIR;
-  const priorSelections = process.env.AAB_SELECTION_STORE_DIR;
-  const root = await mkdtemp(join(tmpdir(), 'aab-lifecycle-shared-runner-'));
-  process.env.AAB_TASK_STORE_DIR = join(root, 'tasks');
-  process.env.AAB_SELECTION_STORE_DIR = join(root, 'selections');
+  const priorTasks = process.env.AS_TASK_STORE_DIR;
+  const priorSelections = process.env.AS_SELECTION_STORE_DIR;
+  const root = await mkdtemp(join(tmpdir(), 'as-lifecycle-shared-runner-'));
+  process.env.AS_TASK_STORE_DIR = join(root, 'tasks');
+  process.env.AS_SELECTION_STORE_DIR = join(root, 'selections');
   const first = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true });
   const second = createApplication({ dbPath: ':memory:', corsOrigin: '*', enableSqlite: false, enableTestPeers: true });
   try {
@@ -112,10 +113,10 @@ test('same-directory second application fails closed without releasing the first
   } finally {
     await second.close();
     await first.close();
-    if (priorTasks === undefined) delete process.env.AAB_TASK_STORE_DIR;
-    else process.env.AAB_TASK_STORE_DIR = priorTasks;
-    if (priorSelections === undefined) delete process.env.AAB_SELECTION_STORE_DIR;
-    else process.env.AAB_SELECTION_STORE_DIR = priorSelections;
+    if (priorTasks === undefined) delete process.env.AS_TASK_STORE_DIR;
+    else process.env.AS_TASK_STORE_DIR = priorTasks;
+    if (priorSelections === undefined) delete process.env.AS_SELECTION_STORE_DIR;
+    else process.env.AS_SELECTION_STORE_DIR = priorSelections;
     await rm(root, { recursive: true, force: true });
   }
 });

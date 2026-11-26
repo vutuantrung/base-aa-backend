@@ -47,7 +47,7 @@ export class JsonTaskFileStore implements TaskFileStore {
   private readonly directory: string;
   readonly reliability: AtomicJsonRecordStore<TaskOperationPayload, PeerMessageAck>;
 
-  constructor(directory = process.env.AAB_TASK_STORE_DIR ?? './data/tasks', limits?: ReliabilityLimits) {
+  constructor(directory = process.env.AS_TASK_STORE_DIR ?? './data/tasks', limits?: ReliabilityLimits) {
     this.directory = resolve(directory);
     this.reliability = new AtomicJsonRecordStore(
       join(this.directory, '.r7.5-outbox'), isTaskOperationPayload, isPeerMessageAck, limits
