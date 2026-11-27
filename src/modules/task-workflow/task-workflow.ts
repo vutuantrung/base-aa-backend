@@ -67,7 +67,7 @@ export class TaskWorkflow {
   async receiveTask(value: unknown): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
     if (!parsed.success || parsed.data.from !== 'cdc' || parsed.data.to !== 'eserver' ||
-        parsed.data.payload.type !== 'demo.task.request') {
+      parsed.data.payload.type !== 'automation.task.request') {
       return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid Cdc task envelope' };
     }
     const validated = taskSchema.safeParse(parsed.data.payload.data);
@@ -79,9 +79,7 @@ export class TaskWorkflow {
     const key = `F08:${task.id}`;
     const existing = await this.capabilities.outbox.get(key);
     const instances = this.capabilities.listEServerInstances();
-    const targetId = parsed.data.toInstanceId ??
-      (existing?.payload.kind === 'F08' ? existing.payload.targetId :
-        instances.length === 1 ? instances[0]?.instanceId : undefined);
+    const targetId = parsed.data.toInstanceId ?? (existing?.payload.kind === 'F08' ? existing.payload.targetId : instances.length === 1 ? instances[0]?.instanceId : undefined);
     const fingerprint = fingerprintReliableValue({ task, targetId });
     const duplicate = this.matchExisting(existing, fingerprint, 'Conflicting duplicate task operation');
     if (duplicate) return duplicate;
@@ -129,7 +127,7 @@ export class TaskWorkflow {
   async receiveTaskResult(value: unknown, instanceId: string | undefined): Promise<PeerMessageAck> {
     const parsed = incomingPeerMessageSchema.safeParse(value);
     if (!parsed.success || parsed.data.from !== 'eserver' || parsed.data.to !== 'cdc' ||
-        parsed.data.payload.type !== 'demo.task.result') {
+      parsed.data.payload.type !== 'automation.task.result') {
       return { ok: false, code: 'INVALID_MESSAGE', error: 'Invalid EServer task result envelope' };
     }
     const validated = taskSchema.safeParse(parsed.data.payload.data);
@@ -214,8 +212,10 @@ export class TaskWorkflow {
       return result.record.ack;
     } catch (error) {
       console.error('[AS] TASK PERSIST FAILED', record.payload.task.id, error instanceof Error ? error.message : 'unknown');
-      return { ok: false, code: 'DELIVERY_FAILED', error: error instanceof Error && error.message === 'Reliability queue capacity is full'
-        ? 'Reliability queue capacity is full' : failureMessage };
+      return {
+        ok: false, code: 'DELIVERY_FAILED', error: error instanceof Error && error.message === 'Reliability queue capacity is full'
+          ? 'Reliability queue capacity is full' : failureMessage
+      };
     }
   }
 
@@ -237,15 +237,19 @@ export class TaskWorkflow {
 
   private publishTaskEvent(task: StoredTask, status: TaskLifecycleStatus, targetId?: string, reason?: string): void {
     try {
-      this.capabilities.publishTaskLifecycle({ task, status, instanceId: targetId ?? null,
-        event: `task.${status}`, timestamp: this.now(), ...(reason ? { reason } : {}) });
+      this.capabilities.publishTaskLifecycle({
+        task, status, instanceId: targetId ?? null,
+        event: `task.${status}`, timestamp: this.now(), ...(reason ? { reason } : {})
+      });
     } catch (error) { console.error('[AS] TASK LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 
   private publishTaskResultEvent(task: StoredTask, status: TaskLifecycleStatus, instanceId?: string, reason?: string): void {
     try {
-      this.capabilities.publishTaskResultLifecycle({ task, status, instanceId: instanceId ?? null,
-        event: `task.result.${status}`, timestamp: this.now(), ...(reason ? { reason } : {}) });
+      this.capabilities.publishTaskResultLifecycle({
+        task, status, instanceId: instanceId ?? null,
+        event: `task.result.${status}`, timestamp: this.now(), ...(reason ? { reason } : {})
+      });
     } catch (error) { console.error('[AS] TASK RESULT LIFECYCLE PROJECTION FAILED', task.id, error instanceof Error ? error.message : 'unknown'); }
   }
 

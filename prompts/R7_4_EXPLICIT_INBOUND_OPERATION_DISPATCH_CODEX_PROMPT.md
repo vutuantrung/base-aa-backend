@@ -24,8 +24,8 @@ Confirm HEAD/branch; if newer, inspect only relevant delta. Preserve unrelated c
 
 At the reviewed HEAD, `src/infrastructure/socket/peer-gateway.ts` owns `handleMessage` and selects:
 1. `authenticatedFrom === 'aaui'` with `payload.type === 'demo.resource-selection'` → `ResourceSelectionWorkflow.receiveSelection(value)` (M13);
-2. `authenticatedFrom === 'pserver'` with `payload.type === 'demo.task.request'` → `TaskWorkflow.receiveTask(value)` (M12 F08);
-3. `authenticatedFrom === 'eserver'` with `payload.type === 'demo.task.result'` → `TaskWorkflow.receiveTaskResult(value, authenticatedInstanceId)` (M12 F09);
+2. `authenticatedFrom === 'pserver'` with `payload.type === 'automation.task.request'` → `TaskWorkflow.receiveTask(value)` (M12 F08);
+3. `authenticatedFrom === 'eserver'` with `payload.type === 'automation.task.result'` → `TaskWorkflow.receiveTaskResult(value, authenticatedInstanceId)` (M12 F09);
 4. all other combinations → `processPeerMessageForAck(service, value, authenticatedFrom, authenticatedInstanceId)` (M10).
 
 The same `handleMessage` is invoked by ACK-bearing Socket.IO `/peers` ingress and by `receiveFromPServer`, which invokes it with authenticated sender `pserver`. This current ordering, sender restriction, fallback, and ACK behavior are compatibility invariants, not opportunities to redesign protocols.
@@ -49,8 +49,8 @@ Relevant owners: M05 transport/gateway, M10 generic peer processing, M12 Task Wo
 First inspect existing gateway/workflow tests and avoid duplicate coverage. Add targeted tests that demonstrate **old ↔ new parity**, ideally at the newly introduced dispatch seam and through existing gateway entry points. Cover at minimum:
 
 1. Authenticated `aaui` + `demo.resource-selection` chooses M13 exactly once, preserving its original ACK shape and save/defer side effects.
-2. Authenticated `pserver` + `demo.task.request` chooses F08 exactly once, preserving receipt-before-deferred-forward and current ACK/error behavior.
-3. Authenticated `eserver` + `demo.task.result` chooses F09 exactly once and propagates its authenticated instance ID.
+2. Authenticated `pserver` + `automation.task.request` chooses F08 exactly once, preserving receipt-before-deferred-forward and current ACK/error behavior.
+3. Authenticated `eserver` + `automation.task.result` chooses F09 exactly once and propagates its authenticated instance ID.
 4. A different authenticated sender with any special `payload.type` falls back to M10; do not dispatch to M12/M13 just because a client spoofs `from` inside the envelope.
 5. Unknown/ordinary payload type and malformed/non-object inputs follow the same fallback/validation/error path as before; preserve branch precedence, including cases where a matching sender/type triggers workflow-specific `INVALID_MESSAGE` rather than generic error mapping.
 6. ACK-bearing `/peers` and PServer ingress use the same composed decision; no-ACK ingress stays unprocessed (R7.3-D01=A), with previously distinct M04 logging/readiness behavior retained.

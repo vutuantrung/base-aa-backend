@@ -93,13 +93,13 @@ On reconnect AS sends `{ "session_id": "session-001" }`. The session ID is not p
 
 | `payload.type` | Direction | Role |
 |---|---|---|
-| `demo.task.request` | CDC → AS → EServer | F08: task request receipt, outbox and downstream delivery |
-| `demo.task.result` | EServer → AS → CDC | F09: finished task result |
+| `automation.task.request` | CDC → AS → EServer | F08: task request receipt, outbox and downstream delivery |
+| `automation.task.result` | EServer → AS → CDC | F09: finished task result |
 | `demo.resource-selection` | AA → AS → CDC | M13 resource selection |
 | `demo.reply` | AA → AS → CDC | Playground example, not a separate durable workflow |
 | Other valid peer types | To/from CDC where routing supports | Generic peer messaging; not automatically a named business workflow |
 
-`activity:task:dispatch` is **not** the same operation as `demo.task.request`. The former currently validates/logs only.
+`activity:task:dispatch` is **not** the same operation as `automation.task.request`. The former currently validates/logs only.
 
 ## 3. Host 2 — AS (`/socket.io`)
 
@@ -139,7 +139,7 @@ Example of a valid inbound request:
   "event": "message",
   "correlationId": "request-001",
   "payload": {
-    "type": "demo.task.request",
+    "type": "automation.task.request",
     "version": "1.0",
     "data": {
       "id": "task-demo-001",
@@ -179,7 +179,7 @@ The `PeerMessageAck` error-code union includes: `INVALID_MESSAGE`, `SENDER_MISMA
 {
   "ok": true,
   "status": "received",
-  "data": { "id": "<generated-uuid>", "version": "1.0", "kind": "request", "from": "cdc", "to": "eserver", "channel": "worker", "event": "message", "timestamp": 1794500000000, "payload": { "type": "demo.task.request", "version": "1.0", "data": { "id": "task-demo-001", "status": "inProgress", "config": "automation configuration", "createdTime": 1794500000000, "updatedTime": 1794500000000 } } }
+  "data": { "id": "<generated-uuid>", "version": "1.0", "kind": "request", "from": "cdc", "to": "eserver", "channel": "worker", "event": "message", "timestamp": 1794500000000, "payload": { "type": "automation.task.request", "version": "1.0", "data": { "id": "task-demo-001", "status": "inProgress", "config": "automation configuration", "createdTime": 1794500000000, "updatedTime": 1794500000000 } } }
 }
 ```
 
@@ -189,8 +189,8 @@ The `received` ACK confirms canonical receipt and delivery-intent commit under R
 
 | `payload.type` | Sender → target | Scope |
 |---|---|---|
-| `demo.task.request` | CDC → EServer | Durable F08 workflow |
-| `demo.task.result` | EServer → CDC | Durable F09 workflow |
+| `automation.task.request` | CDC → EServer | Durable F08 workflow |
+| `automation.task.result` | EServer → CDC | Durable F09 workflow |
 | `demo.resource-selection` | AA → CDC | Durable M13 workflow |
 | `eserver.scheduled-update` | EServer → AA | Playground scheduled mock status, every 10 seconds |
 | `eserver.vm-info` | EServer → AA | Playground mock VM inventory, every 20 seconds |

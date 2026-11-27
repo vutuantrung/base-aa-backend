@@ -30,7 +30,7 @@ The sandbox initially denied local TCP listener creation, causing integration te
 
 ### Legacy task roundtrip contract
 
-The prior test expected a PServer task to be delivered to AAUI as `demo.task.request`, then expected AAUI to return a finished task to PServer. Current F08/F09 implementation and workflow tests specify a different business flow: PServer sends a task through AAB to a selected EServer; AAB persists and ACKs receipt and emits task lifecycle notifications to AAUI. EServer returns the finished task through AAB to PServer; AAB persists and ACKs receipt and emits result lifecycle notifications to AAUI. `tests/task-received-routing.test.ts`, `tests/f09-task-result-receipt.test.ts`, source lifecycle handlers, and the AAUI dashboard/tests confirm this contract.
+The prior test expected a PServer task to be delivered to AAUI as `automation.task.request`, then expected AAUI to return a finished task to PServer. Current F08/F09 implementation and workflow tests specify a different business flow: PServer sends a task through AAB to a selected EServer; AAB persists and ACKs receipt and emits task lifecycle notifications to AAUI. EServer returns the finished task through AAB to PServer; AAB persists and ACKs receipt and emits result lifecycle notifications to AAUI. `tests/task-received-routing.test.ts`, `tests/f09-task-result-receipt.test.ts`, source lifecycle handlers, and the AAUI dashboard/tests confirm this contract.
 
 The legacy test was therefore superseded. It now verifies the current F08/F09 flow, including EServer delivery, AAB persistence, receipt ACKs, PServer result delivery, and AAUI task/result lifecycle events. Its meaningful end-to-end assertions remain in place; application behavior was not changed.
 

@@ -17,7 +17,7 @@ CDC submits a task destined for a particular EServer instance (or the single una
 
 | Actor | Responsibility |
 |---|---|
-| CDC | Hosts the Socket.IO endpoint for AS, performs session registration ACK, submits `demo.task.request`, handles receipt ACK |
+| CDC | Hosts the Socket.IO endpoint for AS, performs session registration ACK, submits `automation.task.request`, handles receipt ACK |
 | AS / M03–M04 | Opens outbound Socket.IO connection to CDC; manages session registration/readiness |
 | AS / M05–M06 | Peer ingress and authenticated identities; EServer connections / physical availability |
 | AS / M12 | Validates task, captures destination, persists receipt + outbox intent, publishes lifecycle, schedules delivery |
@@ -142,7 +142,7 @@ socket.on('connect_error', (error) => console.error('Connection rejected:', erro
 socket.on('as:welcome', (message) => console.log('Welcome:', message));
 
 socket.on('peer:message', (message, acknowledge) => {
-  if (message?.payload?.type !== 'demo.task.request') return;
+  if (message?.payload?.type !== 'automation.task.request') return;
   console.log('Task received:', message.payload.data);
   // ACK only after satisfying your receiver-side acceptance policy.
   // Do NOT claim execution has completed merely because this ACK was sent.
@@ -165,7 +165,7 @@ sequenceDiagram
   participant E as EServer (e-1)
   participant U as AA
   Note over P,A: Prerequisite: registered CDC session
-  P->>A: peer:message (demo.task.request)
+  P->>A: peer:message (automation.task.request)
   A->>A: Authenticate source / validate envelope + task
   A->>A: Capture EServer target and prepare outbound
   A->>O: Commit receipt + delivery intent
@@ -201,7 +201,7 @@ Example payload:
   "event": "message",
   "correlationId": "task-demo-001",
   "payload": {
-    "type": "demo.task.request",
+    "type": "automation.task.request",
     "version": "1.0",
     "data": {
       "id": "task-demo-001",
@@ -227,7 +227,7 @@ Envelope rules (from `incomingPeerMessageSchema`):
 | `channel` | No | String, 1–100 chars; default `"worker"` |
 | `event` | No | Literal `"message"`; defaults to it |
 | `correlationId`, `causationId` | No | Nonempty strings, max 200 characters |
-| `payload.type` | **Yes** | Exact literal `"demo.task.request"` for this flow |
+| `payload.type` | **Yes** | Exact literal `"automation.task.request"` for this flow |
 | `payload.version` | No | Trimmed string, 1–30 chars; default `"1.0"` |
 | `payload.data` | **Yes** | Strict task data contract below |
 
@@ -264,7 +264,7 @@ Success example (the `data` object is a **normalized task peer envelope**, not o
     "event": "message",
     "correlationId": "task-demo-001",
     "payload": {
-      "type": "demo.task.request",
+      "type": "automation.task.request",
       "version": "1.0",
       "data": {
         "id": "task-demo-001",
@@ -380,7 +380,7 @@ The playground CDC constructs and emits the actual `peer:message` over its regis
 Expected observations:
 
 1. CDC has an established AS transport and registered session.
-2. CDC sends `demo.task.request` with `from:cdc`, `to:eserver`, target `e-1`.
+2. CDC sends `automation.task.request` with `from:cdc`, `to:eserver`, target `e-1`.
 3. AS commits a canonical task receipt/outbox record before successful `received` ACK.
 4. AA (if connected) observes `task:lifecycle` with `received`.
 5. EServer `e-1` receives the forwarded `peer:message` and returns protocol ACK.
@@ -419,4 +419,4 @@ Expected observations:
 | Approved retry/durability policy | `docs/architecture/R7_5_RELIABILITY_POLICY.md` |
 | Local test procedure | `testing/README.md`, `testing/cdc.mjs`, `testing/eserver.mjs` |
 
-**Compatibility rule:** Do not change `demo.task.request`, peer envelope, CDC registration, F08 receipt meaning, canonical dedupe key, EServer target selection or ACK semantics without an explicitly reviewed contract change. Record new behaviors and acceptance evidence in this living document when DF-07 evolves.
+**Compatibility rule:** Do not change `automation.task.request`, peer envelope, CDC registration, F08 receipt meaning, canonical dedupe key, EServer target selection or ACK semantics without an explicitly reviewed contract change. Record new behaviors and acceptance evidence in this living document when DF-07 evolves.

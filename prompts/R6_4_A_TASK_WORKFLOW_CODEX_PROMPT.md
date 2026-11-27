@@ -45,7 +45,7 @@ Create a focused M12 workflow module (for example `src/modules/task-workflow/`, 
 
 ### F08 — PServer task request
 
-- Dispatch only for authenticated PServer + raw payload type `demo.task.request`, with existing branch precedence (AAUI resource selection first). Within M12 retain strict incoming schema, `from: pserver`, `to: eserver`, matching type, task schema and `inProgress` status. Do not add a new kind restriction or require extra fields. Preserve the exact current invalid-envelope and invalid-payload ACK codes/text.
+- Dispatch only for authenticated PServer + raw payload type `automation.task.request`, with existing branch precedence (AAUI resource selection first). Within M12 retain strict incoming schema, `from: pserver`, `to: eserver`, matching type, task schema and `inProgress` status. Do not add a new kind restriction or require extra fields. Preserve the exact current invalid-envelope and invalid-payload ACK codes/text.
 - Preserve generated/provided message ID, target resolution before persistence (explicit instance ID wins; otherwise exactly one registered EServer), and target ID captured for deferred work. Do not reselect an unresolved or changed destination after persistence. Preserve undefined target in receipt if unresolved.
 - Await `save(task)` before success receipt ACK. Persistence failure => `DELIVERY_FAILED`, `Could not persist task at AAB`, no forwarding or received notification.
 - Emit `task:lifecycle` received notification before receipt return; schedule downstream work with existing `setImmediate` timing. Do not await downstream ACK to issue receipt. Preserve exact envelope shape, timestamp, cloned original payload and optional `toInstanceId`.
@@ -53,7 +53,7 @@ Create a focused M12 workflow module (for example `src/modules/task-workflow/`, 
 
 ### F09 — EServer task result
 
-- Dispatch only for authenticated EServer + raw `demo.task.result` payload type. Validate envelope `from: eserver`, `to: pserver`, matching type and task status `finished`; preserve current invalid ACKs/text.
+- Dispatch only for authenticated EServer + raw `automation.task.result` payload type. Validate envelope `from: eserver`, `to: pserver`, matching type and task status `finished`; preserve current invalid ACKs/text.
 - Await `saveResult` before receipt; preserve failure `DELIVERY_FAILED`, `Could not persist task result at AAB`. Keep correlation to the original persisted request by task ID, config, createdTime and nondecreasing updatedTime. Do not introduce instance ownership checks or new correlation requirements.
 - Preserve source instance from authenticated connection, receipt timestamp and cloned payload, `task:result:lifecycle` received/forwarded/forwardFailed notifications, event names `task.result.*`, null fallback for instanceId, error reason and timestamp fields.
 - Schedule forwarding via M10 `process` with captured message ID and source instance; check existing readiness-aware `isPServerConnected()` first and keep `PServer is offline` failure. Offline PServer does not invalidate successful persistence receipt.

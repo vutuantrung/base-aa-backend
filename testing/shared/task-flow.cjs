@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 
-const TASK_REQUEST_TYPE = 'demo.task.request';
-const TASK_RESULT_TYPE = 'demo.task.result';
+const TASK_REQUEST_TYPE = 'automation.task.request';
+const TASK_RESULT_TYPE = 'automation.task.result';
 const MAX_TASKS = 100;
 const TASK_STATUS = Object.freeze({ inProgress: 'inProgress', finished: 'finished' });
 

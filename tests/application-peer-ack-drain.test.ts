@@ -101,7 +101,7 @@ test('live peer ingress and outbound ACK settle before drain cleanup; new busine
   const task = { id: `task-${randomUUID()}`, status: 'inProgress', config: 'drain-test', createdTime: Date.now(), updatedTime: Date.now() };
   const ingressAck = cdcSocket.timeout(5000).emitWithAck('peer:message', {
     kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'drain-e1',
-    payload: { type: 'demo.task.request', data: task }
+    payload: { type: 'automation.task.request', data: task }
   });
 
   try {

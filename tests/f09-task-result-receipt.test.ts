@@ -57,7 +57,7 @@ test('F09 persists and ACKs EServer while an offline Cdc delivery remains pendin
 
     const ack: any = await e.timeout(3000).emitWithAck('peer:message', {
       version: '1.0', kind: 'response', from: 'eserver', to: 'cdc',
-      payload: { type: 'demo.task.result', version: '1.0', data: finished }
+      payload: { type: 'automation.task.result', version: '1.0', data: finished }
     });
     assert.equal(ack.ok, true);
     assert.equal(ack.status, 'received');
@@ -87,7 +87,7 @@ test('F09 rejects invalid result without persisting it', async () => {
     });
     const ack: any = await e.timeout(3000).emitWithAck('peer:message', {
       kind: 'response', from: 'eserver', to: 'cdc',
-      payload: { type: 'demo.task.result', data: {
+      payload: { type: 'automation.task.result', data: {
         id: 'task-' + randomUUID(), status: 'inProgress',
         config: 'invalid', createdTime: Date.now(), updatedTime: Date.now()
       } }

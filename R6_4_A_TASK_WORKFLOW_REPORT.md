@@ -67,7 +67,7 @@ Runtime consumers include `peer-gateway.ts`, which creates the one workflow/stor
 
 ### F08 PServer task request
 
-1. Infrastructure retains the condition: authenticated PServer and raw payload type `demo.task.request`; AAUI resource-selection branch remains earlier.
+1. Infrastructure retains the condition: authenticated PServer and raw payload type `automation.task.request`; AAUI resource-selection branch remains earlier.
 2. M12 validates the existing strict peer envelope (`from: pserver`, `to: eserver`, matching type) and task schema/status `inProgress`; it adds no kind restriction.
 3. Before persistence, M12 captures an explicit `toInstanceId`, otherwise the sole registered EServer instance, otherwise `undefined`. It does not reselect after persistence.
 4. M12 awaits `store.save`. Failure returns `{ok:false, code:'DELIVERY_FAILED', error:'Could not persist task at AAB'}` and emits no receipt event or forward.
@@ -76,7 +76,7 @@ Runtime consumers include `peer-gateway.ts`, which creates the one workflow/stor
 
 ### F09 EServer task result
 
-1. Infrastructure retains the authenticated EServer plus `demo.task.result` condition after the F08 branch.
+1. Infrastructure retains the authenticated EServer plus `automation.task.result` condition after the F08 branch.
 2. M12 validates `from: eserver`, `to: pserver`, the type and task status `finished`. `saveResult` retains original task ID/config/createdTime and nondecreasing updatedTime validation, plus exclusive result-file creation. Invalid/mismatched/duplicate results return the existing invalid or persistence ACK without forwarding.
 3. M12 awaits `saveResult` before emitting `task.result.received` or returning `{ok:true,status:'received',data}`. Persistence failure remains `DELIVERY_FAILED` with `Could not persist task result at AAB`.
 4. After receipt, M12 schedules deferred work. It checks readiness-aware PServer availability, reports `PServer is offline` if unavailable, and otherwise invokes M10 with authenticated EServer identity and source instance. `task.result.forwarded`/`task.result.forwardFailed` remain separate lifecycle outcomes.

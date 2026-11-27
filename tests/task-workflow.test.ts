@@ -19,14 +19,14 @@ function task(id = 'task-workflow-1', status: StoredTask['status'] = 'inProgress
 function taskRequest(value = task(), extras: object = {}) {
   return {
     version: '1.0', kind: 'request', from: 'cdc', to: 'eserver',
-    payload: { type: 'demo.task.request', version: '1.0', data: value }, ...extras
+    payload: { type: 'automation.task.request', version: '1.0', data: value }, ...extras
   };
 }
 
 function taskResult(value = task('task-workflow-1', 'finished'), extras: object = {}) {
   return {
     version: '1.0', kind: 'response', from: 'eserver', to: 'cdc',
-    payload: { type: 'demo.task.result', version: '1.0', data: value }, ...extras
+    payload: { type: 'automation.task.result', version: '1.0', data: value }, ...extras
   };
 }
 

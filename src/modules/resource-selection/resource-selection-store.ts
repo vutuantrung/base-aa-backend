@@ -80,7 +80,9 @@ export class JsonResourceSelectionStore implements ResourceSelectionStore {
     };
     await mkdir(this.directory, { recursive: true });
     await writeFile(this.receiptPath(record.id), JSON.stringify({
-      id: record.id, createdTime: record.createdTime, selection: record.selection
+      id: record.id,
+      createdTime: record.createdTime,
+      selection: record.selection
     }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     return record;
   }

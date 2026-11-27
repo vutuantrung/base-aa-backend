@@ -30,8 +30,8 @@ test('authenticated special operations select one workflow in the established pr
   const recorder = createRecorder();
   const messages = [
     { payload: { type: 'demo.resource-selection' } },
-    { payload: { type: 'demo.task.request' } },
-    { payload: { type: 'demo.task.result' } }
+    { payload: { type: 'automation.task.request' } },
+    { payload: { type: 'automation.task.result' } }
   ];
 
   assert.equal(await recorder.handler(messages[0], 'aa'), recorder.acknowledgements.selection);
@@ -45,7 +45,7 @@ test('authenticated special operations select one workflow in the established pr
 test('wrong sender, unknown and malformed input preserve raw selection and generic fallback behavior', async () => {
   const recorder = createRecorder();
   const spoofedEnvelope = { from: 'aa', payload: { type: 'demo.resource-selection' } };
-  const malformedMatchingEnvelope = { payload: { type: 'demo.task.result' } };
+  const malformedMatchingEnvelope = { payload: { type: 'automation.task.result' } };
   const ordinaryEnvelope = { payload: { type: 'ordinary.message' } };
 
   assert.equal(await recorder.handler(spoofedEnvelope, 'eserver', 'worker-real'), recorder.acknowledgements.generic);

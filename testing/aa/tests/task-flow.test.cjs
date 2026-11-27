@@ -19,8 +19,8 @@ test('task mock follows required format and allowed statuses', () => {
   assert.equal(done.createdTime, task.createdTime);
   assert.ok(done.updatedTime > task.updatedTime);
   assert.equal(isTask(done, 'finished'), true);
-  assert.equal(TASK_REQUEST_TYPE, 'demo.task.request');
-  assert.equal(TASK_RESULT_TYPE, 'demo.task.result');
+  assert.equal(TASK_REQUEST_TYPE, 'automation.task.request');
+  assert.equal(TASK_RESULT_TYPE, 'automation.task.result');
 });
 
 test('task remains inProgress until an explicit completion is applied', () => {

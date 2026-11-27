@@ -83,7 +83,7 @@ test('F08/F09 task lifecycle: Cdc -> AS -> EServer, with Aa notifications', asyn
     });
     const receipt: any = await remote.timeout(3000).emitWithAck('peer:message', {
       kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'e-roundtrip',
-      payload: { type: 'demo.task.request', data: task }
+      payload: { type: 'automation.task.request', data: task }
     });
     assert.equal(receipt.ok, true);
     assert.equal(receipt.status, 'received');
@@ -113,7 +113,7 @@ test('F08/F09 task lifecycle: Cdc -> AS -> EServer, with Aa notifications', asyn
     });
     const resultReceipt: any = await e.socket.timeout(3000).emitWithAck('peer:message', {
       kind: 'response', from: 'eserver', to: 'cdc',
-      payload: { type: 'demo.task.result', data: finished }
+      payload: { type: 'automation.task.result', data: finished }
     });
     assert.equal(resultReceipt.ok, true);
     assert.equal(resultReceipt.status, 'received');

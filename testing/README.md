@@ -293,7 +293,7 @@ Each task follows this exact data shape (embedded in `peer:message.payload.data`
 Events and lifecycle:
 
 1. `POST /demo/tasks` creates a unique task with `status: "inProgress"`. CDC logs and stores it in memory.
-2. CDC sends a `peer:message` with `payload.type: "demo.task.request"`, `from: "cdc"`, `to: "aa"` through its existing Socket.IO connection initiated by AS.
+2. CDC sends a `peer:message` with `payload.type: "automation.task.request"`, `from: "cdc"`, `to: "aa"` through its existing Socket.IO connection initiated by AS.
 3. (Historical behavior, removed) AA previously acknowledged receipt and displayed a 5-second progress bar.
 4. (Historical behavior, removed) AA previously auto-completed tasks after 5 seconds. It now only observes lifecycle events.
 5. CDC validates the returned task against the original (ID, config, createdTime, and status transition), logs `TASK FINISHED RECEIVED FROM AA`, and updates its in-memory task record. AA shows `Result delivered to CDC` after receiving the delivery acknowledgment.
@@ -316,7 +316,7 @@ The task flow uses the existing message router, without changing the CDC `/ws` s
 
 This flow supersedes the earlier CDC → AS → AA task execution demo. **The `received` ACK means AS has accepted and saved the task, not that EServer has received it.** AA is an observer. EServer now only acknowledges task receipt; automatic task completion after 5 seconds has been removed.
 
-When CDC sends a `demo.task.request` to AS, the receipt sequence is:
+When CDC sends a `automation.task.request` to AS, the receipt sequence is:
 
 1. AS validates the task shape (`id`, `status: "inProgress"`, `config`, `createdTime`, `updatedTime`) and the peer envelope.
 2. AS persists the task in `data/tasks/<task-id>.json` (or `AS_TASK_STORE_DIR`), using exclusive creation to prevent overwrites.
@@ -325,7 +325,7 @@ When CDC sends a `demo.task.request` to AS, the receipt sequence is:
 
 **EServer forwarding is separate and asynchronous.** AS attempts `peer:message` forwarding to the requested `toInstanceId` (or the sole connected EServer if unambiguous). After receiving the EServer ACK, AS publishes `task.forwarded`. If it cannot select or reach EServer, or EServer rejects the message, it publishes `task.forwardFailed` with a reason. AA keeps the task status **received** and displays the forwarding outcome separately. Failed forwarding does not undo the receipt ACK or delete the stored file. There is currently no queue/retry scheduler; failed tasks require explicit operator recovery.
 
-EServer no longer sends `demo.task.result` automatically. Tasks remain `received` on AA until EServer explicitly sends a result with `status: "finished"` through AS to CDC. That explicit result is stored at `data/tasks/<task-id>.result.json`, forwarded to CDC, and published as `task.finished` to AA after CDC accepts it.
+EServer no longer sends `automation.task.result` automatically. Tasks remain `received` on AA until EServer explicitly sends a result with `status: "finished"` through AS to CDC. That explicit result is stored at `data/tasks/<task-id>.result.json`, forwarded to CDC, and published as `task.finished` to AA after CDC accepts it.
 
 To run the demonstration (separate terminals):
 
@@ -435,7 +435,7 @@ Earlier sections of this README describe the historical F03 EServer origin; this
 The reverse path is now symmetrical to F08: **a successful `received` ACK confirms only that AS accepted and persisted the task result**. CDC delivery runs separately and does not delay the EServer ACK.
 
 ```text
-EServer --demo.task.result (status=finished)--> AS
+EServer --automation.task.result (status=finished)--> AS
    ^                                         |
    | ACK {ok:true,status:"received"}        | 1. Validate against saved F08 task
    |                                         | 2. Save task-<id>.result.json
@@ -478,7 +478,7 @@ Then explicitly complete that task on EServer (replace `<task-id>` with the full
 curl -X POST "http://127.0.0.1:3002/demo/tasks/<task-id>/finish"
 ```
 
-EServer returns HTTP `202` with `status: "received"` after AS saves the result, **not** after CDC delivery. Later, CDC logs `TASK FINISHED RECEIVED FROM ESERVER`, AA shows F09 forwarding success, and AS retains both original `.json` and `.result.json` files. The raw `POST /messages` endpoint remains available for submitting a complete `demo.task.result` message manually.
+EServer returns HTTP `202` with `status: "received"` after AS saves the result, **not** after CDC delivery. Later, CDC logs `TASK FINISHED RECEIVED FROM ESERVER`, AA shows F09 forwarding success, and AS retains both original `.json` and `.result.json` files. The raw `POST /messages` endpoint remains available for submitting a complete `automation.task.result` message manually.
 
 Run:
 

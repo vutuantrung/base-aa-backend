@@ -61,7 +61,7 @@ This confirms BV-OBS01: `rootDir: "."` with `outDir: "dist"` preserves the `src/
 | `npm test` | FAIL / interrupted | Initial parallel execution did not produce a complete summary | Ran for about 90 seconds; manually interrupted with exit 130 after Node native `InternalCallbackScope::Close()` assertion failures in worker processes | This default-concurrency invocation did not complete naturally. |
 | `npm test -- --test-concurrency=1` | FAIL | 45 total; 44 passed, 1 failed; 0 skipped/cancelled | 4.8 seconds / 1 | `tests/pserver-aaui-task-roundtrip.test.ts:71`: expected `response.ok === true`, received `false`; follow-up rejects with “No task result arrived.” |
 
-The failing roundtrip sends `demo.task.request` to `aaui` and expects it to be accepted and returned to PServer. Current peer-gateway task receipt validation is for PServer-to-EServer requests, so the tested AAUI route returns a negative response. This is a confirmed baseline test failure; no behavior was changed.
+The failing roundtrip sends `automation.task.request` to `aaui` and expects it to be accepted and returned to PServer. Current peer-gateway task receipt validation is for PServer-to-EServer requests, so the tested AAUI route returns a negative response. This is a confirmed baseline test failure; no behavior was changed.
 
 ### Playground suite
 

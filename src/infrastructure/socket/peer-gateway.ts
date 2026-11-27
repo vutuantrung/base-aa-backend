@@ -16,7 +16,7 @@ import type { ReliabilityRunnerPolicy } from '../../shared/persistence/reliable-
 import { DEFAULT_RELIABILITY_LIMITS } from '../../shared/persistence/atomic-json-record-store.js';
 import type { ApplicationAdmission } from '../../shared/contracts/application-admission.js';
 
-export interface ExternalPeerTransport extends CdcPeerTransport {}
+export interface ExternalPeerTransport extends CdcPeerTransport { }
 
 export interface PeerMessageHandlerCapabilities {
   receiveResourceSelection(value: unknown): Promise<PeerMessageAck>;
@@ -58,10 +58,10 @@ export function createPeerMessageHandler(capabilities: PeerMessageHandlerCapabil
     if (authenticatedFrom === 'aa' && operationType === 'demo.resource-selection') {
       return await capabilities.receiveResourceSelection(value);
     }
-    if (authenticatedFrom === 'cdc' && operationType === 'demo.task.request') {
+    if (authenticatedFrom === 'cdc' && operationType === 'automation.task.request') {
       return await capabilities.receiveTaskRequest(value);
     }
-    if (authenticatedFrom === 'eserver' && operationType === 'demo.task.result') {
+    if (authenticatedFrom === 'eserver' && operationType === 'automation.task.result') {
       return await capabilities.receiveTaskResult(value, authenticatedInstanceId);
     }
     return await capabilities.processGenericMessage(value, authenticatedFrom, authenticatedInstanceId);
@@ -112,10 +112,7 @@ export function attachPeerGateway(
     if (coordinator && !coordinator.isAccepting()) return;
     const target = getConnection('aa');
     if (!target?.connected) return;
-    target.emit('peer:status', {
-      peerId: 'eserver', instanceId, status, socketId,
-      timestamp: Date.now(), ...(reason ? { reason } : {})
-    });
+    target.emit('peer:status', { peerId: 'eserver', instanceId, status, socketId, timestamp: Date.now(), ...(reason ? { reason } : {}) });
   }
 
   const service = new PeerMessageService(transformations, destinationPolicy);
@@ -127,10 +124,8 @@ export function attachPeerGateway(
     listEServerInstances: () => directory.listInstances('eserver'),
     isEServerConnectionReady: instanceId => getConnection('eserver', instanceId)?.connected ?? false,
     isCdcConnected: () => destinationPolicy.isCdcConnected(),
-    processMessage: (value, authenticatedFrom, authenticatedInstanceId) =>
-      service.process(value, authenticatedFrom, authenticatedInstanceId),
-    prepareForDurableDelivery: (value, authenticatedFrom, authenticatedInstanceId) =>
-      service.prepareForDurableDelivery(value, authenticatedFrom, authenticatedInstanceId),
+    processMessage: (value, authenticatedFrom, authenticatedInstanceId) => service.process(value, authenticatedFrom, authenticatedInstanceId),
+    prepareForDurableDelivery: (value, authenticatedFrom, authenticatedInstanceId) => service.prepareForDurableDelivery(value, authenticatedFrom, authenticatedInstanceId),
     deliverPreparedMessage: message => service.deliverPreparedMessage(message),
     reliabilityPolicy,
     defer: work => { setImmediate(() => { void work(); }); },
@@ -161,10 +156,8 @@ export function attachPeerGateway(
   const handleMessage = createPeerMessageHandler({
     receiveResourceSelection: value => selectionWorkflow.receiveSelection(value),
     receiveTaskRequest: value => taskWorkflow.receiveTask(value),
-    receiveTaskResult: (value, authenticatedInstanceId) =>
-      taskWorkflow.receiveTaskResult(value, authenticatedInstanceId),
-    processGenericMessage: (value, authenticatedFrom, authenticatedInstanceId) =>
-      processPeerMessageForAck(service, value, authenticatedFrom, authenticatedInstanceId)
+    receiveTaskResult: (value, authenticatedInstanceId) => taskWorkflow.receiveTaskResult(value, authenticatedInstanceId),
+    processGenericMessage: (value, authenticatedFrom, authenticatedInstanceId) => processPeerMessageForAck(service, value, authenticatedFrom, authenticatedInstanceId)
   });
 
   async function receiveAdmittedMessage(value: unknown, authenticatedFrom: PeerId, instanceId?: string): Promise<PeerMessageAck> {
@@ -208,6 +201,7 @@ export function attachPeerGateway(
       runSnapshot(() => sendTaskSnapshot(connection));
       runSnapshot(() => sendSelectionSnapshot(connection));
     }
+
     connection.emit('as:welcome', { from: 'as', to: peerId, instanceId, message: 'connected', timestamp: Date.now() });
 
     if (peerId === 'aa') {

@@ -77,7 +77,7 @@ test('Cdc -> AS: persisted, EServer delivery and received ACK; Aa notified', asy
     });
     const result: any = await cdc.connected!.timeout(3000).emitWithAck('peer:message', {
       kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'e-task-1',
-      payload: { type: 'demo.task.request', data: task }
+      payload: { type: 'automation.task.request', data: task }
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'received');
@@ -113,7 +113,7 @@ test('Cdc -> AS: persisted, EServer delivery and received ACK; Aa notified', asy
     });
     const finishAck: any = await e.client.timeout(3000).emitWithAck('peer:message', {
       kind: 'response', from: 'eserver', to: 'cdc',
-      payload: { type: 'demo.task.result', data: finished }
+      payload: { type: 'automation.task.result', data: finished }
     });
     assert.equal(finishAck.ok, true);
     assert.equal(finishAck.status, 'received');
@@ -138,7 +138,7 @@ test('offline EServer still gets persisted/received ACK while delivery remains p
     ui.client.on('task:lifecycle', value => events.push(value));
     const result: any = await cdc.connected!.timeout(3000).emitWithAck('peer:message', {
       kind: 'request', from: 'cdc', to: 'eserver', toInstanceId: 'not-online',
-      payload: { type: 'demo.task.request', data: task }
+      payload: { type: 'automation.task.request', data: task }
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'received');

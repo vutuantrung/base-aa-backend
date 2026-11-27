@@ -15,8 +15,8 @@
 | Order | Authenticated identity | Raw payload type | Selected capability |
 |---|---|---|---|
 | 1 | `aaui` | `demo.resource-selection` | M13 `receiveSelection` |
-| 2 | `pserver` | `demo.task.request` | M12 F08 `receiveTask` |
-| 3 | `eserver` | `demo.task.result` | M12 F09 `receiveTaskResult`, with authenticated instance ID |
+| 2 | `pserver` | `automation.task.request` | M12 F08 `receiveTask` |
+| 3 | `eserver` | `automation.task.result` | M12 F09 `receiveTaskResult`, with authenticated instance ID |
 | 4 | Any other combination | Any | M10 `processPeerMessageForAck`, with authenticated sender/instance |
 
 ### Before → after
